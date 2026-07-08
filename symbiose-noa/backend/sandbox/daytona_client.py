@@ -61,8 +61,8 @@ class DaytonaClient:
 
         if self.daytona_available:
             try:
-                from daytona_sdk import Daytona
-                self._daytona = Daytona(api_key=self.api_key)
+                from daytona_sdk import Daytona, DaytonaConfig
+                self._daytona = Daytona(DaytonaConfig(api_key=self.api_key))
             except ImportError:
                 self.daytona_available = False
                 self._daytona = None
@@ -89,9 +89,12 @@ class DaytonaClient:
         start_time = time.monotonic()
 
         try:
+            from daytona_sdk import CreateSandboxFromImageParams
             test_code = self._wrap_with_test_data(skill_code)
-            sandbox = self._daytona.create()
-            result = sandbox.process.start_and_wait(
+            sandbox = self._daytona.create(
+                CreateSandboxFromImageParams(image="python:3.12-slim", language="python")
+            )
+            result = sandbox.process.exec(
                 f"python3 -c '{test_code}'",
                 timeout=timeout,
             )
@@ -115,7 +118,7 @@ class DaytonaClient:
         finally:
             if sandbox and self._daytona:
                 try:
-                    self._daytona.remove(sandbox)
+                    self._daytona.delete(sandbox)
                 except Exception:
                     pass
 

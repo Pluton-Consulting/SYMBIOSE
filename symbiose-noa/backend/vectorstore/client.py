@@ -9,11 +9,20 @@ from typing import List, Optional
 from uuid import UUID
 from database.connection import get_db
 
+
+def _vec_literal(vec: List[float]) -> str:
+    """
+    Formate un vecteur au format texte pgvector ('[0.1,0.2,…]').
+    asyncpg n'enregistre pas le type `vector` : on passe une chaîne + cast ::vector,
+    robuste sur toutes les versions de pgvector.
+    """
+    return "[" + ",".join(f"{float(x):.8f}" for x in vec) + "]"
+
 # Mapping rôle → access_levels autorisés
 # Un rôle peut accéder à tous les niveaux inférieurs au sien
 ROLE_ACCESS_LEVELS = {
-    "admin":         ["all", "commercial_plus", "bureau_etudes_plus", "direction_only", "admin_only"],
-    "direction":     ["all", "commercial_plus", "bureau_etudes_plus", "direction_only"],
+    "super_admin":   ["all", "commercial_plus", "bureau_etudes_plus", "direction_only", "admin_only"],
+    "direction":     ["all", "commercial_plus", "bureau_etudes_plus", "direction_only", "admin_only"],
     "bureau_etudes": ["all", "commercial_plus", "bureau_etudes_plus"],
     "commercial":    ["all", "commercial_plus"],
     "conducteur":    ["all", "commercial_plus"],
@@ -41,7 +50,7 @@ class VectorStoreClient:
 
         async with get_db() as conn:
             source_filter = ""
-            params: list = [query_embedding, allowed_levels, top_k, similarity_threshold]
+            params: list = [_vec_literal(query_embedding), allowed_levels, top_k, similarity_threshold]
 
             if source_types:
                 source_filter = "AND source_type = ANY($5::text[])"
@@ -174,9 +183,9 @@ class VectorStoreClient:
                 """, job_id)
                 await conn.execute("""
                     UPDATE documents
-                    SET embedding = $1, updated_at = NOW()
+                    SET embedding = $1::vector, updated_at = NOW()
                     WHERE id = (SELECT document_id FROM embedding_jobs WHERE id = $2)
-                """, embedding, job_id)
+                """, _vec_literal(embedding), job_id)
 
     async def mark_job_failed(self, job_id: UUID, error: str) -> None:
         async with get_db() as conn:

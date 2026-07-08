@@ -2,6 +2,7 @@
 Système d'audit immuable — INSERT uniquement, jamais UPDATE ni DELETE.
 Appelé sur chaque action significative : login, chat_request, skill_created, etc.
 """
+import json
 from typing import Optional
 from database.connection import get_db
 
@@ -43,5 +44,5 @@ async def log_action(
             duration_ms,
             success,
             error_message,
-            metadata,
+            json.dumps(metadata),
         )

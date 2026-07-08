@@ -2,6 +2,16 @@
 .env
 .env.local
 .env.*.local
+CREDENTIALS.env
+*.env
+!*.env.example
+!*.env.template
+
+# Identifiants connecteurs (OAuth Google, tokens) — jamais committés
+secrets/
+symbiose-noa/backend/secrets/
+*.credentials.json
+google_token.json
 
 # Python
 __pycache__/

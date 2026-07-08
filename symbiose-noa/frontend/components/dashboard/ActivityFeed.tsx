@@ -1,65 +1,128 @@
-"use client"
-import { useEffect, useState } from "react"
-import { useSession } from "next-auth/react"
-import { apiRequest } from "@/lib/api"
+// Flux d'activité (événements d'audit) du Dashboard Direction.
+// Composant présentational — les entrées sont fournies via `items`.
 
-interface AuditEntry {
+export interface ActivityItem {
   id: string
   action: string
-  agent_id: string | null
-  success: boolean
-  created_at: string
+  agent_id?: string | null
+  success?: boolean
+  created_at?: string
+  model_used?: string | null
+  [key: string]: any
 }
 
-export default function ActivityFeed() {
-  const { data: session } = useSession()
-  const [entries, setEntries] = useState<AuditEntry[]>([])
+function formatTime(iso?: string): string {
+  if (!iso) return ""
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return ""
+  return d.toLocaleString("fr-FR", {
+    day: "2-digit",
+    month: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  })
+}
 
-  useEffect(() => {
-    if (!session?.backendToken) return
-    apiRequest<AuditEntry[]>("/api/dashboard/activity", { token: session.backendToken })
-      .then(setEntries)
-      .catch(() => {})
-  }, [session])
+export default function ActivityFeed({ items }: { items?: ActivityItem[] | null }) {
+  const list = Array.isArray(items) ? items : []
 
   return (
-    <div style={{
-      background: "white",
-      borderRadius: 12,
-      padding: 24,
-      boxShadow: "0 1px 3px rgba(0,0,0,0.08)",
-    }}>
-      <h2 style={{ fontSize: 16, fontWeight: 600, margin: "0 0 16px" }}>Activité récente</h2>
-      {entries.length === 0 ? (
-        <p style={{ color: "#aaa", fontSize: 14, margin: 0 }}>Aucune activité à afficher</p>
+    <div
+      style={{
+        background: "var(--color-surface)",
+        borderRadius: "var(--radius-card)",
+        padding: 24,
+        boxShadow: "var(--shadow-card)",
+      }}
+    >
+      <h3
+        style={{
+          margin: "0 0 16px",
+          fontSize: 16,
+          fontWeight: 700,
+          color: "var(--color-text-primary)",
+        }}
+      >
+        Activité récente
+      </h3>
+
+      {list.length === 0 ? (
+        <div
+          style={{
+            padding: "32px 0",
+            textAlign: "center",
+            color: "var(--color-text-muted)",
+            fontSize: 13,
+          }}
+        >
+          Aucune activité enregistrée
+        </div>
       ) : (
-        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-          {entries.map((entry) => (
-            <div
-              key={entry.id}
-              style={{
-                display: "flex",
-                justifyContent: "space-between",
-                alignItems: "center",
-                fontSize: 14,
-              }}
-            >
-              <span style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                <span style={{
-                  width: 8, height: 8, borderRadius: "50%",
-                  background: entry.success ? "#1D9E75" : "#e53e3e",
-                  flexShrink: 0,
-                }} />
-                {entry.action}
-                {entry.agent_id && (
-                  <span style={{ color: "#888", fontSize: 12 }}>({entry.agent_id})</span>
-                )}
-              </span>
-              <span style={{ color: "#aaa", fontSize: 12, flexShrink: 0, marginLeft: 16 }}>
-                {new Date(entry.created_at).toLocaleString("fr-FR")}
-              </span>
-            </div>
-          ))}
+        <div style={{ display: "flex", flexDirection: "column" }}>
+          {list.map((item, i) => {
+            const ok = item.success !== false
+            return (
+              <div
+                key={item.id ?? i}
+                style={{
+                  display: "flex",
+                  alignItems: "flex-start",
+                  gap: 12,
+                  padding: "11px 0",
+                  borderBottom:
+                    i < list.length - 1 ? "1px solid var(--color-border)" : "none",
+                }}
+              >
+                <span
+                  style={{
+                    width: 8,
+                    height: 8,
+                    borderRadius: "50%",
+                    marginTop: 5,
+                    flexShrink: 0,
+                    background: ok
+                      ? "var(--color-paid-text)"
+                      : "var(--color-error-text)",
+                  }}
+                />
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div
+                    style={{
+                      fontSize: 13,
+                      fontWeight: 500,
+                      color: "var(--color-text-primary)",
+                      lineHeight: 1.4,
+                    }}
+                  >
+                    {item.action}
+                  </div>
+                  <div
+                    style={{
+                      fontSize: 11,
+                      color: "var(--color-text-muted)",
+                      marginTop: 2,
+                    }}
+                  >
+                    {item.agent_id ? `Agent ${item.agent_id}` : "Système"}
+                    {item.created_at ? ` · ${formatTime(item.created_at)}` : ""}
+                  </div>
+                </div>
+                <span
+                  style={{
+                    fontSize: 11,
+                    fontWeight: 700,
+                    flexShrink: 0,
+                    padding: "3px 10px",
+                    borderRadius: "var(--radius-pill)",
+                    color: ok ? "var(--color-paid-text)" : "var(--color-error-text)",
+                    background: ok ? "var(--color-paid-bg)" : "var(--color-error-bg)",
+                  }}
+                >
+                  {ok ? "Succès" : "Échec"}
+                </span>
+              </div>
+            )
+          })}
         </div>
       )}
     </div>

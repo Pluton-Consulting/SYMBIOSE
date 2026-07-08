@@ -2,7 +2,7 @@ from typing import TypedDict, Optional, List, Annotated
 from langgraph.graph.message import add_messages
 
 
-class NOAState(TypedDict):
+class AgentState(TypedDict):
     """État partagé entre tous les nœuds du graph LangGraph"""
 
     # Identité de la requête
@@ -24,6 +24,7 @@ class NOAState(TypedDict):
     # Traitement RAG
     raw_chunks: Optional[List[str]]
     anonymized_chunks: Optional[List[str]]
+    anonymized_query: Optional[str]  # requête masquée (PII retirée) envoyée au LLM
     entity_map: Optional[dict]      # Correspondances pour réhydratation
 
     # Réponse LLM
@@ -32,15 +33,28 @@ class NOAState(TypedDict):
 
     # Human-in-the-loop
     requires_validation: bool
+    validation_id: Optional[str]      # UUID de la ligne validations (pause/reprise)
     validation_reason: Optional[str]
+    validation_payload: Optional[dict]  # brouillon préparé, présenté à l'humain
     validated_by: Optional[str]
     validation_status: Optional[str]  # 'pending', 'approved', 'rejected'
+
+    # Résilience LLM
+    retry_count: int                  # tentatives d'appel LLM sur ce tour
+    model_used: Optional[str]         # modèle réellement utilisé (après fallback)
 
     # Agent 3 — Skill learning
     out_of_scope: bool
     skill_generated: Optional[str]   # Code Python généré
     skill_test_result: Optional[dict]
     skill_confidence: Optional[float]
+
+    # Browser agent — Playwright via Daytona sandbox
+    browser_needed: bool
+    browser_used: bool
+    browser_sources: Optional[List[str]]
+    browser_content: Optional[str]
+    browser_was_filtered: bool
 
     # Métadonnées
     tokens_in: int

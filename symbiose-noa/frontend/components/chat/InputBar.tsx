@@ -29,7 +29,7 @@ export default function InputBar({ onSend, disabled }: InputBarProps) {
           value={value}
           onChange={(e) => setValue(e.target.value)}
           onKeyDown={handleKeyDown}
-          placeholder="Posez votre question à NOA... (Entrée pour envoyer, Maj+Entrée pour saut de ligne)"
+          placeholder="Posez votre question à Symbiose... (Entrée pour envoyer, Maj+Entrée pour saut de ligne)"
           disabled={disabled}
           rows={1}
           style={{
@@ -47,7 +47,7 @@ export default function InputBar({ onSend, disabled }: InputBarProps) {
           onClick={handleSend}
           disabled={disabled || !value.trim()}
           style={{
-            background: "#1D9E75",
+            background: "#304D32",
             color: "white",
             border: "none",
             borderRadius: 8,

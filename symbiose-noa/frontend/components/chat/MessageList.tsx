@@ -17,7 +17,7 @@ export default function MessageList({ messages }: { messages: Message[] }) {
       {messages.length === 0 && (
         <div style={{ textAlign: "center", color: "#aaa", marginTop: 80 }}>
           <p style={{ fontSize: 32, margin: "0 0 8px" }}>🌿</p>
-          <p style={{ margin: 0 }}>Bonjour, je suis NOA. Comment puis-je vous aider ?</p>
+          <p style={{ margin: 0 }}>Bonjour, je suis Symbiose. Comment puis-je vous aider ?</p>
         </div>
       )}
       {messages.map((msg) => (
@@ -26,7 +26,7 @@ export default function MessageList({ messages }: { messages: Message[] }) {
           style={{
             alignSelf: msg.role === "user" ? "flex-end" : "flex-start",
             maxWidth: "70%",
-            background: msg.role === "user" ? "#1D9E75" : "white",
+            background: msg.role === "user" ? "#304D32" : "white",
             color: msg.role === "user" ? "white" : "#1a1a1a",
             padding: "12px 16px",
             borderRadius: 12,

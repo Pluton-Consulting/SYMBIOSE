@@ -1,55 +1,75 @@
-"use client"
-import { useEffect, useState } from "react"
-import { useSession } from "next-auth/react"
-import { apiRequest } from "@/lib/api"
+// Cartes KPI du Dashboard Direction — composant purement présentational.
+// Les valeurs sont fournies par le parent (SuperviseurClient) via `data`.
 
-interface Stats {
-  threads: number
-  today: {
-    request_count: number
-    tokens_total: number
-    cost_eur: number
-  }
-  quota_mensuel: number | null
+export interface StatsCardsData {
+  liveSessions?: number | string | null
+  requestsToday?: number | string | null
+  costMonth?: number | string | null
+  pendingSkills?: number | string | null
 }
 
-export default function StatsCards() {
-  const { data: session } = useSession()
-  const [stats, setStats] = useState<Stats | null>(null)
+function fmtNumber(v: number | string | null | undefined): string {
+  if (v === null || v === undefined || v === "") return "—"
+  return String(v)
+}
 
-  useEffect(() => {
-    if (!session?.backendToken) return
-    apiRequest<Stats>("/api/dashboard/stats", { token: session.backendToken })
-      .then(setStats)
-      .catch(() => {})
-  }, [session])
+function fmtEuro(v: number | string | null | undefined): string {
+  if (v === null || v === undefined || v === "") return "—"
+  const n = Number(v)
+  if (Number.isNaN(n)) return "—"
+  return `${n.toFixed(2)} €`
+}
 
+export default function StatsCards({ data }: { data?: StatsCardsData | null }) {
   const cards = [
-    { label: "Conversations", value: stats?.threads ?? "—" },
-    { label: "Requêtes aujourd'hui", value: stats?.today.request_count ?? "—" },
-    { label: "Coût du jour", value: stats ? `€${Number(stats.today.cost_eur).toFixed(4)}` : "—" },
-    { label: "Quota mensuel", value: stats?.quota_mensuel ?? "Illimité" },
+    { label: "Sessions live", value: fmtNumber(data?.liveSessions) },
+    { label: "Requêtes du jour", value: fmtNumber(data?.requestsToday) },
+    { label: "Coût du mois", value: fmtEuro(data?.costMonth) },
+    { label: "Skills en attente", value: fmtNumber(data?.pendingSkills) },
   ]
 
   return (
-    <div style={{
-      display: "grid",
-      gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
-      gap: 16,
-      marginBottom: 32,
-    }}>
+    <div
+      style={{
+        display: "grid",
+        gridTemplateColumns: "repeat(4, 1fr)",
+        gap: 20,
+        marginBottom: 24,
+      }}
+    >
       {cards.map((card) => (
         <div
           key={card.label}
           style={{
-            background: "white",
-            borderRadius: 12,
-            padding: "20px 24px",
-            boxShadow: "0 1px 3px rgba(0,0,0,0.08)",
+            background: "var(--color-surface)",
+            borderRadius: "var(--radius-card)",
+            padding: 24,
+            boxShadow: "var(--shadow-card)",
           }}
         >
-          <p style={{ color: "#888", fontSize: 12, margin: "0 0 8px" }}>{card.label}</p>
-          <p style={{ fontSize: 24, fontWeight: 600, margin: 0 }}>{card.value}</p>
+          <div
+            style={{
+              fontSize: 11,
+              fontWeight: 600,
+              color: "var(--color-text-muted)",
+              textTransform: "uppercase",
+              letterSpacing: "0.06em",
+              marginBottom: 10,
+            }}
+          >
+            {card.label}
+          </div>
+          <div
+            style={{
+              fontSize: 36,
+              fontWeight: 800,
+              color: "var(--color-text-primary)",
+              lineHeight: 1,
+              letterSpacing: "-1px",
+            }}
+          >
+            {card.value}
+          </div>
         </div>
       ))}
     </div>

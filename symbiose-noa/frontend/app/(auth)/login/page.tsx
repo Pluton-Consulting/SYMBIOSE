@@ -1,7 +1,7 @@
 "use client"
 import { useState } from "react"
 
-type State = "idle" | "loading" | "sent" | "error"
+type State = "idle" | "loading" | "sent" | "refused" | "error"
 
 export default function LoginPage() {
   const [email, setEmail] = useState("")
@@ -24,11 +24,23 @@ export default function LoginPage() {
         }
       )
       if (!res.ok) throw new Error()
+      // Réponse volontairement uniforme côté serveur (anti-énumération de comptes) :
+      // on affiche toujours "email envoyé", qu'il existe ou non.
       setState("sent")
     } catch {
       setError("Une erreur est survenue. Réessayez.")
       setState("error")
     }
+  }
+
+  const card: React.CSSProperties = {
+    background: "white",
+    borderRadius: 16,
+    padding: "40px 48px",
+    boxShadow: "0 1px 3px rgba(0,0,0,0.08)",
+    textAlign: "center",
+    maxWidth: 380,
+    width: "100%",
   }
 
   return (
@@ -39,20 +51,14 @@ export default function LoginPage() {
       justifyContent: "center",
       background: "#f8f7f2",
     }}>
-      <div style={{
-        background: "white",
-        borderRadius: 16,
-        padding: "40px 48px",
-        boxShadow: "0 1px 3px rgba(0,0,0,0.08)",
-        textAlign: "center",
-        maxWidth: 380,
-        width: "100%",
-      }}>
-        <div style={{ fontSize: 32, marginBottom: 8 }}>🌿</div>
-        <h1 style={{ fontSize: 22, fontWeight: 500, margin: "0 0 4px" }}>NOA</h1>
-        <p style={{ color: "#888", fontSize: 14, margin: "0 0 32px" }}>Symbiose Paysage</p>
+      <div style={card}>
+        <img
+          src="/symbiose-paysage.svg"
+          alt="Symbiose Paysage"
+          style={{ width: 210, maxWidth: "85%", height: "auto", display: "block", margin: "0 auto 32px" }}
+        />
 
-        {state === "sent" ? (
+        {state === "sent" && (
           <div>
             <div style={{ fontSize: 40, marginBottom: 16 }}>📬</div>
             <p style={{ fontWeight: 500, margin: "0 0 8px" }}>Vérifiez votre boîte mail</p>
@@ -62,12 +68,31 @@ export default function LoginPage() {
             </p>
             <button
               onClick={() => { setState("idle"); setEmail("") }}
-              style={{ color: "#1D9E75", background: "none", border: "none", cursor: "pointer", fontSize: 13 }}
+              style={{ color: "#304D32", background: "none", border: "none", cursor: "pointer", fontSize: 13 }}
             >
               Utiliser un autre email
             </button>
           </div>
-        ) : (
+        )}
+
+        {state === "refused" && (
+          <div>
+            <div style={{ fontSize: 40, marginBottom: 16 }}>🔒</div>
+            <p style={{ fontWeight: 500, margin: "0 0 8px", color: "#c53030" }}>Accès non autorisé</p>
+            <p style={{ color: "#888", fontSize: 13, margin: "0 0 24px" }}>
+              L'adresse <strong>{email}</strong> n'est pas enregistrée.<br />
+              Contactez votre administrateur.
+            </p>
+            <button
+              onClick={() => { setState("idle"); setEmail("") }}
+              style={{ color: "#304D32", background: "none", border: "none", cursor: "pointer", fontSize: 13 }}
+            >
+              Essayer un autre email
+            </button>
+          </div>
+        )}
+
+        {(state === "idle" || state === "loading" || state === "error") && (
           <form onSubmit={handleSubmit}>
             <input
               type="email"
@@ -95,7 +120,7 @@ export default function LoginPage() {
               style={{
                 width: "100%",
                 padding: "12px 24px",
-                background: "#1D9E75",
+                background: "#304D32",
                 color: "white",
                 border: "none",
                 borderRadius: 8,
@@ -105,7 +130,7 @@ export default function LoginPage() {
                 opacity: state === "loading" ? 0.7 : 1,
               }}
             >
-              {state === "loading" ? "Envoi en cours..." : "Recevoir un lien de connexion"}
+              {state === "loading" ? "Vérification..." : "Recevoir un lien de connexion"}
             </button>
           </form>
         )}

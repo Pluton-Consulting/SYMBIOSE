@@ -1,5 +1,3 @@
-version: "3.9"
-
 services:
   postgres:
     image: pgvector/pgvector:pg16
@@ -10,6 +8,7 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./backend/database/migrations:/migrations:ro
+      - ./backend/database/init:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
       interval: 10s
@@ -24,10 +23,36 @@ services:
       postgres:
         condition: service_healthy
     env_file: .env
+    environment:
+      # Bind mount Windows : inotify ne remonte pas → uvicorn --reload doit sonder les fichiers.
+      WATCHFILES_FORCE_POLLING: "true"
     ports:
-      - "127.0.0.1:8000:8000"
+      - "0.0.0.0:8000:8000"
     volumes:
       - ./backend:/app
+    # Rend Ollama (LLM local, palier LIGHT) accessible sur l'hôte Windows/WSL
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - noa_network
+
+  browser-worker:
+    build: ./browser-worker
+    depends_on:
+      postgres:
+        condition: service_healthy
+    env_file: .env
+    environment:
+      # Overrides propres au worker (chemins internes au conteneur)
+      SITE_CREDENTIALS_FILE: /secrets/site_credentials.json
+      # /tmp est inscriptible par l'utilisateur non-root du conteneur (le volume /sessions est root).
+      BROWSER_SESSIONS_DIR: /tmp/sessions
+      BACKEND_URL: http://backend:8000
+    volumes:
+      - ./backend/secrets:/secrets:ro      # identifiants par site (lecture seule)
+      - browser_sessions:/sessions         # sessions connectées persistées (rw)
+    shm_size: '2gb'                        # obligatoire pour la stabilité de Chromium
+    # AUCUN port publié : service interne, joignable seulement sur noa_network.
     networks:
       - noa_network
 
@@ -38,13 +63,26 @@ services:
     environment:
       NEXTAUTH_URL: ${NEXTAUTH_URL}
       NEXTAUTH_SECRET: ${NEXTAUTH_SECRET}
-      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID}
-      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET}
-      NEXT_PUBLIC_API_URL: http://backend:8000
+      NEXT_PUBLIC_API_URL: http://localhost:8000
+      BACKEND_URL: http://backend:8000
+      # Bind mount Windows : inotify ne remonte pas → next dev doit sonder les fichiers.
+      WATCHPACK_POLLING: "true"
+      CHOKIDAR_USEPOLLING: "true"
+    # Code monté en volume : next dev recharge les changements à chaud (comme le backend).
+    # Volumes anonymes pour préserver node_modules et .next du conteneur (pas ceux de l'hôte Windows).
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+      - /app/.next
     ports:
-      - "127.0.0.1:3000:3000"
+      - "0.0.0.0:3000:3000"
     networks:
       - noa_network
+
+  # langfuse-server : DÉSACTIVÉ — on utilise Langfuse Cloud (cf. .env LANGFUSE_BASE_URL).
+  # Le conteneur auto-hébergé consommait ~0,6 Go de RAM (économie sur petit VPS).
+  # Pour le réactiver, restaurer ce bloc depuis git (image langfuse/langfuse:2 +
+  # DATABASE_URL postgres/langfuse + clés d'init) et repasser langfuse_base_url en local.
 
   nginx:
     image: nginx:alpine
@@ -64,3 +102,4 @@ networks:
 
 volumes:
   postgres_data:
+  browser_sessions:

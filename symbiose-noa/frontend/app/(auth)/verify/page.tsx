@@ -1,13 +1,17 @@
 "use client"
-import { useEffect, useState } from "react"
+import { Suspense, useEffect, useRef, useState } from "react"
 import { signIn } from "next-auth/react"
 import { useSearchParams } from "next/navigation"
 
-export default function VerifyPage() {
+function VerifyContent() {
   const params = useSearchParams()
   const [status, setStatus] = useState<"loading" | "error">("loading")
+  // Le lien est à usage unique : on garantit un SEUL appel de vérification,
+  // même avec le double-rendu de React en dev (sinon le token est consommé 2×).
+  const started = useRef(false)
 
   useEffect(() => {
+    if (started.current) return
     const token = params.get("token")
     const email = params.get("email")
 
@@ -15,9 +19,14 @@ export default function VerifyPage() {
       setStatus("error")
       return
     }
+    started.current = true
 
-    signIn("credentials", { token, email, callbackUrl: "/chat" }).then((res) => {
-      if (res?.error) setStatus("error")
+    signIn("credentials", { token, email, redirect: false }).then((res) => {
+      if (res?.error) {
+        setStatus("error")
+      } else {
+        window.location.href = "/chat"
+      }
     })
   }, [params])
 
@@ -51,7 +60,7 @@ export default function VerifyPage() {
             </p>
             <a href="/login" style={{
               display: "inline-block",
-              background: "#1D9E75",
+              background: "#304D32",
               color: "white",
               padding: "10px 20px",
               borderRadius: 8,
@@ -65,5 +74,13 @@ export default function VerifyPage() {
         )}
       </div>
     </div>
+  )
+}
+
+export default function VerifyPage() {
+  return (
+    <Suspense>
+      <VerifyContent />
+    </Suspense>
   )
 }
