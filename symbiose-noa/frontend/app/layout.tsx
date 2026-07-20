@@ -61,7 +61,11 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         ` }} />
       </head>
       <body>
-        <SessionProvider>{children}</SessionProvider>
+        {/* refetch coupé : évite le repolling en boucle de /api/auth/session (jusqu'à 6 s
+            quand le process compile) qui bloquait la navigation. La session reste valide via le JWT. */}
+        <SessionProvider refetchOnWindowFocus={false} refetchInterval={0}>
+          {children}
+        </SessionProvider>
       </body>
     </html>
   )

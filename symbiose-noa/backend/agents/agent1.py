@@ -11,10 +11,11 @@ from llm.router import get_llm, LLMTier
 
 SYSTEM_PROMPT = """Tu es Symbiose, assistant IA interne de Symbiose Paysage, cabinet d'architecture paysagère et d'aménagements extérieurs.
 Tu aides les équipes (commerciaux, bureau d'études, conducteurs de travaux, administratif, terrain) dans leur travail quotidien.
-Tu as accès aux documents internes : devis, chantiers, catalogues fournisseurs, méthodes internes, plannings.
+Tu peux rechercher dans la mémoire d'entreprise (devis, chantiers, clients, catalogues, méthodes internes, plannings). Les documents pertinents te sont fournis ci-dessous sous « Documents internes disponibles ». IMPORTANT : si aucun document ne t'est fourni, c'est que la mémoire n'en contient pas (encore) sur ce sujet — dis-le honnêtement (« je n'ai aucun document là-dessus pour l'instant »), ne liste JAMAIS de contenu imaginaire et ne prétends pas avoir des devis/chantiers si aucun ne t'est donné.
 Réponds toujours en français. Sois précis, professionnel et concis.
 Certaines valeurs peuvent apparaître masquées sous forme de balises [PER_1], [MONTANT_2], etc. — conserve ces balises telles quelles dans ta réponse, elles seront réinjectées automatiquement.
-Si tu n'as pas l'information demandée dans les documents fournis, dis-le clairement — n'invente jamais un montant, un nom ou une date."""
+Pour une salutation ou une question générale (« bonjour », « que sais-tu faire ? »), réponds naturellement et chaleureusement : présente-toi en une phrase et propose ton aide (retrouver un devis, un client, un chantier, préparer une réponse…). Ne demande JAMAIS de « préciser » un simple bonjour.
+La règle « ne rien inventer » vaut pour les DONNÉES métier (montants, noms, dates) : si une info manque dans les documents, dis-le clairement — mais reste conversationnel et serviable, ne bloque pas sur une salutation."""
 
 
 # ── Nœuds ────────────────────────────────────────────────────────────
@@ -85,20 +86,37 @@ async def llm_node(state: AgentState, config=None) -> dict:
             "error": "ner_unavailable",
         }
 
-    llm = get_llm(LLMTier(state.get("llm_tier", "standard")))
+    from optim.tokens import trim_chunks, response_cache
+
+    tier = state.get("llm_tier", "standard")
+    llm = get_llm(LLMTier(tier))
 
     chunks = state.get("anonymized_chunks")
     if chunks is None:
         chunks = state.get("raw_chunks") or []
+    chunks = trim_chunks(chunks)   # borne le nombre de chunks + le volume de contexte
     context_text = "\n\n---\n\n".join(str(c) for c in chunks) if chunks else ""
 
     query = state.get("anonymized_query") or state.get("query", "")
+
+    # Cache exact (palier|requête|contexte anonymisés) : évite un appel LLM identique récent.
+    # Clé et valeur sans PII (la réhydratation se fait ensuite, par requête).
+    cached = response_cache.get(tier, query, context_text)
+    if cached is not None:
+        return {"llm_response": cached, "model_used": "cache", "tokens_in": 0, "tokens_out": 0}
+
     human_content = f"Question : {query}"
     if context_text:
         human_content = f"Documents internes disponibles :\n{context_text}\n\n{human_content}"
+    else:
+        human_content = ("(Aucun document interne n'a été trouvé pour cette requête : la mémoire "
+                         "d'entreprise est vide ou ne contient rien sur ce sujet. Réponds honnêtement, "
+                         "sans inventer de contenu.)\n\n" + human_content)
 
     messages = [SystemMessage(content=SYSTEM_PROMPT), HumanMessage(content=human_content)]
     response = await llm.ainvoke(messages, config=config)
+
+    response_cache.set(tier, query, context_text, response.content)
 
     usage = getattr(response, "usage_metadata", None) or {}
     return {

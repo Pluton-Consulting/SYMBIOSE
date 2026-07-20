@@ -23,6 +23,12 @@ function fmtTime(iso: string) {
   catch { return "--:--:--" }
 }
 
+// Aplati les métadonnées JSONB en paires clé=valeur affichables.
+function metaEntries(m: any): [string, string][] {
+  if (!m || typeof m !== "object") return []
+  return Object.entries(m).map(([k, v]) => [k, typeof v === "object" ? JSON.stringify(v) : String(v)])
+}
+
 export default function SuperviseurClient({ apiUrl, token }: Props) {
   const [system, setSystem] = useState<any>(null)
   const [logs, setLogs] = useState<any[]>([])
@@ -30,6 +36,7 @@ export default function SuperviseurClient({ apiUrl, token }: Props) {
   const [live, setLive] = useState(true)
   const [err, setErr] = useState<string>("")
   const [tick, setTick] = useState(0)
+  const [open, setOpen] = useState<Record<string, boolean>>({})
   const logBoxRef = useRef<HTMLDivElement>(null)
 
   const refresh = useCallback(async () => {
@@ -57,7 +64,7 @@ export default function SuperviseurClient({ apiUrl, token }: Props) {
   }, [refresh, live])
 
   const kpi = (label: string, value: any, color = C.text) => (
-    <div style={{ background: C.panel2, border: `1px solid ${C.border}`, borderRadius: 8, padding: "10px 12px" }}>
+    <div className="sym-fade" style={{ background: C.panel2, border: `1px solid ${C.border}`, borderRadius: 8, padding: "10px 12px" }}>
       <div style={{ fontSize: 10, color: C.dim, textTransform: "uppercase", letterSpacing: "0.08em" }}>{label}</div>
       <div style={{ fontFamily: C.mono, fontSize: 16, fontWeight: 600, color, marginTop: 3 }}>{value ?? "—"}</div>
     </div>
@@ -67,9 +74,16 @@ export default function SuperviseurClient({ apiUrl, token }: Props) {
 
   return (
     <div style={{ minHeight: "calc(100vh - 64px)", background: C.bg, color: C.text, fontFamily: C.mono, padding: "20px 24px" }}>
+      <style>{`
+        @keyframes symFadeUp { from{opacity:0;transform:translateY(8px)} to{opacity:1;transform:translateY(0)} }
+        @keyframes symLivePulse { 0%,100%{box-shadow:0 0 0 0 rgba(63,217,139,.55)} 50%{box-shadow:0 0 0 7px rgba(63,217,139,0)} }
+        .sym-fade{animation:symFadeUp .45s ease both}
+        .sym-live{animation:symLivePulse 1.7s ease-in-out infinite}
+        @media (prefers-reduced-motion: reduce){ .sym-fade,.sym-live{animation:none} }
+      `}</style>
       {/* Header */}
       <div style={{ display: "flex", alignItems: "center", gap: 14, marginBottom: 18 }}>
-        <span style={{ width: 9, height: 9, borderRadius: "50%", background: live ? C.green : C.dim, boxShadow: live ? `0 0 8px ${C.green}` : "none" }} />
+        <span className={live ? "sym-live" : undefined} style={{ width: 9, height: 9, borderRadius: "50%", background: live ? C.green : C.dim }} />
         <div style={{ fontSize: 18, fontWeight: 700, letterSpacing: "-0.3px" }}>Console développeur</div>
         <div style={{ fontSize: 12, color: C.dim }}>super_admin · flux temps réel</div>
         <div style={{ flex: 1 }} />
@@ -106,20 +120,63 @@ export default function SuperviseurClient({ apiUrl, token }: Props) {
         {/* Live log stream */}
         <div style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 10, overflow: "hidden" }}>
           <div style={{ padding: "10px 14px", borderBottom: `1px solid ${C.border}`, fontSize: 12, color: C.dim, display: "flex", justifyContent: "space-between" }}>
-            <span>audit_log · {logs.length} événements</span>
+            <span>audit_log · {logs.length} événements · cliquer une ligne pour le détail</span>
             <span>maj #{tick}</span>
           </div>
-          <div ref={logBoxRef} style={{ maxHeight: 460, overflowY: "auto", padding: "8px 0" }}>
+          <div ref={logBoxRef} style={{ maxHeight: 520, overflowY: "auto", padding: "6px 0" }}>
             {logs.length === 0 && <div style={{ padding: 20, color: C.dim, fontSize: 12 }}>— aucun événement —</div>}
             {logs.map((l: any) => {
               const ok = l.success !== false
+              const entries = metaEntries(l.metadata)
+              const isOpen = !!open[l.id]
+              const hasDetail = entries.length > 0 || !!l.error_message
+              const toks = (l.tokens_in || 0) + (l.tokens_out || 0)
               return (
-                <div key={l.id} style={{ display: "flex", gap: 10, padding: "4px 14px", fontSize: 12.5, borderBottom: `1px solid ${C.panel2}`, whiteSpace: "nowrap" }}>
-                  <span style={{ color: C.dim }}>{fmtTime(l.created_at)}</span>
-                  <span style={{ color: ok ? C.green : C.red, width: 12 }}>{ok ? "✓" : "✗"}</span>
-                  <span style={{ color: C.text, minWidth: 150, fontWeight: 600 }}>{l.action}</span>
-                  <span style={{ color: C.blue }}>{l.agent_id ? `[${l.agent_id}]` : ""}</span>
-                  <span style={{ color: C.dim, overflow: "hidden", textOverflow: "ellipsis" }}>{l.user_id ? String(l.user_id).slice(0, 8) : "system"}</span>
+                <div key={l.id} style={{ borderBottom: `1px solid ${C.panel2}` }}>
+                  {/* Ligne principale */}
+                  <div
+                    onClick={() => hasDetail && setOpen((o) => ({ ...o, [l.id]: !o[l.id] }))}
+                    style={{ display: "flex", gap: 10, padding: "5px 14px", fontSize: 12.5, whiteSpace: "nowrap", alignItems: "center", cursor: hasDetail ? "pointer" : "default" }}
+                  >
+                    <span style={{ color: C.dim, width: 62 }}>{fmtTime(l.created_at)}</span>
+                    <span style={{ color: ok ? C.green : C.red, width: 12 }}>{ok ? "✓" : "✗"}</span>
+                    <span style={{ color: ok ? C.text : C.red, minWidth: 172, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis" }}>{l.action}</span>
+                    <span style={{ color: C.blue, width: 92, overflow: "hidden", textOverflow: "ellipsis" }}>{l.agent_id ? `[${l.agent_id}]` : ""}</span>
+                    <span style={{ color: C.amber, width: 120, overflow: "hidden", textOverflow: "ellipsis" }}>{l.model_used || ""}</span>
+                    <span style={{ color: C.dim, width: 96, textAlign: "right" }}>
+                      {l.duration_ms != null ? `${l.duration_ms}ms` : ""}{toks ? ` · ${toks}tk` : ""}
+                    </span>
+                    <span style={{ flex: 1 }} />
+                    <span style={{ color: C.dim }}>{l.user_id ? String(l.user_id).slice(0, 8) : "system"}</span>
+                    <span style={{ color: C.dim, width: 14, textAlign: "center" }}>{hasDetail ? (isOpen ? "▾" : "▸") : ""}</span>
+                  </div>
+
+                  {/* Aperçu compact (replié) */}
+                  {!isOpen && hasDetail && (
+                    <div style={{ padding: "0 14px 6px 88px", fontSize: 11.5, color: C.dim, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                      {l.error_message && <span style={{ color: C.red }}>⚠ {l.error_message}{entries.length ? " · " : ""}</span>}
+                      {entries.slice(0, 5).map(([k, v], i) => (
+                        <span key={k}>{i > 0 && " · "}<span style={{ color: C.dim }}>{k}=</span><span style={{ color: C.text }}>{v.length > 44 ? v.slice(0, 44) + "…" : v}</span></span>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Détail complet (déplié) */}
+                  {isOpen && (
+                    <div style={{ padding: "2px 14px 10px 88px", fontSize: 11.5 }}>
+                      {l.error_message && <div style={{ color: C.red, marginBottom: 6, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>⚠ {l.error_message}</div>}
+                      {entries.length > 0 && (
+                        <pre style={{ margin: 0, color: C.text, background: C.panel2, border: `1px solid ${C.border}`, borderRadius: 6, padding: "8px 10px", whiteSpace: "pre-wrap", wordBreak: "break-word", lineHeight: 1.55 }}>
+                          {entries.map(([k, v]) => `${k}: ${v}`).join("\n")}
+                        </pre>
+                      )}
+                      <div style={{ color: C.dim, marginTop: 6 }}>
+                        id {String(l.id).slice(0, 8)} · user {l.user_id ? String(l.user_id) : "system"}
+                        {toks ? ` · ${l.tokens_in || 0}→${l.tokens_out || 0} tokens` : ""}
+                        {l.cost_eur ? ` · ${Number(l.cost_eur).toFixed(4)}€` : ""}
+                      </div>
+                    </div>
+                  )}
                 </div>
               )
             })}

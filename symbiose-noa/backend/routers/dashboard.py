@@ -1,3 +1,5 @@
+import json
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from auth.dependencies import get_current_user
 from database.models import User
@@ -69,15 +71,59 @@ async def get_activity(
     current_user: User = Depends(get_current_user),
     limit: int = 20,
 ):
-    """Journal d'activité récent (audit_log), le plus récent en premier."""
+    """Journal d'activité récent (audit_log), le plus récent en premier.
+
+    Renvoie l'intégralité des métadonnées techniques (metadata JSONB, message
+    d'erreur, modèle, tokens, durée) pour la console développeur — super_admin only.
+    """
     _exiger(current_user.role, "view_audit_log")
     async with get_rls_db(str(current_user.id), current_user.role) as conn:
         rows = await conn.fetch(
-            "SELECT id, user_id, action, agent_id, success, created_at "
+            "SELECT id, user_id, action, agent_id, model_used, tokens_in, tokens_out, "
+            "cost_eur, duration_ms, success, error_message, metadata, created_at "
             "FROM audit_log ORDER BY created_at DESC LIMIT $1",
             limit,
         )
-    return [dict(row) for row in rows]
+    out = []
+    for row in rows:
+        d = dict(row)
+        # asyncpg renvoie le JSONB en str (aucun codec enregistré) → on désérialise.
+        m = d.get("metadata")
+        if isinstance(m, str):
+            try:
+                d["metadata"] = json.loads(m)
+            except Exception:
+                d["metadata"] = None
+        out.append(d)
+    return out
+
+
+@router.get("/token-usage")
+async def get_token_usage(current_user: User = Depends(get_current_user), days: int = 7):
+    """Consommation de tokens (audit_log) par modèle + totaux + stats du cache d'optimisation."""
+    _exiger(current_user.role, "view_costs_global")
+    days = max(1, min(days, 90))
+    async with get_rls_db(str(current_user.id), current_user.role) as conn:
+        by_model = await conn.fetch(
+            "SELECT model_used, COUNT(*) AS n, COALESCE(SUM(tokens_in),0) AS tokens_in, "
+            "COALESCE(SUM(tokens_out),0) AS tokens_out, COALESCE(SUM(cost_eur),0) AS cost_eur "
+            "FROM audit_log WHERE created_at > NOW() - ($1::int * INTERVAL '1 day') "
+            "AND model_used IS NOT NULL GROUP BY model_used ORDER BY tokens_in + tokens_out DESC",
+            days,
+        )
+        totals = await conn.fetchrow(
+            "SELECT COALESCE(SUM(tokens_in),0) AS tokens_in, COALESCE(SUM(tokens_out),0) AS tokens_out, "
+            "COALESCE(SUM(cost_eur),0) AS cost_eur, COUNT(*) AS n FROM audit_log "
+            "WHERE created_at > NOW() - ($1::int * INTERVAL '1 day') AND model_used IS NOT NULL",
+            days,
+        )
+    from optim.tokens import response_cache
+    return {
+        "days": days,
+        "totals": dict(totals) if totals else {},
+        "by_model": [dict(r) for r in by_model],
+        "cache": response_cache.stats(),
+    }
 
 
 # ============================================================

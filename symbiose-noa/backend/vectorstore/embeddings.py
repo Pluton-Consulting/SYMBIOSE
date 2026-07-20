@@ -13,7 +13,10 @@ JAMAIS. Sans embeddings, la recherche RAG retombe sur pg_trgm.
 
 On ne logge jamais le contenu vectorisé, uniquement des métadonnées.
 """
+import asyncio
+import datetime
 import logging
+import time
 from typing import Optional
 
 import httpx
@@ -30,6 +33,49 @@ def _warn_once(msg: str) -> None:
     if not _warned_no_key:
         logger.warning(msg)
         _warned_no_key = True
+
+
+# ── Garde-fou quota Gemini (tier gratuit) : débit + plafond/jour + cooldown 429 ──
+class _GeminiThrottle:
+    def __init__(self) -> None:
+        self._lock = asyncio.Lock()
+        self._last = 0.0
+        self._day: Optional[datetime.date] = None
+        self._count = 0
+        self._cooldown_until = 0.0
+
+    async def gate(self) -> tuple[bool, str]:
+        async with self._lock:
+            today = datetime.datetime.utcnow().date()
+            if today != self._day:
+                self._day, self._count = today, 0
+            now = time.monotonic()
+            if now < self._cooldown_until:
+                return False, "cooldown quota (429)"
+            if self._count >= settings.embedding_daily_request_cap:
+                return False, "plafond quotidien atteint"
+            wait = settings.embedding_min_interval_s - (now - self._last)
+            if wait > 0:
+                await asyncio.sleep(wait)
+            self._last = time.monotonic()
+            self._count += 1
+            return True, ""
+
+    async def hit_quota(self) -> None:
+        async with self._lock:
+            self._cooldown_until = time.monotonic() + settings.embedding_cooldown_s
+
+    def stats(self) -> dict:
+        return {"jour": str(self._day), "requetes_jour": self._count,
+                "plafond_jour": settings.embedding_daily_request_cap}
+
+
+_gemini_throttle = _GeminiThrottle()
+
+
+def embed_stats() -> dict:
+    """Stats du garde-fou quota Gemini (supervision)."""
+    return _gemini_throttle.stats()
 
 
 # ── OpenAI ────────────────────────────────────────────────────────────────
@@ -70,14 +116,20 @@ async def _embed_gemini(texts: list[str]) -> list[Optional[list[float]]]:
         _warn_once("GOOGLE_API_KEY absente : embeddings gemini désactivés (dégradation pg_trgm).")
         return [None] * len(texts)
 
+    ok, reason = await _gemini_throttle.gate()
+    if not ok:
+        _warn_once(f"Embeddings Gemini en pause ({reason}) — chunks conservés, reprise auto.")
+        return [None] * len(texts)
+
     model = settings.gemini_embedding_model
+    max_chars = settings.embedding_max_chars
     url = (f"https://generativelanguage.googleapis.com/v1beta/models/"
            f"{model}:batchEmbedContents?key={settings.google_api_key}")
     body = {
         "requests": [
             {
                 "model": f"models/{model}",
-                "content": {"parts": [{"text": t}]},
+                "content": {"parts": [{"text": t[:max_chars]}]},
                 "outputDimensionality": settings.embedding_dimensions,
             }
             for t in texts
@@ -86,6 +138,11 @@ async def _embed_gemini(texts: list[str]) -> list[Optional[list[float]]]:
     try:
         async with httpx.AsyncClient(timeout=60) as client:
             r = await client.post(url, json=body)
+            if r.status_code == 429:
+                await _gemini_throttle.hit_quota()
+                logger.warning("Gemini 429 (quota) — pause %ss, backlog conservé",
+                               settings.embedding_cooldown_s)
+                return [None] * len(texts)
             r.raise_for_status()
             data = r.json()
         embeddings = data.get("embeddings", [])
@@ -137,11 +194,19 @@ async def embed_texts(texts: list[str]) -> list[Optional[list[float]]]:
         return [None] * len(texts)
 
     provider = _PROVIDERS.get(settings.embedding_provider, _embed_gemini)
-    vectors = await provider([t for _, t in to_embed])
+
+    # Dédup : chaque texte identique n'est vectorisé qu'une fois (économie de quota).
+    unique_texts: list[str] = []
+    seen: dict[str, int] = {}
+    for _, t in to_embed:
+        if t not in seen:
+            seen[t] = len(unique_texts)
+            unique_texts.append(t)
+    unique_vectors = await provider(unique_texts)
 
     results: list[Optional[list[float]]] = [None] * len(texts)
-    for (orig_idx, _), vec in zip(to_embed, vectors):
-        results[orig_idx] = vec
+    for orig_idx, t in to_embed:
+        results[orig_idx] = unique_vectors[seen[t]]
     return results
 
 

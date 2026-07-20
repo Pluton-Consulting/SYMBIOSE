@@ -15,6 +15,10 @@ class AgentState(TypedDict):
     query: str
     has_attachment: bool
     attachment_type: Optional[str]  # 'pdf', 'image', 'sketchup'
+    attachment_b64: Optional[str]   # contenu encodé base64 (image nettoyée / page PDF rendue)
+    attachment_mime: Optional[str]  # 'image/jpeg', 'application/pdf', ...
+    vision_analysis: Optional[str]  # description brute produite par le modèle vision (Agent 2)
+    extracted_data: Optional[dict]  # extraction structurée (postes, surfaces, contraintes)
 
     # Routage
     target_agent: Optional[str]     # 'agent1', 'agent2', 'agent3', 'multi'

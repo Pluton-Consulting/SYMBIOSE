@@ -15,7 +15,7 @@ logger = logging.getLogger("symbiose.browser.client")
 
 
 async def start_task(job_id: str, task_prompt: str, allowed_domains: list[str],
-                     user_id: str, ingest: bool = False,
+                     user_id: str, ingest: bool = False, readonly: bool = True,
                      output_schema: Optional[dict] = None) -> dict:
     async with httpx.AsyncClient(timeout=30) as client:
         r = await client.post(
@@ -26,6 +26,7 @@ async def start_task(job_id: str, task_prompt: str, allowed_domains: list[str],
                 "allowed_domains": allowed_domains,
                 "user_id": user_id,
                 "ingest": ingest,
+                "readonly": readonly,
                 "output_schema": output_schema,
             },
         )

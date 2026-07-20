@@ -47,6 +47,7 @@ class RunTaskRequest(BaseModel):
     task: str
     allowed_domains: list[str] = []
     ingest: bool = False
+    readonly: bool = True   # False = mode écriture (saisie/clic/soumission) pour cette tâche
     output_schema: Optional[dict] = None
 
 
@@ -86,7 +87,8 @@ async def run_task(body: RunTaskRequest, current_user: User = Depends(get_curren
 
     try:
         await client.start_task(str(job_id), task, domains, str(current_user.id),
-                                ingest=body.ingest, output_schema=body.output_schema)
+                                ingest=body.ingest, readonly=body.readonly,
+                                output_schema=body.output_schema)
     except Exception as e:
         async with get_db() as conn:
             await conn.execute(

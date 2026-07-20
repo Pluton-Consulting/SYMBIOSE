@@ -33,7 +33,7 @@ class Settings(BaseSettings):
     # ⚠ base_url / nom de modèle à confirmer côté LongCat.
     longcat_api_key: Optional[str] = None
     longcat_base_url: str = "https://api.longcat.chat/openai/v1"
-    model_longcat: str = "LongCat-Flash-Chat"
+    model_longcat: str = "LongCat-2.0"   # seul modèle supporté sur api.longcat.chat (vérifié)
 
     # DeepSeek V4 (API directe OpenAI-compatible) — FALLBACK qualité
     # deepseek-v4-pro : 1M contexte · ~ $0.435 / 1M in (cache miss), $0.0036 (cache hit) · $0.87 / 1M out.
@@ -53,14 +53,29 @@ class Settings(BaseSettings):
     groq_api_key: Optional[str] = None
     model_groq_light: str = "llama-3.1-8b-instant"      # rapide, gros quota séparé
     model_groq_large: str = "llama-3.3-70b-versatile"   # plus gros, quota journalier limité
+    model_groq_vision: str = "meta-llama/llama-4-scout-17b-16e-instruct"  # multimodal (Agent 2)
 
     # Anthropic (optionnel) — vision agent 2 / palier COMPLEX si clé fournie
     anthropic_api_key: Optional[str] = None
     model_anthropic_vision: str = "claude-sonnet-4-6"
 
+    # Vision (Agent 2) : ordre de préférence anthropic > groq. Désactivable.
+    vision_enabled: bool = True
+
     # Ollama (local, dernier recours 100 % gratuit)
     ollama_base_url: str = "http://localhost:11434"
     ollama_model_light: str = "mistral:7b"
+
+    # ── Optimisation des tokens (réduction coût + latence) ──
+    optim_max_rag_chunks: int = 5           # nb max de chunks RAG envoyés au LLM
+    optim_max_context_chars: int = 6000     # budget total de contexte (caractères)
+    optim_history_keep: int = 8             # messages d'historique conservés (fenêtre)
+    optim_cache_enabled: bool = True        # cache exact des réponses (query+contexte identiques)
+    optim_cache_ttl_s: int = 900            # durée de vie d'une entrée de cache (s)
+    optim_cache_max: int = 500              # nb max d'entrées en cache (LRU)
+    optim_max_tokens_light: int = 1024      # plafond sortie palier LIGHT
+    optim_max_tokens_standard: int = 3072   # plafond sortie palier STANDARD
+    optim_max_tokens_complex: int = 4096    # plafond sortie palier COMPLEX
 
     # Résilience (retry + backoff + cascade de fallback)
     llm_max_retries: int = 3
@@ -82,6 +97,11 @@ class Settings(BaseSettings):
     embedding_worker_enabled: bool = True
     embedding_worker_interval_s: int = 10
     embedding_worker_batch: int = 32
+    # Garde-fous anti-quota (tier gratuit Gemini) :
+    embedding_max_chars: int = 8000          # tronque chaque texte (~2000 tokens) avant embedding
+    embedding_daily_request_cap: int = 900   # plafond de requêtes/jour (RPD gratuit ~1000)
+    embedding_min_interval_s: float = 0.8    # espacement mini entre requêtes (~75 req/min)
+    embedding_cooldown_s: int = 1800         # pause auto après un 429 (quota) — 30 min
 
     # Langfuse — observabilité (cloud ou self-hosted)
     langfuse_secret_key: Optional[str] = None

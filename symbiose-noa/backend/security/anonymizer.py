@@ -43,11 +43,14 @@ except Exception:  # noqa: BLE001 - import volontairement défensif
 _SPACY_MODEL_NAMES = ("fr_core_news_lg", "fr_core_news_md", "fr_core_news_sm")
 
 # Correspondance label spaCy -> préfixe de placeholder typé.
+# MISC volontairement EXCLU : ce label « divers » (salutations, produits, nationalités,
+# événements…) n'est PAS une donnée personnelle et sur-masquait le langage courant
+# (« bonjour » → [MISC_1] → le modèle recevait un jeton vide de sens). On ne masque
+# que les vraies PII : personnes / lieux / organisations (+ regex montants, email, tel, IBAN).
 _SPACY_LABEL_TO_TYPE = {
     "PER": "PER",
     "LOC": "LOC",
     "ORG": "ORG",
-    "MISC": "MISC",
 }
 
 

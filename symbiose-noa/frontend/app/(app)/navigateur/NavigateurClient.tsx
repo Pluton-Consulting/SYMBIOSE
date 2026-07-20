@@ -33,6 +33,7 @@ export default function NavigateurClient({ token }: { token: string; role: strin
   const [task, setTask] = useState("")
   const [domains, setDomains] = useState("")
   const [ingest, setIngest] = useState(false)
+  const [writeMode, setWriteMode] = useState(false)
   const [launching, setLaunching] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [tasks, setTasks] = useState<BrowserTask[]>([])
@@ -63,7 +64,7 @@ export default function NavigateurClient({ token }: { token: string; role: strin
       await apiRequest("/api/browser/run", {
         method: "POST",
         token,
-        body: JSON.stringify({ task, allowed_domains: allowed, ingest }),
+        body: JSON.stringify({ task, allowed_domains: allowed, ingest, readonly: !writeMode }),
       })
       setTask("")
       await loadTasks()
@@ -113,6 +114,10 @@ export default function NavigateurClient({ token }: { token: string; role: strin
           placeholder="extrabat.com, deytime.fr"
           style={{ ...inputStyle, marginBottom: 14 }}
         />
+        <label style={{ display: "flex", alignItems: "flex-start", gap: 8, fontSize: 13, color: "var(--color-text-body)", marginBottom: 10, cursor: "pointer" }}>
+          <input type="checkbox" checked={writeMode} onChange={(e) => setWriteMode(e.target.checked)} style={{ marginTop: 3 }} />
+          <span><b>Mode écriture</b> pour cette tâche — autorise la saisie, le clic et la soumission de formulaires (login…). ⚠️ à surveiller.</span>
+        </label>
         <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: "var(--color-text-body)", marginBottom: 16, cursor: "pointer" }}>
           <input type="checkbox" checked={ingest} onChange={(e) => setIngest(e.target.checked)} />
           Réinjecter le résultat dans la base documentaire (RAG)

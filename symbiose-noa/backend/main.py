@@ -3,7 +3,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 from database.connection import init_db
-from routers import auth, users, chat, dashboard, validation, settings as settings_router, ingestion, browser
+from routers import auth, users, chat, dashboard, validation, settings as settings_router, ingestion, browser, skills as skills_router
 from agents.runtime import init_runtime, shutdown_runtime
 from config import settings
 
@@ -99,6 +99,7 @@ app.include_router(dashboard.router, prefix="/api/dashboard", tags=["dashboard"]
 app.include_router(settings_router.router, prefix="/api/settings", tags=["settings"])
 app.include_router(ingestion.router, prefix="/api/ingestion", tags=["ingestion"])
 app.include_router(browser.router, prefix="/api/browser", tags=["browser"])
+app.include_router(skills_router.router, prefix="/api/skills", tags=["skills"])
 
 
 @app.get("/api/health")

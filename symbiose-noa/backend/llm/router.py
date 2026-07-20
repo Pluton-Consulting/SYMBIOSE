@@ -20,6 +20,7 @@ from enum import Enum
 from typing import Any, Optional
 
 from config import settings
+from optim.tokens import tier_max_tokens
 
 logger = logging.getLogger("symbiose.llm")
 
@@ -48,7 +49,7 @@ def _provider_available(provider: str) -> bool:
     return False
 
 
-def _build_model(provider: str, model: Optional[str]):
+def _build_model(provider: str, model: Optional[str], max_tokens: int = 4096):
     """Construit l'instance LangChain (sans résilience) pour un couple (fournisseur, modèle)."""
     if provider in _OPENAI_COMPAT:
         from langchain_openai import ChatOpenAI
@@ -57,15 +58,15 @@ def _build_model(provider: str, model: Optional[str]):
             api_key=getattr(settings, f"{provider}_api_key"),
             base_url=getattr(settings, f"{provider}_base_url"),
             temperature=0.1,
-            max_tokens=4096,
+            max_tokens=max_tokens,
             default_headers={"HTTP-Referer": "https://pluton.local", "X-Title": "Symbiose Paysage"},
         )
     if provider == "groq":
         from langchain_groq import ChatGroq
-        return ChatGroq(model=model, api_key=settings.groq_api_key, temperature=0.1, max_tokens=4096)
+        return ChatGroq(model=model, api_key=settings.groq_api_key, temperature=0.1, max_tokens=max_tokens)
     if provider == "anthropic":
         from langchain_anthropic import ChatAnthropic
-        return ChatAnthropic(model=model, api_key=settings.anthropic_api_key, temperature=0.1, max_tokens=4096)
+        return ChatAnthropic(model=model, api_key=settings.anthropic_api_key, temperature=0.1, max_tokens=max_tokens)
     if provider == "ollama":
         from langchain_ollama import ChatOllama
         return ChatOllama(base_url=settings.ollama_base_url, model=settings.ollama_model_light, temperature=0.1)
@@ -84,21 +85,20 @@ def _tier_chain(tier: LLMTier) -> list[tuple[str, Optional[str]]]:
         ]
     elif tier == LLMTier.STANDARD:
         chain = [
-            ("longcat", s.model_longcat),        # LongCat direct (principal)
-            ("openrouter", s.model_primary),     # LongCat via OpenRouter (accès alternatif)
-            ("deepseek", s.model_deepseek),      # DeepSeek V4 Pro direct (fallback qualité)
-            ("groq", s.model_groq_large),
-            ("openrouter", s.model_or_free_a),
+            ("groq", s.model_groq_large),        # Groq 70B — RAPIDE (principal, ~2-5 s)
+            ("longcat", s.model_longcat),        # LongCat — fallback qualité (raisonnement lent)
+            ("openrouter", s.model_primary),
+            ("deepseek", s.model_deepseek),
             ("groq", s.model_groq_light),
+            ("openrouter", s.model_or_free_a),
             ("ollama", None),
         ]
     else:  # COMPLEX
         chain = [
-            ("longcat", s.model_longcat),
-            ("openrouter", s.model_primary),
+            ("groq", s.model_groq_large),        # Groq 70B — rapide (principal)
+            ("longcat", s.model_longcat),        # LongCat — fallback raisonnement
             ("deepseek", s.model_deepseek),
             ("anthropic", s.model_anthropic_vision),
-            ("groq", s.model_groq_large),
             ("openrouter", s.model_or_free_b),
             ("ollama", None),
         ]
@@ -134,7 +134,7 @@ class ResilientLLM:
         last_error: Optional[Exception] = None
         for idx, (provider, model) in enumerate(chain):
             try:
-                llm = _build_model(provider, model)
+                llm = _build_model(provider, model, tier_max_tokens(self.tier.value))
             except Exception as e:  # dépendance/clé manquante à l'instanciation
                 last_error = e
                 logger.warning("LLM %s indisponible : %s", provider, e)
@@ -178,6 +178,25 @@ class ResilientLLM:
 def get_llm(tier: LLMTier) -> ResilientLLM:
     """Retourne un LLM résilient (cascade multi-fournisseurs) pour le palier demandé."""
     return ResilientLLM(tier)
+
+
+def get_vision_llm() -> tuple[Any, Optional[str]]:
+    """Retourne (llm, label) d'un modèle capable de VISION, ou (None, None).
+
+    Préférence : Anthropic (si clé) > Groq multimodal (llama-4). Ces modèles acceptent
+    un message multimodal (content = [{type:'text'}, {type:'image_url', image_url:{url:'data:...'}}]).
+    Modèle direct (pas la cascade) : la vision nécessite un modèle spécifique.
+    """
+    s = settings
+    if not getattr(s, "vision_enabled", True):
+        return None, None
+    for provider, model in (("anthropic", s.model_anthropic_vision), ("groq", s.model_groq_vision)):
+        if _provider_available(provider):
+            try:
+                return _build_model(provider, model), f"{provider}:{model}"
+            except Exception as e:
+                logger.warning("Modèle vision %s indisponible : %s", provider, e)
+    return None, None
 
 
 def classify_request_tier(query: str, has_attachment: bool = False) -> LLMTier:

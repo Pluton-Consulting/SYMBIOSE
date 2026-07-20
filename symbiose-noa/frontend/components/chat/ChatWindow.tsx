@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react"
 import { useSession } from "next-auth/react"
 import MessageList from "./MessageList"
 import InputBar from "./InputBar"
+import ReasoningPath from "./ReasoningPath"
 import { apiRequest } from "@/lib/api"
 import { openChatSocket, sendQuery, ChatEvent } from "@/lib/ws"
 
@@ -23,7 +24,38 @@ function newId(): string {
 }
 
 // Au-delà de ce délai sans le moindre événement WS, on bascule sur le POST.
-const WS_STALL_MS = 6000
+// Élevé volontairement : évite de lancer un traitement POST en DOUBLE quand le WS
+// est simplement lent (machine chargée) plutôt que réellement bloqué.
+const WS_STALL_MS = 14000
+
+// Traduction des nœuds techniques en étapes lisibles (« ce que fait Symbiose »).
+const NODE_LABELS: Record<string, string> = {
+  classify: "Analyse de votre demande",
+  check_schedule: "Vérification des accès",
+  rag: "Recherche dans la mémoire d'entreprise",
+  similar_projects: "Recherche de projets similaires",
+  search_docs: "Recherche dans les documents",
+  anonymize: "Protection des données personnelles",
+  browser: "Recherche sur le web",
+  llm: "Rédaction de la réponse",
+  vision: "Analyse du plan / de la photo",
+  preprocess: "Préparation du document",
+  extraction: "Extraction des informations",
+  rehydrate: "Finalisation de la réponse",
+  validation_check: "Vérification",
+  prechiffrage: "Préparation du chiffrage",
+  generate_skill: "Création d'une compétence",
+  test_skill: "Test de la compétence",
+  submit_validation: "Envoi en validation",
+  human_gate: "Validation humaine requise",
+  agent1: "Assistant commercial au travail",
+  agent2: "Assistant conception au travail",
+  agent3: "Apprentissage d'une compétence",
+}
+function stepLabel(node: string | null | undefined): string {
+  if (!node) return "Analyse de votre demande"
+  return NODE_LABELS[node] || "Traitement en cours"
+}
 
 export default function ChatWindow({ threadId: initialThreadId = null, token: tokenProp }: ChatWindowProps) {
   const { data: session } = useSession()
@@ -32,6 +64,7 @@ export default function ChatWindow({ threadId: initialThreadId = null, token: to
   const [threadId, setThreadId] = useState<string | null>(initialThreadId)
   const [loading, setLoading] = useState(false)
   const [thinkingNode, setThinkingNode] = useState<string | null>(null)
+  const [thinkingSteps, setThinkingSteps] = useState<string[]>([])
   const [pendingValidation, setPendingValidation] = useState(false)
   const wsRef = useRef<WebSocket | null>(null)
 
@@ -56,6 +89,7 @@ export default function ChatWindow({ threadId: initialThreadId = null, token: to
     setMessages((prev) => [...prev, { id: newId(), role: "user", content: text }])
     setLoading(true)
     setThinkingNode(null)
+    setThinkingSteps([])
     setPendingValidation(false)
 
     const tid = threadId ?? newId()
@@ -124,7 +158,11 @@ export default function ChatWindow({ threadId: initialThreadId = null, token: to
           } else if (t === "error") {
             fallbackPost()
           } else if (t === "node" || event.node !== undefined) {
-            setThinkingNode(String(event.node ?? (event.data && event.data.node) ?? ""))
+            const n = String(event.node ?? (event.data && event.data.node) ?? "")
+            if (n) {
+              setThinkingNode(n)
+              setThinkingSteps((prev) => (prev[prev.length - 1] === n ? prev : [...prev, n]))
+            }
           }
         },
         onError: () => fallbackPost(),
@@ -140,23 +178,47 @@ export default function ChatWindow({ threadId: initialThreadId = null, token: to
   }
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", height: "calc(100vh - 64px)" }}>
-      <MessageList messages={messages} />
+    <div style={{ display: "flex", height: "calc(100vh - 64px)" }}>
+      <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0 }}>
+        <MessageList messages={messages} />
 
-      {loading && (
-        <div style={{ padding: "6px 32px", fontSize: 13, color: "var(--color-text-muted)", display: "flex", alignItems: "center", gap: 8 }}>
-          <span style={{ width: 8, height: 8, borderRadius: "50%", background: "var(--color-primary-mid)", display: "inline-block" }} />
-          Symbiose réfléchit…{thinkingNode ? ` (${thinkingNode})` : ""}
-        </div>
-      )}
+        <style>{`
+          @keyframes symOrb { 0%,100%{transform:scale(.8);opacity:.55} 50%{transform:scale(1.15);opacity:1} }
+          @keyframes symDot { 0%,80%,100%{transform:translateY(0);opacity:.35} 40%{transform:translateY(-4px);opacity:1} }
+          @keyframes symStepIn { from{opacity:0;transform:translateY(4px)} to{opacity:1;transform:translateY(0)} }
+          .sym-think{display:flex;gap:12px;align-items:center;padding:10px 32px}
+          .sym-orb{width:12px;height:12px;border-radius:50%;flex-shrink:0;
+            background:radial-gradient(circle at 35% 35%, var(--color-primary-mid), var(--color-primary));
+            box-shadow:0 0 0 4px var(--color-primary-subtle);animation:symOrb 1.3s ease-in-out infinite}
+          .sym-step{display:flex;align-items:center;gap:8px;font-size:14px;font-weight:600;
+            color:var(--color-text-primary);animation:symStepIn .35s ease}
+          .sym-dots{display:inline-flex;gap:3px}
+          .sym-dots i{width:4px;height:4px;border-radius:50%;background:var(--color-primary-mid);animation:symDot 1.2s infinite}
+          .sym-dots i:nth-child(2){animation-delay:.18s}
+          .sym-dots i:nth-child(3){animation-delay:.36s}
+          @media (prefers-reduced-motion: reduce){ .sym-orb,.sym-dots i,.sym-step{animation:none} }
+        `}</style>
 
-      {pendingValidation && (
-        <div style={{ margin: "8px 32px", padding: "12px 16px", background: "var(--color-pending-bg)", color: "var(--color-pending-text)", borderRadius: 10, fontSize: 13, fontWeight: 600 }}>
-          ⏳ En attente de validation humaine
-        </div>
-      )}
+        {loading && (
+          <div className="sym-think" role="status" aria-live="polite">
+            <span className="sym-orb" aria-hidden="true" />
+            <div className="sym-step" key={thinkingNode || "start"}>
+              {stepLabel(thinkingNode)}
+              <span className="sym-dots" aria-hidden="true"><i /><i /><i /></span>
+            </div>
+          </div>
+        )}
 
-      <InputBar onSend={sendMessage} disabled={loading} />
+        {pendingValidation && (
+          <div style={{ margin: "8px 32px", padding: "12px 16px", background: "var(--color-pending-bg)", color: "var(--color-pending-text)", borderRadius: 10, fontSize: 13, fontWeight: 600 }}>
+            ⏳ En attente de validation humaine
+          </div>
+        )}
+
+        <InputBar onSend={sendMessage} disabled={loading} />
+      </div>
+
+      <ReasoningPath steps={thinkingSteps} loading={loading} />
     </div>
   )
 }

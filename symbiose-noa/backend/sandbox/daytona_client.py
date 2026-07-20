@@ -13,6 +13,7 @@ Si DAYTONA_API_KEY est absent, bascule automatiquement sur subprocess local.
 """
 import asyncio
 import os
+import sys
 import tempfile
 import time
 from dataclasses import dataclass
@@ -140,7 +141,7 @@ class DaytonaClient:
                 tmp_path = tmp.name
 
             proc = await asyncio.create_subprocess_exec(
-                "python3", tmp_path,
+                sys.executable, tmp_path,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
                 env={"PATH": "/usr/bin:/bin", "PYTHONDONTWRITEBYTECODE": "1"},
@@ -218,6 +219,90 @@ except Exception as e:
         if execution_time_ms < 1000:
             score += 0.1
         return min(score, 1.0)
+
+    # ── Exécution RÉELLE d'un skill avec données (pour l'exécuteur) ───────
+    async def execute_skill(
+        self,
+        skill_code: str,
+        skill_name: str,
+        data: dict,
+        max_execution_seconds: int = 30,
+    ) -> dict:
+        """Exécute `run(data)` dans un sous-process isolé et renvoie la SORTIE réelle.
+
+        Les données passent par stdin (jamais injectées dans le code source → pas d'injection).
+        Env réduit (pas d'accès réseau implicite). Renvoie :
+          {ok: bool, output: dict|None, error: str|None, execution_time_ms: int, sandbox_type: str}
+        """
+        import json as _json
+
+        start = time.monotonic()
+        marker = "__SKILL_RESULT__"
+        wrapper = (
+            "import json, sys\n"
+            "_data = json.loads(sys.stdin.read() or '{}')\n"
+            f"{skill_code}\n"
+            "_res = run(_data)\n"
+            f"print({marker!r} + json.dumps(_res, ensure_ascii=False, default=str))\n"
+        )
+        tmp_path = None
+        try:
+            with tempfile.NamedTemporaryFile(
+                mode="w", suffix=".py", delete=False, prefix=f"skill_exec_{skill_name}_"
+            ) as tmp:
+                tmp.write(wrapper)
+                tmp_path = tmp.name
+
+            proc = await asyncio.create_subprocess_exec(
+                sys.executable, tmp_path,
+                stdin=asyncio.subprocess.PIPE,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+                env={"PATH": "/usr/bin:/bin", "PYTHONDONTWRITEBYTECODE": "1"},
+            )
+            try:
+                stdout, stderr = await asyncio.wait_for(
+                    proc.communicate(input=_json.dumps(data or {}).encode()),
+                    timeout=max_execution_seconds,
+                )
+            except asyncio.TimeoutError:
+                proc.kill()
+                return {"ok": False, "output": None, "error": f"Timeout après {max_execution_seconds}s",
+                        "execution_time_ms": max_execution_seconds * 1000, "sandbox_type": "subprocess"}
+
+            elapsed = int((time.monotonic() - start) * 1000)
+            out = (stdout.decode() if stdout else "").strip()
+            err = (stderr.decode() if stderr else "").strip()
+
+            if proc.returncode != 0:
+                return {"ok": False, "output": None, "error": err or "échec d'exécution",
+                        "execution_time_ms": elapsed, "sandbox_type": "subprocess"}
+
+            parsed = None
+            for line in out.splitlines():
+                if line.startswith(marker):
+                    try:
+                        parsed = _json.loads(line[len(marker):])
+                    except Exception:
+                        parsed = None
+                    break
+            return {
+                "ok": parsed is not None,
+                "output": parsed,
+                "error": None if parsed is not None else "sortie du skill illisible",
+                "execution_time_ms": elapsed,
+                "sandbox_type": "subprocess",
+            }
+        except Exception as e:
+            return {"ok": False, "output": None, "error": str(e),
+                    "execution_time_ms": int((time.monotonic() - start) * 1000),
+                    "sandbox_type": "subprocess"}
+        finally:
+            if tmp_path:
+                try:
+                    os.unlink(tmp_path)
+                except Exception:
+                    pass
 
 
 # Singleton — importé par l'Agent 3

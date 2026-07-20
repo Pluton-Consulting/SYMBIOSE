@@ -22,6 +22,8 @@ class ChatRequest(BaseModel):
     thread_id: Optional[str] = None
     has_attachment: bool = False
     attachment_type: Optional[str] = None
+    attachment_b64: Optional[str] = None      # image/PDF encodé base64 (Agent 2 vision)
+    attachment_mime: Optional[str] = None      # 'image/jpeg', 'application/pdf', ...
 
 
 async def _check_schedule(current_user: User) -> None:
@@ -126,8 +128,10 @@ async def chat(body: ChatRequest, current_user: User = Depends(get_current_user)
             query=body.query,
             user_id=str(current_user.id),
             user_role=current_user.role,
-            has_attachment=body.has_attachment,
+            has_attachment=body.has_attachment or bool(body.attachment_b64),
             thread_id=thread_id,
+            attachment_b64=body.attachment_b64,
+            attachment_mime=body.attachment_mime,
         )
     except HTTPException:
         raise
@@ -274,8 +278,10 @@ async def chat_ws(websocket: WebSocket, thread_id: str):
                     query=query,
                     user_id=str(user.id),
                     user_role=user.role,
-                    has_attachment=data.get("has_attachment", False),
+                    has_attachment=data.get("has_attachment", False) or bool(data.get("attachment_b64")),
                     thread_id=thread_id,
+                    attachment_b64=data.get("attachment_b64"),
+                    attachment_mime=data.get("attachment_mime"),
                 ):
                     if event.get("node") == "classify":
                         agent_used = (event.get("data") or {}).get("target_agent", agent_used)

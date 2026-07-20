@@ -66,6 +66,12 @@ export const TABS: TabDef[] = [
     roles: ["super_admin", "direction"],
   },
   {
+    key: "skills",
+    label: "Skills",
+    href: "/skills",
+    roles: MANAGERS,
+  },
+  {
     key: "gestion",
     label: "Gestion",
     href: "/gestion",

@@ -24,6 +24,7 @@ class RunRequest(BaseModel):
     allowed_domains: list[str]
     user_id: str
     ingest: bool = False
+    readonly: bool = True
     output_schema: dict | None = None
 
 
@@ -48,7 +49,8 @@ async def run(req: RunRequest):
         try:
             await run_task(
                 req.job_id, req.task_prompt, req.allowed_domains,
-                req.user_id, ingest=req.ingest, output_schema=req.output_schema,
+                req.user_id, ingest=req.ingest, readonly=req.readonly,
+                output_schema=req.output_schema,
             )
         except asyncio.CancelledError:
             await db.update_status(req.job_id, "cancelled")

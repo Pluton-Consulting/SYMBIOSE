@@ -17,12 +17,36 @@ On ne logge jamais le contenu de la requête ni des chunks, uniquement des
 métadonnées (rôle, nombre de résultats, type d'erreur).
 """
 import logging
+import time
 from typing import Optional
 
 from vectorstore.client import vectorstore
 from vectorstore.embeddings import embed_query
 
 logger = logging.getLogger("symbiose.rag")
+
+# Cache léger : la mémoire a-t-elle au moins un document ? Évite d'embedder (Gemini)
+# et de chercher à CHAQUE requête tant que la base est vide (gros gain de latence + quota).
+_corpus_cache = {"has_docs": None, "ts": 0.0}
+_CORPUS_TTL = 60.0  # re-vérifie au plus une fois par minute
+
+
+async def _corpus_has_documents() -> bool:
+    now = time.monotonic()
+    cached = _corpus_cache["has_docs"]
+    if cached is not None and (now - _corpus_cache["ts"]) < _CORPUS_TTL:
+        return cached
+    has = True  # en cas de doute, ne PAS bloquer le RAG
+    try:
+        from database.connection import get_db
+        async with get_db() as conn:
+            row = await conn.fetchval("SELECT 1 FROM documents LIMIT 1")
+        has = row is not None
+    except Exception:
+        has = True
+    _corpus_cache["has_docs"] = has
+    _corpus_cache["ts"] = now
+    return has
 
 
 async def retrieve(
@@ -50,6 +74,11 @@ async def retrieve(
     """
     query = (query or "").strip()
     if not query:
+        return []
+
+    # Mémoire vide → inutile d'embedder (Gemini) puis de chercher : on gagne ~2 s/requête
+    # et on préserve le quota, sans changer le résultat (il n'y a rien à trouver).
+    if not await _corpus_has_documents():
         return []
 
     try:

@@ -21,6 +21,7 @@ import wconfig
 import db
 import credentials
 import llm_factory
+import site_login
 
 
 # ── Capture d'écran (best-effort, tolérant aux variantes d'API) ───────────
@@ -175,7 +176,8 @@ async def _post_to_rag(job_id: str, structured: dict | None, final_text: str) ->
 
 # ── Point d'entrée : exécuter une tâche complète ──────────────────────────
 async def run_task(job_id: str, task_prompt: str, allowed_domains: list[str],
-                   user_id: str, ingest: bool = False, output_schema=None) -> None:
+                   user_id: str, ingest: bool = False, readonly: bool = True,
+                   output_schema=None) -> None:
     from browser_use import Agent, Browser
 
     await db.update_status(job_id, "running")
@@ -183,9 +185,10 @@ async def run_task(job_id: str, task_prompt: str, allowed_domains: list[str],
                        metadata={"job_id": job_id, "domains": allowed_domains})
 
     browser = None
+    step_state = {"n": 0}   # défini avant le try : lisible même si l'échec survient au démarrage
     try:
         llm = llm_factory.build_llm()
-        tools = build_tools(job_id, user_id, readonly=wconfig.READONLY)
+        tools = build_tools(job_id, user_id, readonly=readonly)
         sensitive = credentials.build_sensitive_data(allowed_domains)
 
         # garde-fou domaines : hôtes EXACTS uniquement (pas de wildcard *.{d} qui
@@ -197,22 +200,93 @@ async def run_task(job_id: str, task_prompt: str, allowed_domains: list[str],
         primary = allowed_domains[0] if allowed_domains else "default"
         storage_path = os.path.join(wconfig.SESSIONS_DIR, f"{primary}.json")
 
-        browser_kwargs = {"headless": True, "allowed_domains": allow, "storage_state": storage_path}
+        # Flags de stabilité Chromium en conteneur : pas de sandbox utilisateur possible
+        # (non-root), /dev/shm potentiellement insuffisant sous pression mémoire (WSL),
+        # pas de GPU. Sans ces flags, le lancement peut boucler puis timeouter au cold start.
+        chromium_args = [
+            "--no-sandbox",
+            "--disable-setuid-sandbox",
+            "--disable-dev-shm-usage",
+            "--disable-gpu",
+            # Empreinte mémoire minimale (PC 7 Go, WSL ~3.3 Go) : Chromium en UN seul process
+            # au lieu de ~5. Sans ça, la cible CDP initiale se fait tuer sous pression mémoire
+            # (« Target ... may have detached »). OK pour nos tâches mono-page (login/lecture).
+            "--single-process",
+            "--no-zygote",
+            "--disable-extensions",
+            "--disable-background-networking",
+            "--disable-features=TranslateUI",
+            "--mute-audio",
+            "--no-first-run",
+        ]
+        browser_kwargs = {
+            "headless": True,
+            "allowed_domains": allow,
+            "storage_state": storage_path,
+            "args": chromium_args,
+            "chromium_sandbox": False,
+            # Temps d'attente RAPIDES (défauts browser-use) : réactivité proche d'un site classique.
+            # Les tests réussis tournaient à ces valeurs ; les gonfler donnait une impression de bug.
+            "minimum_wait_page_load_time": 0.25,
+            "wait_for_network_idle_page_load_time": 0.5,
+            "wait_between_actions": 0.1,
+        }
         try:
             browser = Browser(**browser_kwargs)
         except Exception:
             browser_kwargs.pop("storage_state", None)
             browser = Browser(**browser_kwargs)
 
+        # ── Login DÉTERMINISTE préalable (domaines configurés, mode écriture) ──
+        # Évite que le LLM se batte avec le formulaire de connexion (hallucinations type
+        # « shadow DOM », boucles, tentatives répétées qui verrouillent le compte). Le worker
+        # remplit et soumet lui-même via CDP, puis l'agent démarre DÉJÀ authentifié.
+        # Nécessite le mode écriture : soumettre un formulaire est une action modifiante.
+        effective_task = task_prompt
+        if not readonly and site_login.has_config(primary):
+            try:
+                await browser.start()
+                login_info = await site_login.try_login(browser, primary)
+            except Exception as e:
+                login_info = {"attempted": True, "ok": False, "reason": type(e).__name__}
+            await db.log_audit(
+                "browser_login_ok" if login_info.get("ok") else "browser_login_failed",
+                user_id, success=bool(login_info.get("ok")),
+                metadata={"job_id": job_id, "domain": primary,
+                          **{k: v for k, v in login_info.items() if k != "attempted"}},
+            )
+            if login_info.get("attempted") and not login_info.get("ok"):
+                # Login refusé (mot de passe erroné ou compte verrouillé) → inutile de lancer
+                # l'agent : échec précoce avec message clair (économie de temps/tokens).
+                await db.set_result(
+                    job_id, "failed",
+                    result={"summary": "Échec du login : le site a refusé les identifiants "
+                                       "(mot de passe erroné, ou compte temporairement verrouillé "
+                                       "après des tentatives répétées). L'agent n'a pas été lancé.",
+                            "steps": 0, "step_log": [], "login": login_info},
+                    steps=0,
+                )
+                await db.set_error(job_id, "login_refused")
+                return
+            if login_info.get("ok"):
+                effective_task = ("Tu es DÉJÀ connecté au site (connexion déjà effectuée). "
+                                  "Ne cherche pas à te reconnecter. " + task_prompt)
+
         output_model = _build_output_model(output_schema)
 
         agent_kwargs = dict(
-            task=task_prompt, llm=llm, browser=browser, tools=tools,
+            task=effective_task, llm=llm, browser=browser, tools=tools,
             use_vision=wconfig.USE_VISION,
             # LongCat 2.0 / modèles raisonnants : simplifier le schéma d'action et fournir
             # des exemples de format aident browser-use à parser la sortie structurée.
             use_thinking=False,
             include_tool_call_examples=True,
+            # Garde-fous anti-flail : stoppe après N échecs consécutifs, détecte les boucles
+            # (mêmes actions/objectifs répétés), et laisse plus de temps au LLM lent (LongCat)
+            # que les 75 s par défaut qui provoquaient des « LLM call timed out ».
+            max_failures=4,
+            loop_detection_enabled=True,
+            llm_timeout=120,
         )
         if sensitive:
             agent_kwargs["sensitive_data"] = sensitive
@@ -220,8 +294,6 @@ async def run_task(job_id: str, task_prompt: str, allowed_domains: list[str],
             agent_kwargs["output_model_schema"] = output_model
 
         agent = Agent(**agent_kwargs)
-
-        step_state = {"n": 0}
 
         async def on_step_end(a):
             step_state["n"] += 1
@@ -286,7 +358,8 @@ async def run_task(job_id: str, task_prompt: str, allowed_domains: list[str],
     except Exception as e:
         await db.set_error(job_id, type(e).__name__)  # message générique (pas de fuite d'URL/hôte)
         await db.log_audit("browser_task_failed", user_id, success=False,
-                           metadata={"job_id": job_id, "error_type": type(e).__name__})
+                           metadata={"job_id": job_id, "error_type": type(e).__name__,
+                                     "steps_reached": step_state["n"], "readonly": readonly})
     finally:
         if browser is not None:
             try:
