@@ -19,5 +19,11 @@ ENV NODE_ENV production
 COPY --from=builder /app/.next/standalone ./
 COPY --from=builder /app/.next/static ./.next/static
 COPY --from=builder /app/public ./public
+# ── Correctif bug Next.js 14.2.0 + output:standalone + groupes de routes ──
+# La sortie standalone OMET les *_client-reference-manifest.js des routes en groupe
+# ((app)/(auth)) → erreur runtime "Cannot read properties of undefined (reading
+# 'clientModules')". On restaure le dossier .next/server complet du builder (superset
+# identique + les manifests manquants).
+COPY --from=builder /app/.next/server ./.next/server
 EXPOSE 3000
 CMD ["node", "server.js"]
