@@ -38,13 +38,36 @@ until [ "$(docker inspect -f '{{.State.Health.Status}}' "$cid" 2>/dev/null || ec
 done
 echo " ok"
 
-echo "==> 3/5  Application des migrations SQL (ordre numérique, _dev_seed exclu)…"
+echo "==> 3/5  Migrations SQL (seulement les nouvelles — RBAC non écrasé)…"
+# Raccourci psql (tuples-only, unaligned) pour les tests/inserts de suivi.
+PSQL() { $COMPOSE exec -T postgres psql -tA -U "$POSTGRES_USER" -d "$POSTGRES_DB" "$@"; }
+
+# Table de suivi des migrations déjà appliquées (idempotent).
+PSQL -q -c "CREATE TABLE IF NOT EXISTS schema_migrations (filename TEXT PRIMARY KEY, applied_at TIMESTAMPTZ DEFAULT now());" >/dev/null
+
+# Backfill de transition : base DÉJÀ initialisée (table users présente) mais suivi vide
+# = migrations jouées par un ancien deploy → on les marque appliquées SANS les rejouer
+# (sinon la 011 réécraserait les permissions RBAC personnalisées à chaque déploiement).
+if [ "$(PSQL -c "SELECT count(*) FROM schema_migrations;" | tr -d '[:space:]')" = "0" ] \
+   && [ "$(PSQL -c "SELECT (to_regclass('public.users') IS NOT NULL);" | tr -d '[:space:]')" = "t" ]; then
+  echo "    (base existante détectée → marquage des migrations en place, sans rejeu)"
+  for f in backend/database/migrations/[0-9]*.sql; do
+    PSQL -q -c "INSERT INTO schema_migrations(filename) VALUES ('$(basename "$f")') ON CONFLICT DO NOTHING;" >/dev/null
+  done
+fi
+
+# Application des seules migrations NON encore suivies (les nouvelles).
 for f in backend/database/migrations/[0-9]*.sql; do
   name="$(basename "$f")"
+  if [ "$(PSQL -c "SELECT 1 FROM schema_migrations WHERE filename='$name';" | tr -d '[:space:]')" = "1" ]; then
+    continue
+  fi
   echo "    - $name"
-  # ON_ERROR_STOP=0 : sur un redéploiement, les objets déjà créés génèrent une erreur
-  # bénigne que l'on ignore (les migrations ne sont pas toutes idempotentes).
-  $COMPOSE exec -T postgres psql -v ON_ERROR_STOP=0 -U "$POSTGRES_USER" -d "$POSTGRES_DB" -q -f "/migrations/$name" >/dev/null 2>&1 || true
+  if $COMPOSE exec -T postgres psql -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" -q -f "/migrations/$name" >/dev/null 2>&1; then
+    PSQL -q -c "INSERT INTO schema_migrations(filename) VALUES ('$name') ON CONFLICT DO NOTHING;" >/dev/null
+  else
+    echo "      ⚠ échec de $name — non enregistrée, sera retentée au prochain deploy"
+  fi
 done
 
 echo "==> 4/5  Administrateur + catalogue de skills…"
