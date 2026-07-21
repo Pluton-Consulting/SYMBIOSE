@@ -15,10 +15,11 @@ if [ ! -f .env ]; then
   exit 1
 fi
 
-# Lit quelques variables du .env SANS le sourcer : le .env (format Docker Compose) peut
-# contenir des espaces / des caractères < > (ex. RESEND_FROM_EMAIL) qui casseraient `. .env`.
-# On retire aussi un éventuel commentaire de fin de ligne et les espaces.
-env_get() { sed -n "s/^[[:space:]]*$1=//p" .env | sed 's/[[:space:]]*#.*$//; s/[[:space:]]*$//'; }
+# Lit une variable du .env SANS le sourcer : le .env (format Docker Compose) peut contenir
+# des espaces / des caractères < > qui casseraient `. .env`. On ne prend que la PREMIÈRE
+# occurrence (robuste si le .env a été collé en double), et on retire un éventuel
+# commentaire de fin de ligne + les espaces.
+env_get() { awk -F= -v k="$1" '$1==k{sub(/^[^=]*=/,"");sub(/[[:space:]]+#.*$/,"");sub(/[[:space:]]*$/,"");print;exit}' .env; }
 POSTGRES_USER="$(env_get POSTGRES_USER)"
 POSTGRES_DB="$(env_get POSTGRES_DB)"
 FIRST_ADMIN_EMAIL="$(env_get FIRST_ADMIN_EMAIL)"
