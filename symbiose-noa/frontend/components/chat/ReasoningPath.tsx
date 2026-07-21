@@ -47,7 +47,7 @@ export default function ReasoningPath({ steps, loading }: Props) {
         .sym-node.done .sym-line, .sym-node.active .sym-line{ background:var(--color-primary-mid); }
         .sym-dot{ width:24px; height:24px; border-radius:50%; border:2px solid var(--color-border);
           background:var(--color-surface); display:flex; align-items:center; justify-content:center;
-          font-size:12px; font-weight:700; color:#fff; z-index:1; transition:all .3s; }
+          font-size:12px; font-weight:700; color:var(--color-text-on-dark); z-index:1; transition:all .3s; }
         .sym-node.done .sym-dot{ background:var(--color-primary); border-color:var(--color-primary); }
         .sym-node.active .sym-dot{ border-color:var(--color-primary); animation:symNodePulse 1.4s ease-in-out infinite; }
         .sym-node.pending .sym-dot, .sym-node.idle .sym-dot{ opacity:.55; }

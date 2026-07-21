@@ -75,13 +75,13 @@ export default function ValidationQueue({ token }: { token: string }) {
       </div>
 
       {error && (
-        <div style={{ background: "var(--color-pending-bg)", color: "var(--color-pending-text)", borderRadius: 10, padding: "10px 14px", fontSize: 13, marginBottom: 12 }}>
+        <div style={{ background: "var(--color-pending-bg)", color: "var(--color-pending-text)", borderRadius: "var(--radius-card-sm)", padding: "10px 14px", fontSize: 13, marginBottom: 12 }}>
           {error}
         </div>
       )}
 
       {items.length === 0 ? (
-        <div style={{ background: "white", borderRadius: 16, padding: "40px 24px", textAlign: "center", boxShadow: "var(--shadow-card)", color: "var(--color-text-muted)", fontSize: 14 }}>
+        <div style={{ background: "var(--color-surface)", borderRadius: "var(--radius-card)", padding: "40px 24px", textAlign: "center", boxShadow: "var(--shadow-card)", color: "var(--color-text-muted)", fontSize: 14 }}>
           Aucune action en attente. Les actions modifiantes de l'agent apparaîtront ici pour approbation.
         </div>
       ) : (
@@ -91,9 +91,9 @@ export default function ValidationQueue({ token }: { token: string }) {
             const isBrowser = v.agent === "browser"
             const summary = p.summary || v.draft || "—"
             return (
-              <div key={v.id} style={{ background: "white", borderRadius: 14, padding: 18, boxShadow: "var(--shadow-card)" }}>
+              <div key={v.id} style={{ background: "var(--color-surface)", borderRadius: "var(--radius-card)", padding: 18, boxShadow: "var(--shadow-card)", border: "1px solid var(--color-border)" }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
-                  <span style={{ background: "var(--color-progress-bg)", color: "var(--color-progress-text)", padding: "4px 10px", borderRadius: 9999, fontSize: 12, fontWeight: 600 }}>
+                  <span style={{ background: "var(--color-progress-bg)", color: "var(--color-progress-text)", padding: "4px 12px", borderRadius: "var(--radius-pill)", fontSize: 12, fontWeight: 600 }}>
                     {AGENT_LABEL[v.agent || ""] || v.agent || "Agent"}
                   </span>
                   <span style={{ fontSize: 12, color: "var(--color-text-muted)" }}>{v.reason || ""}</span>
@@ -115,7 +115,7 @@ export default function ValidationQueue({ token }: { token: string }) {
                   <img
                     src={`data:image/jpeg;base64,${p.screenshot}`}
                     alt="Capture de la page"
-                    style={{ maxWidth: "100%", borderRadius: 10, border: "1px solid var(--color-border, #e5e7eb)", marginBottom: 14 }}
+                    style={{ maxWidth: "100%", borderRadius: "var(--radius-icon)", border: "1px solid var(--color-border)", marginBottom: 14 }}
                   />
                 )}
 
@@ -123,14 +123,14 @@ export default function ValidationQueue({ token }: { token: string }) {
                   <button
                     onClick={() => resolve(v.id, true)}
                     disabled={busy === v.id}
-                    style={{ flex: 1, padding: "10px 16px", borderRadius: 10, border: "none", cursor: "pointer", fontWeight: 700, fontSize: 14, background: "var(--color-primary)", color: "white", opacity: busy === v.id ? 0.6 : 1 }}
+                    style={{ flex: 1, padding: "10px 16px", borderRadius: "var(--radius-pill)", border: "none", cursor: "pointer", fontWeight: 700, fontSize: 14, background: "var(--color-primary)", color: "var(--color-text-on-dark)", opacity: busy === v.id ? 0.6 : 1 }}
                   >
                     Approuver
                   </button>
                   <button
                     onClick={() => resolve(v.id, false)}
                     disabled={busy === v.id}
-                    style={{ flex: 1, padding: "10px 16px", borderRadius: 10, border: "1px solid var(--color-pending-text)", cursor: "pointer", fontWeight: 700, fontSize: 14, background: "white", color: "var(--color-pending-text)", opacity: busy === v.id ? 0.6 : 1 }}
+                    style={{ flex: 1, padding: "10px 16px", borderRadius: "var(--radius-pill)", border: "1px solid var(--color-pending-text)", cursor: "pointer", fontWeight: 700, fontSize: 14, background: "var(--color-surface)", color: "var(--color-pending-text)", opacity: busy === v.id ? 0.6 : 1 }}
                   >
                     Refuser
                   </button>

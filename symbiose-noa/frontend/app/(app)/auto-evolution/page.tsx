@@ -51,7 +51,7 @@ export default async function AutoEvolutionPage() {
       {/* Pipeline */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 12, marginBottom: 32 }}>
         {PIPELINE.map((s) => (
-          <div key={s.n} style={{ background: "white", borderRadius: 14, padding: 16, boxShadow: "var(--shadow-card)" }}>
+          <div key={s.n} style={{ background: "var(--color-surface)", borderRadius: "var(--radius-card-sm)", padding: 16, boxShadow: "var(--shadow-card)", border: "1px solid var(--color-border)" }}>
             <div style={{ fontFamily: "monospace", fontSize: 12, fontWeight: 700, color: "var(--color-primary-mid)", marginBottom: 8 }}>
               {s.n}
             </div>
@@ -68,7 +68,7 @@ export default async function AutoEvolutionPage() {
       </div>
 
       {skills.length === 0 ? (
-        <div style={{ background: "white", borderRadius: 16, padding: "48px 24px", textAlign: "center", boxShadow: "var(--shadow-card)", color: "var(--color-text-muted)", fontSize: 14 }}>
+        <div style={{ background: "var(--color-surface)", borderRadius: "var(--radius-card)", padding: "48px 24px", textAlign: "center", boxShadow: "var(--shadow-card)", color: "var(--color-text-muted)", fontSize: 14 }}>
           Aucun skill en attente. L'Agent 3 générera un skill dès qu'une requête sortira du champ couvert.
         </div>
       ) : (
@@ -77,7 +77,7 @@ export default async function AutoEvolutionPage() {
             const st = STATUS_STYLE[s.status] || { bg: "var(--color-canvas)", fg: "var(--color-text-muted)", label: s.status }
             const conf = s.confidence_score != null ? Number(s.confidence_score) : null
             return (
-              <div key={s.id} style={{ background: "white", borderRadius: 14, padding: "16px 20px", boxShadow: "var(--shadow-card)", display: "flex", alignItems: "center", gap: 16 }}>
+              <div key={s.id} style={{ background: "var(--color-surface)", borderRadius: "var(--radius-card-sm)", padding: "16px 20px", boxShadow: "var(--shadow-card)", border: "1px solid var(--color-border)", display: "flex", alignItems: "center", gap: 16 }}>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontFamily: "monospace", fontSize: 14, fontWeight: 700, color: "var(--color-text-primary)" }}>{s.name}</div>
                   <div style={{ fontSize: 12, color: "var(--color-text-muted)", marginTop: 3 }}>
@@ -92,7 +92,7 @@ export default async function AutoEvolutionPage() {
                     </div>
                   </div>
                 )}
-                <span style={{ background: st.bg, color: st.fg, padding: "5px 12px", borderRadius: 9999, fontSize: 12, fontWeight: 600, whiteSpace: "nowrap" }}>
+                <span style={{ background: st.bg, color: st.fg, padding: "4px 12px", borderRadius: "var(--radius-pill)", fontSize: 12, fontWeight: 600, whiteSpace: "nowrap" }}>
                   {st.label}
                 </span>
               </div>

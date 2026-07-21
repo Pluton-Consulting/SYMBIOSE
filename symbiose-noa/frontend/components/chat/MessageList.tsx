@@ -15,7 +15,7 @@ export default function MessageList({ messages }: { messages: Message[] }) {
       gap: 16,
     }}>
       {messages.length === 0 && (
-        <div style={{ textAlign: "center", color: "#aaa", marginTop: 80 }}>
+        <div style={{ textAlign: "center", color: "var(--color-text-muted)", marginTop: 80 }}>
           <p style={{ fontSize: 32, margin: "0 0 8px" }}>🌿</p>
           <p style={{ margin: 0 }}>Bonjour, je suis Symbiose. Comment puis-je vous aider ?</p>
         </div>
@@ -26,11 +26,12 @@ export default function MessageList({ messages }: { messages: Message[] }) {
           style={{
             alignSelf: msg.role === "user" ? "flex-end" : "flex-start",
             maxWidth: "70%",
-            background: msg.role === "user" ? "#304D32" : "white",
-            color: msg.role === "user" ? "white" : "#1a1a1a",
+            background: msg.role === "user" ? "var(--color-primary)" : "var(--color-surface)",
+            color: msg.role === "user" ? "var(--color-text-on-dark)" : "var(--color-text-primary)",
             padding: "12px 16px",
-            borderRadius: 12,
-            boxShadow: "0 1px 3px rgba(0,0,0,0.08)",
+            borderRadius: "var(--radius-card-sm)",
+            boxShadow: "var(--shadow-card)",
+            border: msg.role === "user" ? "none" : "1px solid var(--color-border)",
             fontSize: 14,
             lineHeight: 1.5,
           }}

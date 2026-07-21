@@ -23,7 +23,7 @@ export default function InputBar({ onSend, disabled }: InputBarProps) {
   }
 
   return (
-    <div style={{ padding: "16px 32px", background: "white", borderTop: "1px solid #eee" }}>
+    <div style={{ padding: "16px 32px", background: "var(--color-surface)", borderTop: "1px solid var(--color-border)" }}>
       <div style={{ display: "flex", gap: 12, alignItems: "flex-end" }}>
         <textarea
           value={value}
@@ -35,11 +35,12 @@ export default function InputBar({ onSend, disabled }: InputBarProps) {
           style={{
             flex: 1,
             resize: "none",
-            border: "1px solid #ddd",
-            borderRadius: 8,
-            padding: "10px 14px",
+            border: "1px solid var(--color-border)",
+            borderRadius: "var(--radius-pill)",
+            padding: "10px 16px",
             fontSize: 14,
-            fontFamily: "inherit",
+            fontFamily: "var(--font)",
+            color: "var(--color-text-body)",
             outline: "none",
           }}
         />
@@ -47,10 +48,10 @@ export default function InputBar({ onSend, disabled }: InputBarProps) {
           onClick={handleSend}
           disabled={disabled || !value.trim()}
           style={{
-            background: "#304D32",
-            color: "white",
+            background: "var(--color-primary)",
+            color: "var(--color-text-on-dark)",
             border: "none",
-            borderRadius: 8,
+            borderRadius: "var(--radius-pill)",
             padding: "10px 20px",
             fontSize: 14,
             fontWeight: 500,

@@ -142,16 +142,16 @@ export default function SkillsClient({ apiUrl, token }: Props) {
         {agents.map((a) => (
           <button key={a} onClick={() => setAgentFilter(a)}
             style={{
-              fontSize: 13, padding: "6px 12px", borderRadius: 9, cursor: "pointer",
+              fontSize: 13, padding: "6px 12px", borderRadius: "var(--radius-pill)", cursor: "pointer",
               border: `1px solid ${agentFilter === a ? "var(--color-primary)" : "var(--color-border)"}`,
-              background: agentFilter === a ? "var(--color-primary-subtle)" : "white",
+              background: agentFilter === a ? "var(--color-primary-subtle)" : "var(--color-surface)",
               color: agentFilter === a ? "var(--color-primary)" : "var(--color-text-body)",
               fontWeight: agentFilter === a ? 700 : 500,
             }}>
             {a === "all" ? "Tous" : a === "agent1" ? "Agent 1" : a === "agent2" ? "Agent 2" : "Agent 3"}
           </button>
         ))}
-        <button onClick={load} style={{ fontSize: 13, padding: "6px 12px", borderRadius: 9, cursor: "pointer", border: "1px solid var(--color-border)", background: "white" }}>↻</button>
+        <button onClick={load} style={{ fontSize: 13, padding: "6px 12px", borderRadius: "var(--radius-pill)", cursor: "pointer", border: "1px solid var(--color-border)", background: "var(--color-surface)" }}>↻</button>
       </div>
 
       {err && <div style={{ color: "var(--color-error-text)", fontSize: 13, marginBottom: 12 }}>⚠ {err}</div>}
@@ -162,7 +162,7 @@ export default function SkillsClient({ apiUrl, token }: Props) {
           const st = STATUS_STYLE[s.status] || { bg: "var(--color-canvas)", fg: "var(--color-text-muted)", label: s.status }
           const detail = open[s.name]
           return (
-            <div key={s.name} style={{ background: "white", borderRadius: 14, boxShadow: "var(--shadow-card)", overflow: "hidden", opacity: s.enabled ? 1 : 0.62 }}>
+            <div key={s.name} style={{ background: "var(--color-surface)", border: "1px solid var(--color-border)", borderRadius: "var(--radius-card-sm)", boxShadow: "var(--shadow-card)", overflow: "hidden", opacity: s.enabled ? 1 : 0.62 }}>
               <div style={{ padding: "14px 18px", display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
                 <div style={{ flex: 1, minWidth: 220 }}>
                   <div style={{ fontFamily: "monospace", fontSize: 14, fontWeight: 700, color: "var(--color-text-primary)" }}>
@@ -175,7 +175,7 @@ export default function SkillsClient({ apiUrl, token }: Props) {
                 </div>
 
                 <span style={{ fontSize: 11, color: "var(--color-text-muted)" }}>{s.usage_count}× util.</span>
-                <span style={{ background: st.bg, color: st.fg, padding: "5px 12px", borderRadius: 9999, fontSize: 12, fontWeight: 600 }}>{st.label}</span>
+                <span style={{ background: st.bg, color: st.fg, padding: "5px 12px", borderRadius: "var(--radius-pill)", fontSize: 12, fontWeight: 600 }}>{st.label}</span>
 
                 {/* Actions */}
                 <button onClick={() => runTest(s)} disabled={busy === s.name + "/run"}
@@ -221,13 +221,13 @@ export default function SkillsClient({ apiUrl, token }: Props) {
 
 function btn(color: string): React.CSSProperties {
   return {
-    fontSize: 12.5, fontWeight: 600, padding: "6px 11px", borderRadius: 8, cursor: "pointer",
-    border: "1px solid var(--color-border)", background: "white", color, whiteSpace: "nowrap",
+    fontSize: 12.5, fontWeight: 600, padding: "6px 11px", borderRadius: "var(--radius-pill)", cursor: "pointer",
+    border: "1px solid var(--color-border)", background: "var(--color-surface)", color, whiteSpace: "nowrap",
   }
 }
 
 const preStyle: React.CSSProperties = {
   margin: 0, fontSize: 11.5, lineHeight: 1.5, color: "var(--color-text-primary)",
-  background: "white", border: "1px solid var(--color-border)", borderRadius: 8,
+  background: "var(--color-surface)", border: "1px solid var(--color-border)", borderRadius: "var(--radius-icon)",
   padding: "8px 10px", whiteSpace: "pre-wrap", wordBreak: "break-word", maxHeight: 320, overflow: "auto",
 }

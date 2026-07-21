@@ -26,7 +26,7 @@ export default async function ConceptionPage() {
           { label: "Fichiers traités" },
           { label: "Confiance moy." },
         ].map((kpi, i) => (
-          <div key={i} style={{ background: "white", borderRadius: "var(--radius-card-sm, 14px)", padding: 20, boxShadow: "var(--shadow-card)" }}>
+          <div key={i} style={{ background: "var(--color-surface)", borderRadius: "var(--radius-card-sm, 14px)", padding: 20, boxShadow: "var(--shadow-card)" }}>
             <div style={{ fontSize: 11, fontWeight: 600, color: "var(--color-text-muted)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 10 }}>
               {kpi.label}
             </div>
@@ -38,7 +38,7 @@ export default async function ConceptionPage() {
       <div style={{ display: "grid", gridTemplateColumns: "1fr 360px", gap: 24 }}>
         <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
           {/* Upload zone */}
-          <div style={{ background: "white", borderRadius: "var(--radius-card)", padding: 24, boxShadow: "var(--shadow-card)" }}>
+          <div style={{ background: "var(--color-surface)", borderRadius: "var(--radius-card)", padding: 24, boxShadow: "var(--shadow-card)" }}>
             <h3 style={{ margin: "0 0 16px", fontSize: 16, fontWeight: 700, color: "var(--color-text-primary)" }}>
               Analyser un fichier
             </h3>
@@ -57,14 +57,14 @@ export default async function ConceptionPage() {
               </div>
               <button disabled style={{
                 background: "var(--color-border)", color: "var(--color-text-muted)", border: "none",
-                borderRadius: 9999, padding: "10px 24px", fontSize: 14, fontWeight: 600, cursor: "not-allowed",
+                borderRadius: "var(--radius-pill)", padding: "10px 24px", fontSize: 14, fontWeight: 600, cursor: "not-allowed",
               }}>
                 Parcourir les fichiers
               </button>
             </div>
             <div style={{ marginTop: 12, display: "flex", gap: 8, flexWrap: "wrap" }}>
               {["SketchUp (.skp)", "PDF", "Photos (JPG/PNG)", "DXF"].map((fmt) => (
-                <span key={fmt} style={{ fontSize: 11, fontWeight: 600, color: "var(--color-text-muted)", border: "1px solid var(--color-border)", padding: "3px 10px", borderRadius: 9999 }}>
+                <span key={fmt} style={{ fontSize: 11, fontWeight: 600, color: "var(--color-text-muted)", border: "1px solid var(--color-border)", padding: "3px 10px", borderRadius: "var(--radius-pill)" }}>
                   {fmt}
                 </span>
               ))}
@@ -72,7 +72,7 @@ export default async function ConceptionPage() {
           </div>
 
           {/* Validations — non implémenté */}
-          <div style={{ background: "white", borderRadius: "var(--radius-card)", padding: 24, boxShadow: "var(--shadow-card)" }}>
+          <div style={{ background: "var(--color-surface)", borderRadius: "var(--radius-card)", padding: 24, boxShadow: "var(--shadow-card)" }}>
             <h3 style={{ margin: "0 0 16px", fontSize: 16, fontWeight: 700, color: "var(--color-text-primary)" }}>
               En attente de validation
             </h3>
@@ -88,7 +88,7 @@ export default async function ConceptionPage() {
 
         <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
           {/* Analyses récentes — non implémenté */}
-          <div style={{ background: "white", borderRadius: "var(--radius-card-sm, 14px)", padding: 20, boxShadow: "var(--shadow-card)" }}>
+          <div style={{ background: "var(--color-surface)", borderRadius: "var(--radius-card-sm, 14px)", padding: 20, boxShadow: "var(--shadow-card)" }}>
             <h3 style={{ margin: "0 0 12px", fontSize: 15, fontWeight: 700, color: "var(--color-text-primary)" }}>
               Analyses récentes
             </h3>
@@ -102,7 +102,7 @@ export default async function ConceptionPage() {
           </div>
 
           {/* Projets — non implémenté */}
-          <div style={{ background: "white", borderRadius: "var(--radius-card-sm, 14px)", padding: 20, boxShadow: "var(--shadow-card)" }}>
+          <div style={{ background: "var(--color-surface)", borderRadius: "var(--radius-card-sm, 14px)", padding: 20, boxShadow: "var(--shadow-card)" }}>
             <h3 style={{ margin: "0 0 12px", fontSize: 15, fontWeight: 700, color: "var(--color-text-primary)" }}>
               Projets actifs
             </h3>

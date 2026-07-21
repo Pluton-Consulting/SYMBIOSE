@@ -5,11 +5,12 @@ interface Props { apiUrl: string; token: string }
 
 const POLL_MS = 3000
 
-// Palette console (sombre, façon terminal développeur)
+// Palette console (bandeau sombre) — charte Symbiose (vert forêt), variables CSS uniquement.
+// Monospace conservé : fonction terminal (alignement des logs).
 const C = {
-  bg: "#0C130E", panel: "#121C15", panel2: "#0F1712", border: "#213026",
-  text: "#CFE6D6", dim: "#6E8C77", green: "#3FD98B", amber: "#E7B84B",
-  red: "#F87171", blue: "#7BB0F0", mono: "ui-monospace,'SF Mono','Cascadia Code',Menlo,Consolas,monospace",
+  bg: "var(--color-text-primary)", panel: "var(--color-primary)", panel2: "var(--color-text-primary)", border: "var(--color-primary-hover)",
+  text: "var(--color-text-on-dark)", dim: "var(--color-text-muted)", green: "var(--color-paid-text)", amber: "var(--color-pending-text)",
+  red: "var(--color-error-text)", blue: "var(--color-progress-text)", mono: "ui-monospace,'SF Mono','Cascadia Code',Menlo,Consolas,monospace",
 }
 
 async function getJSON(apiUrl: string, path: string, token: string) {
@@ -64,7 +65,7 @@ export default function SuperviseurClient({ apiUrl, token }: Props) {
   }, [refresh, live])
 
   const kpi = (label: string, value: any, color = C.text) => (
-    <div className="sym-fade" style={{ background: C.panel2, border: `1px solid ${C.border}`, borderRadius: 8, padding: "10px 12px" }}>
+    <div className="sym-fade" style={{ background: C.panel2, border: `1px solid ${C.border}`, borderRadius: "var(--radius-card-sm)", padding: "10px 12px" }}>
       <div style={{ fontSize: 10, color: C.dim, textTransform: "uppercase", letterSpacing: "0.08em" }}>{label}</div>
       <div style={{ fontFamily: C.mono, fontSize: 16, fontWeight: 600, color, marginTop: 3 }}>{value ?? "—"}</div>
     </div>
@@ -87,10 +88,10 @@ export default function SuperviseurClient({ apiUrl, token }: Props) {
         <div style={{ fontSize: 18, fontWeight: 700, letterSpacing: "-0.3px" }}>Console développeur</div>
         <div style={{ fontSize: 12, color: C.dim }}>super_admin · flux temps réel</div>
         <div style={{ flex: 1 }} />
-        <button onClick={() => setLive((v) => !v)} style={{ fontFamily: C.mono, fontSize: 12, background: live ? C.panel : C.panel2, color: live ? C.green : C.dim, border: `1px solid ${C.border}`, borderRadius: 7, padding: "6px 12px", cursor: "pointer" }}>
+        <button onClick={() => setLive((v) => !v)} style={{ fontFamily: C.mono, fontSize: 12, background: live ? C.panel : C.panel2, color: live ? C.green : C.dim, border: `1px solid ${C.border}`, borderRadius: "var(--radius-pill)", padding: "6px 12px", cursor: "pointer" }}>
           {live ? "● LIVE (pause)" : "○ figé (reprendre)"}
         </button>
-        <button onClick={refresh} style={{ fontFamily: C.mono, fontSize: 12, background: C.panel2, color: C.text, border: `1px solid ${C.border}`, borderRadius: 7, padding: "6px 12px", cursor: "pointer" }}>
+        <button onClick={refresh} style={{ fontFamily: C.mono, fontSize: 12, background: C.panel2, color: C.text, border: `1px solid ${C.border}`, borderRadius: "var(--radius-pill)", padding: "6px 12px", cursor: "pointer" }}>
           ↻ refresh
         </button>
       </div>
@@ -118,7 +119,7 @@ export default function SuperviseurClient({ apiUrl, token }: Props) {
 
       <div style={{ display: "grid", gridTemplateColumns: "1fr 340px", gap: 16 }}>
         {/* Live log stream */}
-        <div style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 10, overflow: "hidden" }}>
+        <div style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: "var(--radius-card)", boxShadow: "var(--shadow-card)", overflow: "hidden" }}>
           <div style={{ padding: "10px 14px", borderBottom: `1px solid ${C.border}`, fontSize: 12, color: C.dim, display: "flex", justifyContent: "space-between" }}>
             <span>audit_log · {logs.length} événements · cliquer une ligne pour le détail</span>
             <span>maj #{tick}</span>
@@ -166,7 +167,7 @@ export default function SuperviseurClient({ apiUrl, token }: Props) {
                     <div style={{ padding: "2px 14px 10px 88px", fontSize: 11.5 }}>
                       {l.error_message && <div style={{ color: C.red, marginBottom: 6, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>⚠ {l.error_message}</div>}
                       {entries.length > 0 && (
-                        <pre style={{ margin: 0, color: C.text, background: C.panel2, border: `1px solid ${C.border}`, borderRadius: 6, padding: "8px 10px", whiteSpace: "pre-wrap", wordBreak: "break-word", lineHeight: 1.55 }}>
+                        <pre style={{ margin: 0, color: C.text, background: C.panel2, border: `1px solid ${C.border}`, borderRadius: "var(--radius-icon)", padding: "8px 10px", whiteSpace: "pre-wrap", wordBreak: "break-word", lineHeight: 1.55 }}>
                           {entries.map(([k, v]) => `${k}: ${v}`).join("\n")}
                         </pre>
                       )}
@@ -185,18 +186,18 @@ export default function SuperviseurClient({ apiUrl, token }: Props) {
 
         {/* Side: providers + chains + agents */}
         <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-          <div style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 10, padding: 14 }}>
+          <div style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: "var(--radius-card)", boxShadow: "var(--shadow-card)", padding: 14 }}>
             <div style={{ fontSize: 12, color: C.dim, marginBottom: 10 }}>fournisseurs LLM</div>
             <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
               {system?.providers && Object.entries(system.providers).map(([p, up]: any) => (
-                <span key={p} style={{ fontSize: 11, padding: "3px 8px", borderRadius: 6, background: up ? "rgba(63,217,139,0.12)" : C.panel2, color: up ? C.green : C.dim, border: `1px solid ${up ? "rgba(63,217,139,0.3)" : C.border}` }}>
+                <span key={p} style={{ fontSize: 11, padding: "3px 8px", borderRadius: "var(--radius-pill)", background: up ? "var(--color-paid-bg)" : C.panel2, color: up ? C.green : C.dim, border: `1px solid ${up ? "var(--color-paid-text)" : C.border}` }}>
                   {up ? "●" : "○"} {p}
                 </span>
               ))}
             </div>
           </div>
 
-          <div style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 10, padding: 14 }}>
+          <div style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: "var(--radius-card)", boxShadow: "var(--shadow-card)", padding: 14 }}>
             <div style={{ fontSize: 12, color: C.dim, marginBottom: 10 }}>cascade (par palier)</div>
             {system?.chains && Object.entries(system.chains).map(([tier, list]: any) => (
               <div key={tier} style={{ marginBottom: 8 }}>
@@ -208,7 +209,7 @@ export default function SuperviseurClient({ apiUrl, token }: Props) {
             ))}
           </div>
 
-          <div style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 10, padding: 14 }}>
+          <div style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: "var(--radius-card)", boxShadow: "var(--shadow-card)", padding: 14 }}>
             <div style={{ fontSize: 12, color: C.dim, marginBottom: 10 }}>agents (aujourd'hui)</div>
             {agents.length === 0 && <div style={{ fontSize: 11, color: C.dim }}>— aucune requête —</div>}
             {agents.map((a: any) => (

@@ -13,25 +13,28 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="" />
         <link
-          href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap"
+          href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700&display=swap"
           rel="stylesheet"
         />
         <style dangerouslySetInnerHTML={{ __html: `
           :root {
-            --color-primary:        #304D32;
-            --color-primary-hover:  #26402A;
-            --color-primary-mid:    #6F9040;
-            --color-primary-light:  #CBD9A5;
-            --color-primary-subtle: #EEF3E3;
-            --color-leaf:           #9DB04F;
-            --color-canvas:         #F3F5EE;
+            /* Charte graphique Symbiose — vert forêt */
+            --color-primary:        #182B16;
+            --color-primary-hover:  #2D5A27;
+            --color-primary-mid:    #3F7A36;
+            --color-primary-light:  #C8E6C0;
+            --color-primary-subtle: #EDF4EC;
+            --color-leaf:           #3F7A36;
+            --color-canvas:         #F5F6F5;
             --color-surface:        #FFFFFF;
-            --color-border:         #E4E9DC;
-            --color-text-primary:   #1B291A;
-            --color-text-body:      #3A4A34;
-            --color-text-muted:     #8A9C82;
-            --color-paid-bg:        #E9F2DD;
-            --color-paid-text:      #3A6B2E;
+            --color-border:         #E8EBE8;
+            --color-text-primary:   #111A10;
+            --color-text-body:      #3D4D3C;
+            --color-text-muted:     #8FA08E;
+            --color-text-on-dark:   #FFFFFF;
+            --color-on-dark-accent: #A8D4A0;
+            --color-paid-bg:        #E6F4E3;
+            --color-paid-text:      #2D6B26;
             --color-pending-bg:     #FDF3E3;
             --color-pending-text:   #9A6520;
             --color-progress-bg:    #E8F0FE;
@@ -41,9 +44,12 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             --radius-card:          20px;
             --radius-card-sm:       14px;
             --radius-pill:          9999px;
+            --radius-icon:          10px;
             --shadow-card:          0 2px 12px rgba(24,43,22,0.06);
             --shadow-hover:         0 4px 20px rgba(24,43,22,0.10);
-            --font:                 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            --shadow-card-hover:    0 4px 20px rgba(24,43,22,0.10);
+            --font:                 'Plus Jakarta Sans', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            --font-family:          'Plus Jakarta Sans', 'Inter', sans-serif;
           }
           *, *::before, *::after { box-sizing: border-box; }
           body {

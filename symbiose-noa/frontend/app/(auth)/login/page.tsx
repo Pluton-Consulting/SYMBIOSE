@@ -34,10 +34,10 @@ export default function LoginPage() {
   }
 
   const card: React.CSSProperties = {
-    background: "white",
-    borderRadius: 16,
+    background: "var(--color-surface)",
+    borderRadius: "var(--radius-card)",
     padding: "40px 48px",
-    boxShadow: "0 1px 3px rgba(0,0,0,0.08)",
+    boxShadow: "var(--shadow-card)",
     textAlign: "center",
     maxWidth: 380,
     width: "100%",
@@ -49,7 +49,7 @@ export default function LoginPage() {
       display: "flex",
       alignItems: "center",
       justifyContent: "center",
-      background: "#f8f7f2",
+      background: "var(--color-canvas)",
     }}>
       <div style={card}>
         <img
@@ -61,14 +61,14 @@ export default function LoginPage() {
         {state === "sent" && (
           <div>
             <div style={{ fontSize: 40, marginBottom: 16 }}>📬</div>
-            <p style={{ fontWeight: 500, margin: "0 0 8px" }}>Vérifiez votre boîte mail</p>
-            <p style={{ color: "#888", fontSize: 13, margin: "0 0 24px" }}>
+            <p style={{ fontWeight: 500, margin: "0 0 8px", color: "var(--color-text-primary)" }}>Vérifiez votre boîte mail</p>
+            <p style={{ color: "var(--color-text-muted)", fontSize: 13, margin: "0 0 24px" }}>
               Un lien de connexion a été envoyé à<br />
               <strong>{email}</strong>
             </p>
             <button
               onClick={() => { setState("idle"); setEmail("") }}
-              style={{ color: "#304D32", background: "none", border: "none", cursor: "pointer", fontSize: 13 }}
+              style={{ color: "var(--color-primary)", background: "none", border: "none", cursor: "pointer", fontSize: 13 }}
             >
               Utiliser un autre email
             </button>
@@ -78,14 +78,14 @@ export default function LoginPage() {
         {state === "refused" && (
           <div>
             <div style={{ fontSize: 40, marginBottom: 16 }}>🔒</div>
-            <p style={{ fontWeight: 500, margin: "0 0 8px", color: "#c53030" }}>Accès non autorisé</p>
-            <p style={{ color: "#888", fontSize: 13, margin: "0 0 24px" }}>
+            <p style={{ fontWeight: 500, margin: "0 0 8px", color: "var(--color-error-text)" }}>Accès non autorisé</p>
+            <p style={{ color: "var(--color-text-muted)", fontSize: 13, margin: "0 0 24px" }}>
               L'adresse <strong>{email}</strong> n'est pas enregistrée.<br />
               Contactez votre administrateur.
             </p>
             <button
               onClick={() => { setState("idle"); setEmail("") }}
-              style={{ color: "#304D32", background: "none", border: "none", cursor: "pointer", fontSize: 13 }}
+              style={{ color: "var(--color-primary)", background: "none", border: "none", cursor: "pointer", fontSize: 13 }}
             >
               Essayer un autre email
             </button>
@@ -103,8 +103,8 @@ export default function LoginPage() {
               style={{
                 width: "100%",
                 padding: "10px 14px",
-                border: "1px solid #ddd",
-                borderRadius: 8,
+                border: "1px solid var(--color-border)",
+                borderRadius: "var(--radius-pill)",
                 fontSize: 14,
                 marginBottom: 12,
                 boxSizing: "border-box",
@@ -112,7 +112,7 @@ export default function LoginPage() {
               }}
             />
             {error && (
-              <p style={{ color: "#e53e3e", fontSize: 13, margin: "0 0 12px" }}>{error}</p>
+              <p style={{ color: "var(--color-error-text)", fontSize: 13, margin: "0 0 12px" }}>{error}</p>
             )}
             <button
               type="submit"
@@ -120,10 +120,10 @@ export default function LoginPage() {
               style={{
                 width: "100%",
                 padding: "12px 24px",
-                background: "#304D32",
-                color: "white",
+                background: "var(--color-primary)",
+                color: "var(--color-text-on-dark)",
                 border: "none",
-                borderRadius: 8,
+                borderRadius: "var(--radius-pill)",
                 fontSize: 14,
                 fontWeight: 500,
                 cursor: state === "loading" ? "not-allowed" : "pointer",
@@ -135,7 +135,7 @@ export default function LoginPage() {
           </form>
         )}
 
-        <p style={{ color: "#aaa", fontSize: 11, margin: "24px 0 0" }}>
+        <p style={{ color: "var(--color-text-muted)", fontSize: 11, margin: "24px 0 0" }}>
           Accès réservé aux collaborateurs Symbiose Paysage
         </p>
       </div>

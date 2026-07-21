@@ -95,7 +95,7 @@ function UsersTab({ initialUsers, backendToken, currentRole, apiUrl }: Props) {
   const inp: React.CSSProperties = {
     padding: "10px 14px", border: "1.5px solid var(--color-border)",
     borderRadius: 10, fontSize: 14, outline: "none", width: "100%",
-    color: "var(--color-text-primary)", background: "white",
+    color: "var(--color-text-primary)", background: "var(--color-surface)",
   }
 
   return (
@@ -110,8 +110,8 @@ function UsersTab({ initialUsers, backendToken, currentRole, apiUrl }: Props) {
           </div>
         </div>
         <button onClick={() => setShowForm(!showForm)} style={{
-          background: "var(--color-primary)", color: "white", border: "none",
-          borderRadius: 9999, padding: "10px 22px", fontSize: 14, fontWeight: 600, cursor: "pointer",
+          background: "var(--color-primary)", color: "var(--color-text-on-dark)", border: "none",
+          borderRadius: "var(--radius-pill)", padding: "10px 22px", fontSize: 14, fontWeight: 600, cursor: "pointer",
         }}>
           + Ajouter un utilisateur
         </button>
@@ -119,7 +119,7 @@ function UsersTab({ initialUsers, backendToken, currentRole, apiUrl }: Props) {
 
       {showForm && (
         <form onSubmit={addUser} style={{
-          background: "var(--color-primary-subtle)", borderRadius: 16, padding: 20,
+          background: "var(--color-primary-subtle)", borderRadius: "var(--radius-card)", padding: 20,
           marginBottom: 20, border: "1px solid var(--color-primary-light)",
         }}>
           <div style={{ fontSize: 14, fontWeight: 700, color: "var(--color-primary)", marginBottom: 14 }}>
@@ -137,15 +137,15 @@ function UsersTab({ initialUsers, backendToken, currentRole, apiUrl }: Props) {
           {formError && <p style={{ color: "var(--color-error-text)", fontSize: 13, margin: "0 0 10px" }}>{formError}</p>}
           <div style={{ display: "flex", gap: 8 }}>
             <button type="submit" disabled={adding} style={{
-              background: "var(--color-primary)", color: "white", border: "none",
-              borderRadius: 9999, padding: "9px 20px", fontSize: 13, fontWeight: 600,
+              background: "var(--color-primary)", color: "var(--color-text-on-dark)", border: "none",
+              borderRadius: "var(--radius-pill)", padding: "9px 20px", fontSize: 13, fontWeight: 600,
               cursor: adding ? "not-allowed" : "pointer", opacity: adding ? 0.7 : 1,
             }}>
               {adding ? "Ajout..." : "Ajouter"}
             </button>
             <button type="button" onClick={() => setShowForm(false)} style={{
-              background: "white", color: "var(--color-text-body)", border: "1px solid var(--color-border)",
-              borderRadius: 9999, padding: "9px 20px", fontSize: 13, cursor: "pointer",
+              background: "var(--color-surface)", color: "var(--color-text-body)", border: "1px solid var(--color-border)",
+              borderRadius: "var(--radius-pill)", padding: "9px 20px", fontSize: 13, cursor: "pointer",
             }}>
               Annuler
             </button>
@@ -153,7 +153,7 @@ function UsersTab({ initialUsers, backendToken, currentRole, apiUrl }: Props) {
         </form>
       )}
 
-      <div style={{ background: "white", borderRadius: 16, boxShadow: "var(--shadow-card)", overflow: "hidden" }}>
+      <div style={{ background: "var(--color-surface)", borderRadius: "var(--radius-card)", boxShadow: "var(--shadow-card)", overflow: "hidden" }}>
         <table style={{ width: "100%", borderCollapse: "collapse" }}>
           <thead>
             <tr style={{ borderBottom: "1px solid var(--color-border)", background: "var(--color-canvas)" }}>
@@ -172,7 +172,7 @@ function UsersTab({ initialUsers, backendToken, currentRole, apiUrl }: Props) {
                     <div style={{ fontSize: 12, color: "var(--color-text-muted)", marginTop: 1 }}>{user.email}</div>
                   </td>
                   <td style={{ padding: "14px 16px" }}>
-                    <span style={{ background: color + "18", color, padding: "3px 10px", borderRadius: 9999, fontSize: 12, fontWeight: 600 }}>
+                    <span style={{ background: color + "18", color, padding: "3px 10px", borderRadius: "var(--radius-pill)", fontSize: 12, fontWeight: 600 }}>
                       {ROLE_LABELS[user.role]}
                     </span>
                   </td>
@@ -197,7 +197,7 @@ function UsersTab({ initialUsers, backendToken, currentRole, apiUrl }: Props) {
                           <span style={{
                             position: "absolute", top: 3,
                             left: has ? 21 : 3, width: 16, height: 16,
-                            borderRadius: "50%", background: "white",
+                            borderRadius: "50%", background: "var(--color-surface)",
                             transition: "left 0.2s", boxShadow: "0 1px 3px rgba(0,0,0,0.2)",
                           }} />
                         </button>
@@ -213,7 +213,7 @@ function UsersTab({ initialUsers, backendToken, currentRole, apiUrl }: Props) {
                     {(currentRole === "super_admin" || currentRole === "direction" || METIER_ROLES.includes(user.role)) && (
                       <button onClick={() => toggleActive(user.id, user.actif, user.role)} style={{
                         background: "none", border: "1px solid var(--color-border)",
-                        borderRadius: 9999, padding: "5px 14px", fontSize: 12, cursor: "pointer",
+                        borderRadius: "var(--radius-pill)", padding: "5px 14px", fontSize: 12, cursor: "pointer",
                         color: "var(--color-text-body)", fontWeight: 500,
                       }}>
                         {user.actif ? "Désactiver" : "Réactiver"}
@@ -285,12 +285,12 @@ function PlagesTab({ apiUrl, backendToken, users, currentRole }: { apiUrl: strin
     } catch { setMsgU((m) => ({ ...m, [u.id]: "Erreur" })) } finally { setSavingU(null) }
   }
 
-  const inp: React.CSSProperties = { width: 56, padding: "6px 8px", border: "1.5px solid var(--color-border)", borderRadius: 8, fontSize: 13, outline: "none", background: "white", color: "var(--color-text-primary)" }
+  const inp: React.CSSProperties = { width: 56, padding: "6px 8px", border: "1.5px solid var(--color-border)", borderRadius: 8, fontSize: 13, outline: "none", background: "var(--color-surface)", color: "var(--color-text-primary)" }
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
       {/* Plage globale */}
-      <div style={{ background: "white", borderRadius: 16, padding: 20, boxShadow: "var(--shadow-card)" }}>
+      <div style={{ background: "var(--color-surface)", borderRadius: "var(--radius-card)", padding: 20, boxShadow: "var(--shadow-card)" }}>
         <div style={{ fontSize: 15, fontWeight: 700, color: "var(--color-text-primary)", marginBottom: 4 }}>Plage horaire globale</div>
         <div style={{ fontSize: 12, color: "var(--color-text-muted)", marginBottom: 14 }}>
           Appliquée à tout utilisateur sans réglage individuel. super_admin et direction sont exemptés.
@@ -303,7 +303,7 @@ function PlagesTab({ apiUrl, backendToken, users, currentRole }: { apiUrl: strin
             <label style={{ fontSize: 13, color: "var(--color-text-body)", display: "flex", alignItems: "center", gap: 8 }}>
               Fin <input type="number" min={1} max={24} value={glob.end_hour} onChange={(e) => setGlob({ ...glob, end_hour: parseInt(e.target.value) || 1 })} style={inp} /> h
             </label>
-            <button onClick={saveGlobal} disabled={savingG} style={{ background: "var(--color-primary)", color: "white", border: "none", borderRadius: 9999, padding: "8px 20px", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>
+            <button onClick={saveGlobal} disabled={savingG} style={{ background: "var(--color-primary)", color: "var(--color-text-on-dark)", border: "none", borderRadius: "var(--radius-pill)", padding: "8px 20px", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>
               {savingG ? "..." : "Enregistrer"}
             </button>
             {msgG && <span style={{ fontSize: 13, color: msgG.startsWith("✓") ? "var(--color-paid-text)" : "var(--color-error-text)" }}>{msgG}</span>}
@@ -326,7 +326,7 @@ function PlagesTab({ apiUrl, backendToken, users, currentRole }: { apiUrl: strin
       </div>
 
       {/* Réglages par utilisateur */}
-      <div style={{ background: "white", borderRadius: 16, boxShadow: "var(--shadow-card)", overflow: "hidden" }}>
+      <div style={{ background: "var(--color-surface)", borderRadius: "var(--radius-card)", boxShadow: "var(--shadow-card)", overflow: "hidden" }}>
         <div style={{ padding: "16px 20px", borderBottom: "1px solid var(--color-border)", fontSize: 15, fontWeight: 700, color: "var(--color-text-primary)" }}>
           Réglages individuels <span style={{ fontWeight: 400, fontSize: 12, color: "var(--color-text-muted)" }}>— vide = plage globale</span>
         </div>
@@ -349,7 +349,7 @@ function PlagesTab({ apiUrl, backendToken, users, currentRole }: { apiUrl: strin
                       <div style={{ fontSize: 11, color: "var(--color-text-muted)" }}>{u.email}</div>
                     </td>
                     <td style={{ padding: "12px 16px" }}>
-                      <span style={{ background: (ROLE_COLORS[u.role] || "#666") + "18", color: ROLE_COLORS[u.role] || "#666", padding: "3px 10px", borderRadius: 9999, fontSize: 12, fontWeight: 600 }}>{ROLE_LABELS[u.role]}</span>
+                      <span style={{ background: (ROLE_COLORS[u.role] || "#666") + "18", color: ROLE_COLORS[u.role] || "#666", padding: "3px 10px", borderRadius: "var(--radius-pill)", fontSize: 12, fontWeight: 600 }}>{ROLE_LABELS[u.role]}</span>
                     </td>
                     <td style={{ padding: "12px 16px" }}>
                       <input type="number" min={0} max={23} placeholder="—" value={u.schedule_start_hour ?? ""} disabled={!editable || u.bypass_schedule} onChange={(e) => patch(u.id, { schedule_start_hour: e.target.value })} style={inp} />
@@ -359,12 +359,12 @@ function PlagesTab({ apiUrl, backendToken, users, currentRole }: { apiUrl: strin
                     </td>
                     <td style={{ padding: "12px 16px" }}>
                       <button onClick={() => editable && patch(u.id, { bypass_schedule: !u.bypass_schedule })} disabled={!editable} style={{ width: 40, height: 22, borderRadius: 11, border: "none", background: u.bypass_schedule ? "var(--color-primary-mid)" : "var(--color-border)", cursor: editable ? "pointer" : "default", position: "relative" }}>
-                        <span style={{ position: "absolute", top: 3, left: u.bypass_schedule ? 21 : 3, width: 16, height: 16, borderRadius: "50%", background: "white", transition: "left 0.2s", boxShadow: "0 1px 3px rgba(0,0,0,0.2)" }} />
+                        <span style={{ position: "absolute", top: 3, left: u.bypass_schedule ? 21 : 3, width: 16, height: 16, borderRadius: "50%", background: "var(--color-surface)", transition: "left 0.2s", boxShadow: "0 1px 3px rgba(0,0,0,0.2)" }} />
                       </button>
                     </td>
                     <td style={{ padding: "12px 16px", textAlign: "right", whiteSpace: "nowrap" }}>
                       {editable && (
-                        <button onClick={() => saveUser(u)} disabled={savingU === u.id} style={{ background: "none", border: "1px solid var(--color-border)", borderRadius: 9999, padding: "5px 14px", fontSize: 12, cursor: "pointer", color: "var(--color-text-body)", fontWeight: 500 }}>
+                        <button onClick={() => saveUser(u)} disabled={savingU === u.id} style={{ background: "none", border: "1px solid var(--color-border)", borderRadius: "var(--radius-pill)", padding: "5px 14px", fontSize: 12, cursor: "pointer", color: "var(--color-text-body)", fontWeight: 500 }}>
                           {savingU === u.id ? "..." : "Enregistrer"}
                         </button>
                       )}
@@ -414,7 +414,7 @@ function RBACTab({ apiUrl, backendToken }: { apiUrl: string; backendToken: strin
 
   return (
     <div>
-      <div style={{ background: "white", borderRadius: 16, boxShadow: "var(--shadow-card)", overflow: "hidden" }}>
+      <div style={{ background: "var(--color-surface)", borderRadius: "var(--radius-card)", boxShadow: "var(--shadow-card)", overflow: "hidden" }}>
         <div style={{ padding: "16px 24px", borderBottom: "1px solid var(--color-border)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
           <div>
             <div style={{ fontSize: 15, fontWeight: 700, color: "var(--color-text-primary)" }}>Matrice de permissions par rôle</div>
@@ -422,7 +422,7 @@ function RBACTab({ apiUrl, backendToken }: { apiUrl: string; backendToken: strin
               {canEdit ? "Cliquez sur une case pour activer/désactiver. Le super admin n'est pas modifiable." : "Lecture seule — édition réservée au super admin."}
             </div>
           </div>
-          <span style={{ fontSize: 11, fontWeight: 600, padding: "4px 12px", borderRadius: 9999, color: canEdit ? "var(--color-paid-text)" : "var(--color-pending-text)", background: canEdit ? "var(--color-paid-bg)" : "var(--color-pending-bg)" }}>
+          <span style={{ fontSize: 11, fontWeight: 600, padding: "4px 12px", borderRadius: "var(--radius-pill)", color: canEdit ? "var(--color-paid-text)" : "var(--color-pending-text)", background: canEdit ? "var(--color-paid-bg)" : "var(--color-pending-bg)" }}>
             {canEdit ? "Éditable" : "Lecture seule"}
           </span>
         </div>
@@ -442,8 +442,8 @@ function RBACTab({ apiUrl, backendToken }: { apiUrl: string; backendToken: strin
                 const locked = role === data.protected_role
                 return (
                   <tr key={role} style={{ borderTop: "1px solid var(--color-border)" }}>
-                    <td style={{ padding: "10px 16px", position: "sticky", left: 0, background: "white" }}>
-                      <span style={{ background: color + "18", color, padding: "4px 12px", borderRadius: 9999, fontSize: 12, fontWeight: 700 }}>{ROLE_LABELS[role]}</span>
+                    <td style={{ padding: "10px 16px", position: "sticky", left: 0, background: "var(--color-surface)" }}>
+                      <span style={{ background: color + "18", color, padding: "4px 12px", borderRadius: "var(--radius-pill)", fontSize: 12, fontWeight: 700 }}>{ROLE_LABELS[role]}</span>
                     </td>
                     {data.features.map((f: string) => {
                       const has = !!data.matrix[role]?.[f]
@@ -517,9 +517,9 @@ function AgentsTab({ apiUrl, backendToken }: { apiUrl: string; backendToken: str
         const s = stats[agent.key] || {}
         const dur = s.avg_duration_ms != null ? `${s.avg_duration_ms} ms` : "—"
         return (
-          <div key={agent.key} style={{ background: "white", borderRadius: 16, padding: 24, boxShadow: "var(--shadow-card)", border: "1.5px solid var(--color-border)" }}>
+          <div key={agent.key} style={{ background: "var(--color-surface)", borderRadius: "var(--radius-card)", padding: 24, boxShadow: "var(--shadow-card)", border: "1.5px solid var(--color-border)" }}>
             <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 6 }}>
-              <div style={{ width: 40, height: 40, borderRadius: 10, background: "var(--color-primary)" }} />
+              <div style={{ width: 40, height: 40, borderRadius: "var(--radius-icon)", background: "var(--color-primary)" }} />
               <div>
                 <div style={{ fontSize: 15, fontWeight: 700, color: "var(--color-text-primary)" }}>{agent.name}</div>
                 <div style={{ fontSize: 12, color: "var(--color-text-muted)", marginTop: 1 }}>{agent.tier} · cascade multi-fournisseurs</div>
@@ -577,7 +577,7 @@ function QuotasTab({ backendToken, apiUrl }: { backendToken: string; apiUrl: str
 
   return (
     <div>
-      <div style={{ background: "white", borderRadius: 16, boxShadow: "var(--shadow-card)", overflow: "hidden" }}>
+      <div style={{ background: "var(--color-surface)", borderRadius: "var(--radius-card)", boxShadow: "var(--shadow-card)", overflow: "hidden" }}>
         <div style={{ padding: "16px 24px", borderBottom: "1px solid var(--color-border)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
           <div>
             <div style={{ fontSize: 15, fontWeight: 700, color: "var(--color-text-primary)" }}>Quotas mensuels par rôle</div>
@@ -586,9 +586,9 @@ function QuotasTab({ backendToken, apiUrl }: { backendToken: string; apiUrl: str
             </div>
           </div>
           <button onClick={save} disabled={saving || loading} style={{
-            background: success ? "#166534" : "var(--color-primary)",
-            color: "white", border: "none",
-            borderRadius: 9999, padding: "9px 22px", fontSize: 13, fontWeight: 600,
+            background: success ? "var(--color-paid-text)" : "var(--color-primary)",
+            color: "var(--color-text-on-dark)", border: "none",
+            borderRadius: "var(--radius-pill)", padding: "9px 22px", fontSize: 13, fontWeight: 600,
             cursor: saving ? "not-allowed" : "pointer", opacity: saving ? 0.7 : 1,
             transition: "background 0.3s",
           }}>
@@ -614,7 +614,7 @@ function QuotasTab({ backendToken, apiUrl }: { backendToken: string; apiUrl: str
                   }}>
                     <span style={{
                       background: color + "18", color, padding: "4px 12px",
-                      borderRadius: 9999, fontSize: 12, fontWeight: 700,
+                      borderRadius: "var(--radius-pill)", fontSize: 12, fontWeight: 700,
                       minWidth: 130, textAlign: "center", display: "inline-block",
                     }}>
                       {ROLE_LABELS[role]}
@@ -637,7 +637,7 @@ function QuotasTab({ backendToken, apiUrl }: { backendToken: string; apiUrl: str
                           style={{
                             padding: "8px 12px", border: "1.5px solid var(--color-border)",
                             borderRadius: 10, fontSize: 14, width: 110,
-                            color: "var(--color-text-primary)", background: "white", outline: "none",
+                            color: "var(--color-text-primary)", background: "var(--color-surface)", outline: "none",
                           }}
                         />
                         <span style={{ fontSize: 13, color: "var(--color-text-muted)" }}>req / mois</span>
@@ -694,13 +694,13 @@ function ServicesTab({ apiUrl, backendToken }: { apiUrl: string; backendToken: s
       <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 14 }}>
         {services.map((s, i) => (
           <div key={i} style={{
-            background: "white", borderRadius: 14, padding: 18, boxShadow: "var(--shadow-card)",
+            background: "var(--color-surface)", borderRadius: "var(--radius-card-sm)", padding: 18, boxShadow: "var(--shadow-card)",
             borderLeft: `3px solid ${s.up ? "var(--color-primary-mid)" : "var(--color-pending-text)"}`,
           }}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
               <div style={{ fontSize: 14, fontWeight: 700, color: "var(--color-text-primary)" }}>{s.name}</div>
               <span style={{
-                fontSize: 11, fontWeight: 700, padding: "3px 10px", borderRadius: 9999,
+                fontSize: 11, fontWeight: 700, padding: "3px 10px", borderRadius: "var(--radius-pill)",
                 color: s.up ? "var(--color-paid-text)" : "var(--color-pending-text)",
                 background: s.up ? "var(--color-paid-bg)" : "var(--color-pending-bg)",
               }}>
@@ -733,7 +733,7 @@ export default function SettingsClient({ initialUsers, backendToken, currentRole
         Configuration du système PLUTON — accès {ROLE_LABELS[currentRole] || currentRole}
       </p>
 
-      <div style={{ display: "flex", gap: 2, marginBottom: 28, background: "white", padding: 6, borderRadius: 14, width: "fit-content", boxShadow: "var(--shadow-card)" }}>
+      <div style={{ display: "flex", gap: 2, marginBottom: 28, background: "var(--color-surface)", padding: 6, borderRadius: "var(--radius-card-sm)", width: "fit-content", boxShadow: "var(--shadow-card)" }}>
         {subTabs.map((t) => {
           const active = activeTab === t.key
           return (

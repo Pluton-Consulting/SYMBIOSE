@@ -210,7 +210,7 @@ export default function ChatWindow({ threadId: initialThreadId = null, token: to
         )}
 
         {pendingValidation && (
-          <div style={{ margin: "8px 32px", padding: "12px 16px", background: "var(--color-pending-bg)", color: "var(--color-pending-text)", borderRadius: 10, fontSize: 13, fontWeight: 600 }}>
+          <div style={{ margin: "8px 32px", padding: "12px 16px", background: "var(--color-pending-bg)", color: "var(--color-pending-text)", borderRadius: "var(--radius-card-sm)", fontSize: 13, fontWeight: 600 }}>
             ⏳ En attente de validation humaine
           </div>
         )}

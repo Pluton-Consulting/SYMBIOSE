@@ -25,7 +25,7 @@ const STATUS_STYLE: Record<string, { bg: string; fg: string; label: string }> = 
   running:           { bg: "var(--color-progress-bg)", fg: "var(--color-progress-text)", label: "En cours" },
   awaiting_approval: { bg: "var(--color-pending-bg)", fg: "var(--color-pending-text)", label: "Validation requise" },
   completed:         { bg: "var(--color-paid-bg)", fg: "var(--color-paid-text)", label: "Terminé" },
-  failed:            { bg: "#fee2e2", fg: "#b91c1c", label: "Échec" },
+  failed:            { bg: "var(--color-error-bg)", fg: "var(--color-error-text)", label: "Échec" },
   cancelled:         { bg: "var(--color-canvas)", fg: "var(--color-text-muted)", label: "Annulé" },
 }
 
@@ -83,15 +83,15 @@ export default function NavigateurClient({ token }: { token: string; role: strin
   }
 
   const inputStyle: React.CSSProperties = {
-    width: "100%", padding: "10px 12px", borderRadius: 10,
-    border: "1px solid var(--color-border, #e5e7eb)", fontSize: 14,
+    width: "100%", padding: "10px 12px", borderRadius: "var(--radius-icon)",
+    border: "1px solid var(--color-border)", fontSize: 14,
     fontFamily: "inherit", boxSizing: "border-box",
   }
 
   return (
     <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 32 }}>
       {/* Lancement */}
-      <div style={{ background: "white", borderRadius: 16, padding: 24, boxShadow: "var(--shadow-card)" }}>
+      <div style={{ background: "var(--color-surface)", border: "1px solid var(--color-border)", borderRadius: "var(--radius-card)", padding: 24, boxShadow: "var(--shadow-card)" }}>
         <h2 style={{ margin: "0 0 14px", fontSize: 18, fontWeight: 700, color: "var(--color-text-primary)" }}>
           Nouvelle tâche
         </h2>
@@ -124,7 +124,7 @@ export default function NavigateurClient({ token }: { token: string; role: strin
         </label>
 
         {error && (
-          <div style={{ background: "var(--color-pending-bg)", color: "var(--color-pending-text)", borderRadius: 10, padding: "10px 14px", fontSize: 13, marginBottom: 14 }}>
+          <div style={{ background: "var(--color-pending-bg)", color: "var(--color-pending-text)", borderRadius: "var(--radius-icon)", padding: "10px 14px", fontSize: 13, marginBottom: 14 }}>
             {error}
           </div>
         )}
@@ -132,7 +132,7 @@ export default function NavigateurClient({ token }: { token: string; role: strin
         <button
           onClick={launch}
           disabled={launching}
-          style={{ padding: "11px 22px", borderRadius: 10, border: "none", cursor: "pointer", fontWeight: 700, fontSize: 14, background: "var(--color-primary)", color: "white", opacity: launching ? 0.6 : 1 }}
+          style={{ padding: "11px 22px", borderRadius: "var(--radius-pill)", border: "none", cursor: "pointer", fontWeight: 700, fontSize: 14, background: "var(--color-primary)", color: "var(--color-text-on-dark)", opacity: launching ? 0.6 : 1 }}
         >
           {launching ? "Lancement…" : "Lancer la tâche"}
         </button>
@@ -151,7 +151,7 @@ export default function NavigateurClient({ token }: { token: string; role: strin
           <span style={{ fontFamily: "monospace", fontSize: 13, color: "var(--color-text-muted)" }}>{tasks.length}</span>
         </div>
         {tasks.length === 0 ? (
-          <div style={{ background: "white", borderRadius: 16, padding: "40px 24px", textAlign: "center", boxShadow: "var(--shadow-card)", color: "var(--color-text-muted)", fontSize: 14 }}>
+          <div style={{ background: "var(--color-surface)", border: "1px solid var(--color-border)", borderRadius: "var(--radius-card)", padding: "40px 24px", textAlign: "center", boxShadow: "var(--shadow-card)", color: "var(--color-text-muted)", fontSize: 14 }}>
             Aucune tâche lancée pour l'instant.
           </div>
         ) : (
@@ -160,7 +160,7 @@ export default function NavigateurClient({ token }: { token: string; role: strin
               const st = STATUS_STYLE[t.status] || { bg: "var(--color-canvas)", fg: "var(--color-text-muted)", label: t.status }
               const active = t.status === "running" || t.status === "awaiting_approval" || t.status === "pending"
               return (
-                <div key={t.id} style={{ background: "white", borderRadius: 14, padding: "16px 20px", boxShadow: "var(--shadow-card)" }}>
+                <div key={t.id} style={{ background: "var(--color-surface)", border: "1px solid var(--color-border)", borderRadius: "var(--radius-card-sm)", padding: "16px 20px", boxShadow: "var(--shadow-card)" }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ fontSize: 14, color: "var(--color-text-primary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.task_prompt}</div>
@@ -168,13 +168,13 @@ export default function NavigateurClient({ token }: { token: string; role: strin
                         {(t.allowed_domains || []).join(", ")} · {t.steps} étape(s){t.error ? ` · ${t.error}` : ""}
                       </div>
                     </div>
-                    <span style={{ background: st.bg, color: st.fg, padding: "5px 12px", borderRadius: 9999, fontSize: 12, fontWeight: 600, whiteSpace: "nowrap" }}>
+                    <span style={{ background: st.bg, color: st.fg, padding: "5px 12px", borderRadius: "var(--radius-pill)", fontSize: 12, fontWeight: 600, whiteSpace: "nowrap" }}>
                       {st.label}
                     </span>
                     {active && (
                       <button
                         onClick={() => cancel(t.id)}
-                        style={{ padding: "6px 12px", borderRadius: 8, border: "1px solid var(--color-border, #e5e7eb)", background: "white", cursor: "pointer", fontSize: 12, color: "var(--color-text-muted)" }}
+                        style={{ padding: "6px 12px", borderRadius: "var(--radius-pill)", border: "1px solid var(--color-border)", background: "var(--color-surface)", cursor: "pointer", fontSize: 12, color: "var(--color-text-body)" }}
                       >
                         Annuler
                       </button>
@@ -184,7 +184,7 @@ export default function NavigateurClient({ token }: { token: string; role: strin
                     <div style={{ marginTop: 12 }}>
                       <button
                         onClick={() => setOpenTask((o) => ({ ...o, [t.id]: !o[t.id] }))}
-                        style={{ background: "none", border: "1px solid var(--color-border, #e5e7eb)", borderRadius: 8, padding: "5px 12px", fontSize: 12, cursor: "pointer", color: "var(--color-primary)", fontWeight: 600 }}
+                        style={{ background: "none", border: "1px solid var(--color-border)", borderRadius: "var(--radius-pill)", padding: "5px 12px", fontSize: 12, cursor: "pointer", color: "var(--color-primary)", fontWeight: 600 }}
                       >
                         {openTask[t.id] ? "Masquer le détail" : `Voir le détail (${t.steps} étape${t.steps > 1 ? "s" : ""})`}
                       </button>
@@ -192,7 +192,7 @@ export default function NavigateurClient({ token }: { token: string; role: strin
                       {openTask[t.id] && (
                         <div style={{ marginTop: 10 }}>
                           {/* Résultat / résumé */}
-                          <div style={{ padding: "12px 14px", background: "var(--color-canvas)", borderRadius: 10, fontSize: 13, color: "var(--color-text-body)", lineHeight: 1.55, whiteSpace: "pre-wrap", marginBottom: 12 }}>
+                          <div style={{ padding: "12px 14px", background: "var(--color-canvas)", borderRadius: "var(--radius-icon)", fontSize: 13, color: "var(--color-text-body)", lineHeight: 1.55, whiteSpace: "pre-wrap", marginBottom: 12 }}>
                             {t.result?.summary
                               ? t.result.summary
                               : <span style={{ color: "var(--color-text-muted)", fontStyle: "italic" }}>Aucun résumé rédigé par l'agent.</span>}
@@ -206,7 +206,7 @@ export default function NavigateurClient({ token }: { token: string; role: strin
                               </div>
                               <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
                                 {t.result.step_log.map((s) => (
-                                  <div key={s.n} style={{ display: "flex", gap: 10, alignItems: "baseline", fontSize: 12, padding: "6px 10px", background: "white", border: "1px solid var(--color-border, #eee)", borderRadius: 8 }}>
+                                  <div key={s.n} style={{ display: "flex", gap: 10, alignItems: "baseline", fontSize: 12, padding: "6px 10px", background: "var(--color-surface)", border: "1px solid var(--color-border)", borderRadius: "var(--radius-icon)" }}>
                                     <span style={{ fontWeight: 700, color: "var(--color-primary-mid)", minWidth: 24, flexShrink: 0 }}>#{s.n}</span>
                                     <span style={{ fontWeight: 600, color: "var(--color-text-primary)", minWidth: 130, flexShrink: 0 }}>{s.action || "—"}</span>
                                     <span style={{ color: "var(--color-text-muted)", wordBreak: "break-all" }}>{s.url || ""}</span>
