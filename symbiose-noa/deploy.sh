@@ -15,8 +15,13 @@ if [ ! -f .env ]; then
   exit 1
 fi
 
-# Charge .env pour disposer de POSTGRES_USER / POSTGRES_DB / FIRST_ADMIN_EMAIL ici.
-set -a; . ./.env; set +a
+# Lit quelques variables du .env SANS le sourcer : le .env (format Docker Compose) peut
+# contenir des espaces / des caractères < > (ex. RESEND_FROM_EMAIL) qui casseraient `. .env`.
+# On retire aussi un éventuel commentaire de fin de ligne et les espaces.
+env_get() { sed -n "s/^[[:space:]]*$1=//p" .env | sed 's/[[:space:]]*#.*$//; s/[[:space:]]*$//'; }
+POSTGRES_USER="$(env_get POSTGRES_USER)"
+POSTGRES_DB="$(env_get POSTGRES_DB)"
+FIRST_ADMIN_EMAIL="$(env_get FIRST_ADMIN_EMAIL)"
 : "${POSTGRES_USER:?POSTGRES_USER manquant dans .env}"
 : "${POSTGRES_DB:?POSTGRES_DB manquant dans .env}"
 
