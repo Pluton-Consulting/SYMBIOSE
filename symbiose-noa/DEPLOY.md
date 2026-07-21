@@ -1,14 +1,23 @@
-# Déployer Symbiose sur un VPS Ubuntu — VPN Headscale + nom de domaine
+# Déployer Symbiose sur un VPS Ubuntu — VPN Headscale + domaine + HTTPS
 
-Ce guide déploie **le projet Symbiose identique à celui du dépôt** sur un VPS Ubuntu,
-accessible via un **VPN privé auto-hébergé (Headscale)** sous un **nom de domaine**.
-L'application n'est **jamais exposée sur l'Internet public** — seuls les appareils
-connectés au VPN (toi + les employés) y accèdent. C'est le bon choix pour des
-**données client sensibles**, et c'est **100 % gratuit / sans dépendance** à un tiers.
+Ce guide déploie **le projet Symbiose identique à celui du dépôt** sur un VPS Ubuntu :
+- accès **privé via un VPN auto-hébergé (Headscale)** — l'app n'est **jamais** sur l'Internet public ;
+- sous un **nom de domaine** (`assistant.symbiose-paysage.fr`) ;
+- en **HTTPS valide** (certificat Let's Encrypt public, renouvelé automatiquement, **rien à
+  installer sur les postes**), obtenu via le **challenge DNS-01 OVH** (Caddy).
 
-> **Deux « admin » à ne pas confondre** (voir §1 et §7) :
-> - l'**admin du serveur** = le compte Linux fourni par OVH (`ubuntu`/`root`) qui gère la machine ;
-> - l'**admin de l'application** = ton login *dans* NOA (par email/lien magique). Ce sont deux couches différentes.
+100 % gratuit, sans dépendance à un service tiers.
+
+> **Le nom de domaine se configure quand tu veux (même plus tard).** Rien n'est figé dans le
+> code : tout se règle dans `.env` (étape 8). Ici `symbiose-paysage.fr` / `assistant.symbiose-paysage.fr`
+> ne sont qu'un **exemple** — remplace-les partout par ton vrai domaine. ⚠ Le **seul** point qui
+> dépend du domaine est son **hébergeur DNS** (pour le certificat HTTPS DNS-01). Ce guide suppose
+> **OVH** ; si ton domaine est chez Cloudflare / Gandi / autre, une **ligne** du `caddy/Dockerfile`
+> (le module) et le bloc `tls` du `Caddyfile` sont à adapter — dis-le-moi et je te les donne.
+
+> **Deux « admin » à ne pas confondre :**
+> - l'**admin du serveur** = le compte Linux OVH (`ubuntu`/`root`) qui gère la machine ;
+> - l'**admin de l'application** (`FIRST_ADMIN_EMAIL`) = ton login *dans* NOA (par email / lien magique).
 
 ---
 
@@ -16,49 +25,49 @@ connectés au VPN (toi + les employés) y accèdent. C'est le bon choix pour des
 
 ```
    Employés (client Tailscale connecté à TON Headscale)
-            │   (tunnel WireGuard chiffré, privé — jamais l'Internet public)
+            │   (tunnel WireGuard chiffré, privé)
             ▼
-   assistant.symbiose-paysage.fr   → IP VPN du VPS (100.64.0.x)   ← ton nom de domaine
+   https://assistant.symbiose-paysage.fr   → IP VPN du VPS (100.64.0.x)   ← domaine + HTTPS
             │
-   nginx  (écoute sur HEADSCALE_IP = l'IP VPN du VPS, port 80)     ← reverse proxy déjà dans le projet
-       ├── /            → frontend:3000  (Next.js)
-       ├── /api/        → backend:8000   (FastAPI)
-       └── /api/ws/     → backend:8000   (WebSocket du chat)
+   Caddy  (écoute sur ${VPN_IP}:443)        ← certificat Let's Encrypt (DNS-01 OVH), auto-renouvelé
+            │  reverse_proxy
+   nginx  (interne, 127.0.0.1:80)           ← routage déjà dans le projet
+       ├── /            → frontend:3000
+       ├── /api/        → backend:8000
+       └── /api/ws/     → backend:8000  (WebSocket)
             │
-   Réseau Docker interne : frontend · backend · browser-worker · postgres(pgvector)
+   Réseau Docker : frontend · backend · browser-worker · postgres(pgvector)
 
    ── En parallèle, sur le même VPS ──
-   vpn.symbiose-paysage.fr → IP PUBLIQUE du VPS → serveur Headscale (coordination du VPN)
+   https://vpn.symbiose-paysage.fr → IP PUBLIQUE du VPS → serveur Headscale (coordination VPN)
 ```
 
-Deux sous-domaines de `symbiose-paysage.fr` :
-- **`vpn.`** → IP **publique** → le serveur Headscale (seule chose publique ; c'est juste
-  la coordination du VPN, durcie par conception, avec son propre certificat Let's Encrypt).
-- **`assistant.`** → IP **VPN** (`100.64.0.x`, privée) → l'application. Résolue partout mais
-  **routable seulement depuis le VPN**. Le trafic est chiffré par WireGuard.
+Deux enregistrements DNS de `symbiose-paysage.fr` :
+- **`vpn.`** → IP **publique** → serveur Headscale (seule chose publique ; son propre certif).
+- **`assistant.`** → IP **VPN** (`100.64.0.x`, privée) → Caddy → l'app. Routable seulement sur le VPN.
+
+Deux IP à garder sous la main : **`IP_PUBLIQUE`** (celle d'OVH) et **`VPN_IP`** (celle que
+donne `tailscale ip -4`, ex. `100.64.0.1`).
 
 ---
 
 ## Ce dont tu as besoin
 
 - Un **VPS Ubuntu 22.04/24.04** — recommandé **VPS-2 (4 vCPU / 8 Go)** minimum.
-- L'**IP publique** du VPS + l'**accès SSH** fourni par OVH (compte `ubuntu` ou `root`).
-- La main sur le **DNS de `symbiose-paysage.fr`** (pour créer 2 enregistrements A).
-- Un **jeton GitHub (PAT)** pour cloner le dépôt privé `BenITNoaBenitez/SYMBIOSE`.
-- Les **clés API** (les mêmes qu'en dev) : Groq, LongCat, Gemini (`GOOGLE_API_KEY`), Resend.
+- L'**accès SSH** OVH (compte `ubuntu` ou `root`) + l'**IP publique**.
+- La main sur le **DNS OVH de `symbiose-paysage.fr`** (2 enregistrements A + un token API).
+- Un **jeton GitHub (PAT)** pour cloner `BenITNoaBenitez/SYMBIOSE`.
+- Les **clés API** (mêmes qu'en dev) : Groq, LongCat, Gemini, Resend.
 
 ---
 
-## Étape 0 — Se connecter au VPS (compte OVH, pas de nouveau compte)
-
-Utilise **le compte que OVH t'a donné** — inutile d'en créer un autre :
+## Étape 0 — Se connecter (compte OVH, pas de nouveau compte)
 
 ```bash
-ssh ubuntu@TON_IP_VPS      # ou  ssh root@TON_IP_VPS  selon l'image OVH
+ssh ubuntu@IP_PUBLIQUE      # ou  ssh root@IP_PUBLIQUE  selon l'image OVH
 ```
 
-Le compte `ubuntu` d'OVH a déjà les droits `sudo`. (Si tu es en `root`, les commandes
-`sudo` ci-dessous fonctionnent aussi telles quelles.)
+Le compte `ubuntu` d'OVH a déjà `sudo`. Inutile d'en créer un autre.
 
 ---
 
@@ -68,50 +77,39 @@ Le compte `ubuntu` d'OVH a déjà les droits `sudo`. (Si tu es en `root`, les co
 sudo apt update && sudo apt upgrade -y
 ```
 
-> **Durcissement SSH (optionnel, plus tard).** Tu peux ajouter une clé SSH et désactiver
-> le mot de passe (`/etc/ssh/sshd_config` → `PasswordAuthentication no`) une fois à l'aise.
-> Ne le fais pas maintenant si tu risques de te verrouiller dehors.
-
 ---
 
 ## Étape 2 — Pare-feu (UFW)
 
-On ouvre le **SSH** + les ports **80/443** (nécessaires au serveur Headscale et à son
-certificat). L'application, elle, n'est jamais ouverte au public : elle vit sur l'interface
-VPN `tailscale0`.
-
 ```bash
 sudo ufw allow OpenSSH
-sudo ufw allow 80/tcp          # Headscale (ACME Let's Encrypt)
-sudo ufw allow 443/tcp         # Headscale (coordination du VPN)
-sudo ufw allow in on tailscale0   # tout le trafic entrant DEPUIS le VPN (l'app)
-sudo ufw --force enable
-sudo ufw status
+sudo ufw allow 80/tcp             # Headscale : challenge ACME (sur l'IP publique)
+sudo ufw allow 443/tcp            # Headscale : coordination du VPN (sur l'IP publique)
+sudo ufw allow in on tailscale0   # tout le trafic entrant DEPUIS le VPN (Caddy + app)
+sudo ufw --force enable && sudo ufw status
 ```
 
 ---
 
 ## Étape 3 — Swap (2 Go)
 
-Évite qu'un build (Next.js + Chromium) ne tue des conteneurs par manque de RAM.
-
 ```bash
 sudo fallocate -l 2G /swapfile && sudo chmod 600 /swapfile
 sudo mkswap /swapfile && sudo swapon /swapfile
 echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
-free -h                        # doit montrer 2,0Gi de Swap
+free -h
 ```
 
 ---
 
-## Étape 4 — Installer Docker
+## Étape 4 — Docker
 
 ```bash
 curl -fsSL https://get.docker.com | sudo sh
-sudo usermod -aG docker $USER    # lancer docker sans sudo
+sudo usermod -aG docker $USER
 ```
 
-**Déconnecte-toi / reconnecte-toi** (`exit` puis `ssh ubuntu@IP`) pour activer le groupe, puis :
+**Déconnecte/reconnecte** (`exit` puis `ssh …`), puis vérifie :
 
 ```bash
 docker --version && docker compose version
@@ -119,22 +117,18 @@ docker --version && docker compose version
 
 ---
 
-## Étape 5 — Installer et configurer Headscale (le serveur VPN)
+## Étape 5 — VPN Headscale
 
-### 5.1 — Enregistrements DNS (chez ton registrar `symbiose-paysage.fr`)
-
-Crée d'abord :
+### 5.1 — 1er enregistrement DNS
 
 | Type | Nom | Valeur |
 |------|-----|--------|
-| A | `vpn.symbiose-paysage.fr` | **IP publique** du VPS |
-
-(le 2ᵉ enregistrement `assistant.` viendra à l'étape 5.5, une fois l'IP VPN connue.)
+| A | `vpn.symbiose-paysage.fr` | **IP_PUBLIQUE** du VPS |
 
 ### 5.2 — Installer Headscale
 
 ```bash
-VER=0.23.0     # vérifie la dernière version sur github.com/juanfont/headscale/releases
+VER=0.23.0     # dernière version : github.com/juanfont/headscale/releases
 wget -O headscale.deb "https://github.com/juanfont/headscale/releases/download/v${VER}/headscale_${VER}_linux_amd64.deb"
 sudo apt install -y ./headscale.deb
 ```
@@ -145,86 +139,91 @@ sudo apt install -y ./headscale.deb
 sudo nano /etc/headscale/config.yaml
 ```
 
-Renseigne au minimum (adapte selon ta version — les clés existent déjà dans le fichier) :
+Renseigne (remplace `IP_PUBLIQUE` par l'IP réelle — Headscale doit écouter sur l'IP
+**publique** pour laisser les ports du VPN libres à Caddy) :
 
 ```yaml
 server_url: https://vpn.symbiose-paysage.fr
-listen_addr: 0.0.0.0:443
+listen_addr: IP_PUBLIQUE:443
 
-# Certificat HTTPS automatique du serveur Headscale (public) :
 tls_letsencrypt_hostname: vpn.symbiose-paysage.fr
 tls_letsencrypt_challenge_type: HTTP-01
-tls_letsencrypt_listen: ":80"
+tls_letsencrypt_listen: IP_PUBLIQUE:80
 
 prefixes:
   v4: 100.64.0.0/10
 
-dns:                          # (section « dns_config » sur les versions < 0.23)
+dns:                          # (« dns_config » sur les versions < 0.23)
   magic_dns: true
   base_domain: symbiose.internal
 ```
 
-Démarre :
-
 ```bash
 sudo systemctl enable --now headscale
-sudo systemctl status headscale --no-pager     # doit être "active (running)"
+sudo systemctl status headscale --no-pager        # "active (running)"
 ```
 
-### 5.4 — Créer un utilisateur + une clé de pré-authentification
+### 5.4 — Utilisateur + clé de pré-authentification
 
 ```bash
 sudo headscale users create symbiose
-sudo headscale users list                       # note l'ID (souvent 1)
+sudo headscale users list                          # note l'ID (souvent 1)
 sudo headscale preauthkeys create --user 1 --reusable --expiration 24h
-# → copie la clé affichée (tskey-...) pour l'étape suivante et pour les employés
+# → copie la clé "tskey-..." (VPS + employés)
 ```
 
-### 5.5 — Connecter le VPS lui-même au VPN
-
-L'application (nginx) doit écouter sur l'IP VPN du VPS → le VPS doit être membre du VPN.
-On installe le **client** Tailscale (le logiciel client est open-source ; il se connecte à
-TON Headscale, pas au service Tailscale) :
+### 5.5 — Connecter le VPS au VPN (obligatoire AVANT le déploiement)
 
 ```bash
 curl -fsSL https://tailscale.com/install.sh | sh
 sudo tailscale up --login-server https://vpn.symbiose-paysage.fr --authkey tskey-VOTRE_CLE
-tailscale ip -4        # → l'IP VPN du VPS, ex. 100.64.0.1  → c'est HEADSCALE_IP
+tailscale ip -4        # → VPN_IP du VPS, ex. 100.64.0.1
 ```
 
-Ajoute maintenant le 2ᵉ enregistrement DNS :
+> Caddy va se lier à `VPN_IP:443` : cette IP doit **exister** (VPS connecté au VPN) avant
+> l'étape 8, sinon Docker refusera de démarrer Caddy.
+
+### 5.6 — 2ᵉ enregistrement DNS
 
 | Type | Nom | Valeur |
 |------|-----|--------|
-| A | `assistant.symbiose-paysage.fr` | **IP VPN** du VPS (ex. `100.64.0.1`) |
+| A | `assistant.symbiose-paysage.fr` | **VPN_IP** du VPS (ex. `100.64.0.1`) |
 
 ---
 
-## Étape 6 — Cloner le projet (dépôt privé)
+## Étape 6 — Token API OVH (pour le certificat HTTPS)
+
+Caddy prouve à Let's Encrypt que tu contrôles le domaine en créant un enregistrement DNS
+temporaire via l'API OVH. Il faut un token :
+
+1. Va sur **https://api.ovh.com/createToken/** (connecte-toi avec le compte OVH du domaine).
+2. **Rights** — ajoute ces 4 droits (remplace le domaine si besoin) :
+   ```
+   GET     /domain/zone/symbiose-paysage.fr/*
+   POST    /domain/zone/symbiose-paysage.fr/*
+   PUT     /domain/zone/symbiose-paysage.fr/*
+   DELETE  /domain/zone/symbiose-paysage.fr/*
+   ```
+3. **Validity** : *Unlimited*.
+4. **Create keys** → note **Application Key**, **Application Secret**, **Consumer Key**
+   (ils vont dans `.env` à l'étape 8). L'endpoint est **`ovh-eu`**.
+
+---
+
+## Étape 7 — Cloner le projet
 
 ```bash
 cd ~
-git clone https://github.com/BenITNoaBenitez/SYMBIOSE.git
-# Utilisateur : ton pseudo GitHub · Mot de passe : COLLE TON JETON PAT
-cd SYMBIOSE/symbiose-noa          # ← le docker-compose est dans ce sous-dossier
+git clone https://github.com/BenITNoaBenitez/SYMBIOSE.git      # login = pseudo, mot de passe = PAT
+cd SYMBIOSE/symbiose-noa
 ```
 
 ---
 
-## Étape 7 — Créer le fichier `.env` de production
+## Étape 8 — Fichier `.env` de production
 
-Génère des secrets neufs (une seule fois, note-les) :
-
-```bash
-openssl rand -hex 32     # → POSTGRES_PASSWORD
-openssl rand -hex 32     # → JWT_SECRET_KEY
-openssl rand -hex 32     # → NEXTAUTH_SECRET
-openssl rand -hex 32     # → INGESTION_WEBHOOK_SECRET
-```
-
-```bash
-nano .env
-```
+Secrets neufs (une fois) : `openssl rand -hex 32` ×4 (POSTGRES_PASSWORD, JWT_SECRET_KEY,
+NEXTAUTH_SECRET, INGESTION_WEBHOOK_SECRET). Puis `nano .env` :
 
 ```ini
 # ─── Base de données ─────────────────────────────────────────────
@@ -238,21 +237,29 @@ JWT_SECRET_KEY=⟨secret n°2⟩
 NEXTAUTH_SECRET=⟨secret n°3⟩
 INGESTION_WEBHOOK_SECRET=⟨secret n°4⟩
 
-# ─── URLs (⚠ = ton nom de domaine assistant., identiques toutes les 3) ─
-# HTTP suffit : le trafic passe déjà chiffré dans le tunnel WireGuard du VPN.
-APP_URL=http://assistant.symbiose-paysage.fr
-NEXTAUTH_URL=http://assistant.symbiose-paysage.fr
-NEXT_PUBLIC_API_URL=http://assistant.symbiose-paysage.fr
+# ─── URLs (⚠ HTTPS + ton domaine, identiques toutes les 3) ───────
+APP_URL=https://assistant.symbiose-paysage.fr
+NEXTAUTH_URL=https://assistant.symbiose-paysage.fr
+NEXT_PUBLIC_API_URL=https://assistant.symbiose-paysage.fr
 
-# nginx écoute sur l'IP VPN du VPS (celle de `tailscale ip -4`).
-HEADSCALE_IP=100.64.0.1
+# ─── Réseau ──────────────────────────────────────────────────────
+HEADSCALE_IP=127.0.0.1          # nginx reste interne (Caddy est l'entrée HTTPS)
+VPN_IP=100.64.0.1               # IP de `tailscale ip -4` : Caddy s'y lie (443)
 
-# ─── Clés API (les mêmes qu'en dev — même client) ────────────────
-GROQ_API_KEY=⟨ta clé Groq⟩
-LONGCAT_API_KEY=⟨ta clé LongCat⟩
+# ─── HTTPS : Caddy + DNS-01 OVH ──────────────────────────────────
+APP_HOSTNAME=assistant.symbiose-paysage.fr
+ACME_EMAIL=admin@symbiose-paysage.fr
+OVH_ENDPOINT=ovh-eu
+OVH_APPLICATION_KEY=⟨Application Key OVH⟩
+OVH_APPLICATION_SECRET=⟨Application Secret OVH⟩
+OVH_CONSUMER_KEY=⟨Consumer Key OVH⟩
+
+# ─── Clés API (mêmes qu'en dev) ──────────────────────────────────
+GROQ_API_KEY=⟨…⟩
+LONGCAT_API_KEY=⟨…⟩
 LONGCAT_BASE_URL=https://api.longcat.chat/openai/v1
-GOOGLE_API_KEY=⟨ta clé Gemini⟩
-RESEND_API_KEY=⟨ta clé Resend⟩
+GOOGLE_API_KEY=⟨…⟩
+RESEND_API_KEY=⟨…⟩
 RESEND_FROM_EMAIL=noreply@symbiose-paysage.fr
 
 # ─── Agent navigateur ────────────────────────────────────────────
@@ -264,107 +271,92 @@ BROWSER_AGENT_MAX_STEPS=25
 ANTHROPIC_API_KEY=placeholder
 
 # ─── ADMIN DE L'APPLICATION (≠ compte Linux OVH) ─────────────────
-# Ton login DANS l'assistant NOA. Crée le 1er super_admin (obligatoire pour
-# ouvrir l'appli web). Utilisé uniquement par deploy.sh.
 FIRST_ADMIN_EMAIL=ton.email@symbiose-paysage.fr
 ```
 
-`Ctrl+O`, `Entrée`, `Ctrl+X`.
-
-> **Piège n°1 :** `NEXT_PUBLIC_API_URL` est **gelée au build** du frontend. Elle doit être
-> correcte **avant** `./deploy.sh`. Changer d'URL plus tard ⇒ rebuild (`./deploy.sh`).
+> **Piège n°1 :** `NEXT_PUBLIC_API_URL` est **gelée au build** du frontend → mets-la
+> correcte **avant** `./deploy.sh`. La changer plus tard ⇒ rebuild.
 
 ---
 
-## Étape 8 — Construire et démarrer
+## Étape 9 — Construire et démarrer
 
 ```bash
 chmod +x deploy.sh
 ./deploy.sh
 ```
 
-Le script : build (avec la bonne URL) → démarrage → migrations SQL → **création du
-super_admin `FIRST_ADMIN_EMAIL`** → catalogue de skills. Le modèle spaCy (anonymisation
-RGPD) est **déjà dans l'image backend**. À la fin, `docker compose ps` = tout `running`.
+Le script : build (frontend avec la bonne URL **+ l'image Caddy personnalisée**, ~2-3 min la
+1ʳᵉ fois) → démarrage → migrations SQL → **super_admin `FIRST_ADMIN_EMAIL`** → skills.
+Caddy demande alors le certificat via l'API OVH (**~1-2 min** : création d'un TXT, propagation,
+émission). Suis-le :
 
-<details>
-<summary>Rappel — l'admin appli créé ici n'est PAS un compte Linux</summary>
-
-`deploy.sh` insère une ligne dans la table `users` de la base :
-`INSERT INTO users (email,name,role) VALUES ('ton.email@…','Administrateur','super_admin')`.
-C'est ton identité **dans NOA** (connexion par lien magique), sans aucun rapport avec le
-compte `ubuntu`/`root` du serveur.
-</details>
+```bash
+docker compose -f docker-compose.yml -f docker-compose.prod.yml logs -f caddy
+# attends une ligne du type "certificate obtained successfully" pour assistant.symbiose-paysage.fr
+```
 
 ---
 
-## Étape 9 — Premier accès + première connexion
+## Étape 10 — Premier accès + connexion
 
-1. Sur **ton PC**, installe le client Tailscale ([tailscale.com/download](https://tailscale.com/download))
-   et connecte-le à **ton Headscale** :
+1. Sur **ton PC** : installe le client Tailscale et connecte-le à ton Headscale :
    ```
    tailscale up --login-server https://vpn.symbiose-paysage.fr --authkey tskey-VOTRE_CLE
    ```
-2. Ouvre `http://assistant.symbiose-paysage.fr`.
-3. Entre l'email `FIRST_ADMIN_EMAIL` → **« Recevoir le lien »**.
-4. Le lien magique arrive par **email** (Resend configuré) ; sinon lis-le dans les logs :
-   `docker compose logs backend | grep "MAGIC LINK"`.
+2. Ouvre **`https://assistant.symbiose-paysage.fr`** → cadenas vert.
+3. Entre `FIRST_ADMIN_EMAIL` → **« Recevoir le lien »**.
+4. Lien magique par **email** (Resend) ; sinon `docker compose logs backend | grep "MAGIC LINK"`.
 5. Clique → connecté en **super_admin**.
 
 ---
 
-## Étape 10 — Donner l'accès aux employés
+## Étape 11 — Accès des employés
 
-Pour chaque employé :
-
-1. Génère-lui une clé : `sudo headscale preauthkeys create --user 1 --expiration 720h`.
-2. Il installe le client Tailscale et lance
+1. Génère une clé : `sudo headscale preauthkeys create --user 1 --expiration 720h`.
+2. L'employé installe le client Tailscale et lance
    `tailscale up --login-server https://vpn.symbiose-paysage.fr --authkey <sa-clé>`.
-3. Il ouvre `http://assistant.symbiose-paysage.fr`.
-4. Toi (super_admin) tu crées son compte applicatif dans **Paramètres → Utilisateurs**,
-   avec le bon rôle. Il se connecte ensuite par lien magique.
+3. Il ouvre `https://assistant.symbiose-paysage.fr`.
+4. Toi (super_admin) : crée son compte applicatif dans **Paramètres → Utilisateurs**.
 
-Hors du VPN, personne ne peut atteindre l'application (le nom `assistant.` pointe sur une IP privée).
+Hors VPN, `assistant.` pointe sur une IP privée : personne d'autre ne peut y accéder.
 
 ---
 
-## Étape 11 — Maintenance
+## Étape 12 — Maintenance
 
 ```bash
-# Mettre à jour le projet :
+# Mise à jour :
 cd ~/SYMBIOSE/symbiose-noa && git pull && ./deploy.sh
 
-# Sauvegarde base (à mettre en cron quotidien) :
+# Sauvegarde base (cron quotidien) :
 docker compose exec -T postgres pg_dump -U noa_user symbiose_noa | gzip > ~/backup-$(date +%F).sql.gz
 
 # Logs :
 docker compose -f docker-compose.yml -f docker-compose.prod.yml logs -f backend
 ```
 
-Redémarrages automatiques déjà configurés (`restart: unless-stopped`).
+Le certificat HTTPS se **renouvelle tout seul** (Caddy). Redémarrages auto déjà configurés.
 
 ---
 
 ## Checklist finale
 
-- [ ] `sudo systemctl status headscale` → **active (running)**.
-- [ ] `tailscale status` (sur le VPS) → connecté à `vpn.symbiose-paysage.fr`.
-- [ ] DNS : `vpn.` → IP publique ; `assistant.` → IP VPN (`100.64.0.x`).
-- [ ] `.env` : les 3 URLs = `http://assistant.symbiose-paysage.fr` ; `HEADSCALE_IP` = l'IP `tailscale ip -4`.
+- [ ] DNS : `vpn.` → IP_PUBLIQUE ; `assistant.` → VPN_IP (`100.64.0.x`).
+- [ ] `sudo systemctl status headscale` → **active** ; `https://vpn.symbiose-paysage.fr` répond.
+- [ ] `tailscale ip -4` (VPS) = la valeur de `VPN_IP` dans `.env`.
+- [ ] `.env` : 3 URLs = `https://assistant.symbiose-paysage.fr` ; `HEADSCALE_IP=127.0.0.1` ; token OVH rempli.
+- [ ] `docker compose … logs caddy` → **certificat obtenu**.
 - [ ] `docker compose ps` → tous `running`/`healthy`.
-- [ ] Connexion super_admin réussie depuis un poste **du VPN**.
+- [ ] Depuis un poste **du VPN** : `https://assistant.symbiose-paysage.fr` en cadenas vert, connexion super_admin OK.
 
 ---
 
-## Annexe — Le cadenas HTTPS sur l'application (optionnel)
+## Dépannage HTTPS
 
-Le VPN chiffre déjà tout ; le HTTPS applicatif est un « plus » (padlock, cookies « secure »).
-Si tu le veux sur `assistant.symbiose-paysage.fr` :
-
-- Installe **Caddy** sur le VPS et fais-lui obtenir un certificat par **challenge DNS-01**
-  (Headscale ne fournit pas de certif pour l'app car son IP est privée → HTTP-01 impossible).
-  Caddy réclame l'**API DNS de ton registrar** (ex. module `caddy-dns/ovh`).
-- Caddy écoute sur l'IP VPN en 443 et fait `reverse_proxy` vers nginx (`127.0.0.1:80`).
-- Passe alors les 3 URLs du `.env` en `https://…` et **rebuild** (`./deploy.sh`).
-
-Tant que ce n'est pas en place, **HTTP sur le VPN reste sûr** (tunnel WireGuard chiffré).
+- **Caddy ne démarre pas, « cannot assign requested address »** → le VPS n'est pas connecté
+  au VPN (l'IP `VPN_IP` n'existe pas). Refais l'étape 5.5, vérifie `tailscale ip -4`.
+- **« error getting certificate / DNS problem »** → token OVH incomplet (les 4 droits
+  `GET/POST/PUT/DELETE` sur `/domain/zone/symbiose-paysage.fr/*`) ou mauvais `OVH_ENDPOINT`.
+- **La page ne charge pas** → vérifie que `assistant.` pointe bien sur `VPN_IP` (pas l'IP
+  publique) et que tu es connecté au VPN.

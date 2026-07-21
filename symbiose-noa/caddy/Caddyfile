@@ -1,0 +1,23 @@
+# Caddy : terminaison HTTPS de l'application, DEVANT nginx.
+# Certificat public Let's Encrypt obtenu par challenge DNS-01 OVH (aucune ouverture
+# publique nécessaire : l'app reste sur l'IP privée du VPN).
+# Les valeurs OVH_* et le nom de domaine sont lus depuis l'environnement (.env).
+
+{
+	email {env.ACME_EMAIL}
+}
+
+{env.APP_HOSTNAME} {
+	tls {
+		dns ovh {
+			endpoint {env.OVH_ENDPOINT}
+			application_key {env.OVH_APPLICATION_KEY}
+			application_secret {env.OVH_APPLICATION_SECRET}
+			consumer_key {env.OVH_CONSUMER_KEY}
+		}
+	}
+	encode zstd gzip
+	# Tout est délégué à nginx (qui route /, /api/ et /api/ws/ + en-têtes de sécurité).
+	# Caddy relaie nativement les WebSockets (mise à niveau automatique).
+	reverse_proxy nginx:80
+}
