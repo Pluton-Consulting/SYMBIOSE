@@ -31,6 +31,11 @@ COMPOSE="docker compose -f docker-compose.yml -f docker-compose.prod.yml"
 echo "==> 1/5  Build des images + démarrage (détaché)…"
 $COMPOSE up -d --build
 
+# nginx met en cache l'IP des upstreams (backend/frontend) à son démarrage. Après un
+# rebuild qui recrée backend/frontend (nouvelles IP Docker), nginx garde d'anciennes IP
+# -> erreurs 502 sur /api/. On le redémarre pour qu'il re-résolve les IP courantes.
+$COMPOSE restart nginx >/dev/null 2>&1 || true
+
 echo "==> 2/5  Attente de Postgres (healthcheck)…"
 cid="$($COMPOSE ps -q postgres)"
 until [ "$(docker inspect -f '{{.State.Health.Status}}' "$cid" 2>/dev/null || echo starting)" = "healthy" ]; do
