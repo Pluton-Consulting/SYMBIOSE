@@ -33,7 +33,7 @@ export default function ReasoningPath({ steps, loading }: Props) {
   }
 
   return (
-    <aside className="sym-path">
+    <aside className="sym-path sym-fade">
       <style>{`
         @keyframes symNodePulse { 0%,100%{ box-shadow:0 0 0 4px var(--color-primary-subtle);} 50%{ box-shadow:0 0 0 9px rgba(0,0,0,0);} }
         .sym-path{ width:26%; min-width:242px; max-width:340px; flex-shrink:0; overflow-y:auto;
@@ -64,7 +64,7 @@ export default function ReasoningPath({ steps, loading }: Props) {
       <div className="sym-path-title">Chemin de réflexion</div>
       <div>
         {STAGES.map((s, i) => (
-          <div className={`sym-node ${stateOf(i)}`} key={s.label}>
+          <div className={`sym-node ${stateOf(i)} sym-in sym-in-${Math.min(i + 1, 6)}`} key={s.label}>
             {i > 0 && <span className="sym-line" aria-hidden="true" />}
             <span className="sym-dot" aria-hidden="true">{stateOf(i) === "done" ? "✓" : ""}</span>
             <div>

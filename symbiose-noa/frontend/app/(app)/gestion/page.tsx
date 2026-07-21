@@ -66,7 +66,7 @@ function Cartography({ steps }: { steps: { name: string; ms: number; error?: boo
       </div>
 
       {/* Summary row */}
-      <div style={{ marginTop: 20, padding: 16, background: "var(--color-primary)", borderRadius: 12, display: "flex", alignItems: "center", gap: 20 }}>
+      <div className="sym-pop" style={{ marginTop: 20, padding: 16, background: "linear-gradient(180deg, var(--color-primary), var(--color-primary-hover))", borderRadius: 12, display: "flex", alignItems: "center", gap: 20 }}>
         <div>
           <div style={{ fontSize: 11, color: "var(--color-on-dark-accent)", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em" }}>Total</div>
           <div style={{ fontSize: 24, fontWeight: 800, color: "var(--color-text-on-dark)" }}>{total}ms</div>
@@ -109,7 +109,7 @@ export default function GestionPage() {
   return (
     <div style={{ padding: 32, maxWidth: 1300, margin: "0 auto" }}>
       {/* Header */}
-      <div style={{ marginBottom: 28 }}>
+      <div className="sym-in" style={{ marginBottom: 28 }}>
         <h1 style={{ margin: 0, fontSize: 26, fontWeight: 800, color: "var(--color-text-primary)", letterSpacing: "-0.5px" }}>
           Gestion
         </h1>
@@ -127,7 +127,7 @@ export default function GestionPage() {
           { label: "Skills créés" },
           { label: "Uptime" },
         ].map((kpi, i) => (
-          <div key={i} style={{ background: "var(--color-surface)", borderRadius: "var(--radius-card-sm, 14px)", padding: "16px 18px", boxShadow: "var(--shadow-card)" }}>
+          <div key={i} className={`sym-in sym-in-${i + 1} sym-card`} style={{ background: "var(--color-surface)", borderRadius: "var(--radius-card-sm, 14px)", padding: "16px 18px", boxShadow: "var(--shadow-card)" }}>
             <div style={{ fontSize: 11, fontWeight: 600, color: "var(--color-text-muted)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 8 }}>{kpi.label}</div>
             <div style={{ fontSize: 26, fontWeight: 800, color: "var(--color-text-primary)", letterSpacing: "-0.5px" }}>—</div>
           </div>
@@ -135,15 +135,16 @@ export default function GestionPage() {
       </div>
 
       {/* Sub-tab nav */}
-      <div style={{ display: "flex", gap: 2, marginBottom: 24, background: "var(--color-surface)", padding: 6, borderRadius: 14, width: "fit-content", boxShadow: "var(--shadow-card)" }}>
+      <div className="sym-in" style={{ display: "flex", gap: 2, marginBottom: 24, background: "var(--color-surface)", padding: 6, borderRadius: 14, width: "fit-content", boxShadow: "var(--shadow-card)" }}>
         {tabs.map((t) => {
           const active = activeTab === t.key
           return (
-            <button key={t.key} onClick={() => setActiveTab(t.key)} style={{
+            <button key={t.key} onClick={() => setActiveTab(t.key)} className="sym-tap" style={{
               padding: "8px 18px", border: "none", cursor: "pointer",
               borderRadius: 10, fontSize: 14, fontWeight: active ? 700 : 500,
               color: active ? "var(--color-primary)" : "var(--color-text-muted)",
               background: active ? "var(--color-primary-subtle)" : "transparent",
+              boxShadow: active ? "var(--shadow-card)" : "none",
               transition: "all 0.15s",
             }}>
               {t.label}
@@ -154,7 +155,7 @@ export default function GestionPage() {
 
       {/* ── LOGS TAB ── */}
       {activeTab === "logs" && (
-        <div style={{ background: "var(--color-surface)", borderRadius: "var(--radius-card)", padding: 24, boxShadow: "var(--shadow-card)" }}>
+        <div className="sym-in sym-card" style={{ background: "var(--color-surface)", borderRadius: "var(--radius-card)", padding: 24, boxShadow: "var(--shadow-card)" }}>
           <h3 style={{ margin: "0 0 16px", fontSize: 15, fontWeight: 700, color: "var(--color-text-primary)" }}>Logs temps réel</h3>
           <div style={{ padding: "48px 24px", textAlign: "center", color: "var(--color-text-muted)", fontSize: 13, border: "1.5px dashed var(--color-border)", borderRadius: 12 }}>
             <div style={{ marginBottom: 8 }}>Route <code style={{ fontFamily: "monospace", background: "var(--color-canvas)", padding: "2px 6px", borderRadius: 4 }}>/api/logs</code> non implémentée</div>
@@ -169,7 +170,7 @@ export default function GestionPage() {
 
       {/* ── COUTS TAB ── */}
       {activeTab === "couts" && (
-        <div style={{ background: "var(--color-surface)", borderRadius: "var(--radius-card)", padding: 24, boxShadow: "var(--shadow-card)" }}>
+        <div className="sym-in sym-card" style={{ background: "var(--color-surface)", borderRadius: "var(--radius-card)", padding: 24, boxShadow: "var(--shadow-card)" }}>
           <h3 style={{ margin: "0 0 8px", fontSize: 15, fontWeight: 700, color: "var(--color-text-primary)" }}>Coûts par utilisateur</h3>
           <p style={{ margin: "0 0 16px", fontSize: 13, color: "var(--color-text-muted)" }}>
             Agrégation par rôle disponible via <code style={{ fontFamily: "monospace", background: "var(--color-canvas)", padding: "2px 6px", borderRadius: 4 }}>/api/dashboard/global</code> — détail par utilisateur non implémenté.
@@ -182,7 +183,7 @@ export default function GestionPage() {
 
       {/* ── ERREURS TAB ── */}
       {activeTab === "erreurs" && (
-        <div style={{ background: "var(--color-surface)", borderRadius: "var(--radius-card)", padding: 24, boxShadow: "var(--shadow-card)" }}>
+        <div className="sym-in sym-card" style={{ background: "var(--color-surface)", borderRadius: "var(--radius-card)", padding: 24, boxShadow: "var(--shadow-card)" }}>
           <h3 style={{ margin: "0 0 16px", fontSize: 16, fontWeight: 700, color: "var(--color-text-primary)" }}>
             Erreurs des dernières 24h
           </h3>
@@ -196,7 +197,7 @@ export default function GestionPage() {
       {activeTab === "cartographie" && (
         <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
           {/* Architecture diagram */}
-          <div style={{ background: "var(--color-surface)", borderRadius: "var(--radius-card)", padding: 32, boxShadow: "var(--shadow-card)" }}>
+          <div className="sym-in sym-card" style={{ background: "var(--color-surface)", borderRadius: "var(--radius-card)", padding: 32, boxShadow: "var(--shadow-card)" }}>
             <h3 style={{ margin: "0 0 24px", fontSize: 16, fontWeight: 700, color: "var(--color-text-primary)" }}>
               Architecture — Flux d'une requête Symbiose
             </h3>
@@ -240,7 +241,7 @@ export default function GestionPage() {
                   { label: "Agent 2 — Vision → RAG → LLM COMPLEX", color: "var(--color-primary)", bg: "var(--color-primary-subtle)", pipeline: "Vision (TODO) → 500ms · RAG (TODO) → 300ms · Sonnet → 4s" },
                   { label: "Agent 3 — Gap → Generate → Sandbox", color: "var(--color-paid-text)", bg: "var(--color-paid-bg)", pipeline: "Gap (TODO) → LLM → Daytona → 1s" },
                 ].map((a, i) => (
-                  <div key={i} style={{ background: a.bg, border: "2px solid var(--color-border)", borderRadius: 12, padding: 16 }}>
+                  <div key={i} className={`sym-in sym-in-${i + 1} sym-card`} style={{ background: a.bg, border: "2px solid var(--color-border)", borderRadius: 12, padding: 16 }}>
                     <div style={{ fontSize: 13, fontWeight: 700, color: a.color, marginBottom: 6 }}>{a.label}</div>
                     <div style={{ fontSize: 12, fontFamily: "monospace", color: "var(--color-text-muted)" }}>{a.pipeline}</div>
                   </div>
@@ -258,7 +259,7 @@ export default function GestionPage() {
           </div>
 
           {/* Drill-down — non implémenté */}
-          <div style={{ background: "var(--color-surface)", borderRadius: "var(--radius-card)", padding: 24, boxShadow: "var(--shadow-card)" }}>
+          <div className="sym-in sym-in-2 sym-card" style={{ background: "var(--color-surface)", borderRadius: "var(--radius-card)", padding: 24, boxShadow: "var(--shadow-card)" }}>
             <h3 style={{ margin: "0 0 16px", fontSize: 16, fontWeight: 700, color: "var(--color-text-primary)" }}>
               Drill-down par requête
             </h3>
@@ -272,8 +273,8 @@ export default function GestionPage() {
       {/* ── PROMPTS TAB ── */}
       {activeTab === "prompts" && (
         <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-          {PROMPTS.map((p) => (
-            <div key={p.name} style={{ background: "var(--color-surface)", borderRadius: "var(--radius-card)", padding: 24, boxShadow: "var(--shadow-card)" }}>
+          {PROMPTS.map((p, i) => (
+            <div key={p.name} className={`sym-in sym-in-${i + 1} sym-card`} style={{ background: "var(--color-surface)", borderRadius: "var(--radius-card)", padding: 24, boxShadow: "var(--shadow-card)" }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 16 }}>
                 <div>
                   <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 4 }}>
@@ -287,6 +288,7 @@ export default function GestionPage() {
                 </div>
                 <button
                   onClick={() => setEditingPrompt(editingPrompt === p.name ? null : p.name)}
+                  className="sym-tap"
                   style={{ background: editingPrompt === p.name ? "var(--color-error-bg)" : "var(--color-primary)", color: editingPrompt === p.name ? "var(--color-error-text)" : "var(--color-text-on-dark)", border: "none", borderRadius: "var(--radius-pill)", padding: "8px 18px", fontSize: 13, fontWeight: 600, cursor: "pointer" }}
                 >
                   {editingPrompt === p.name ? "Fermer" : "Modifier"}
@@ -294,22 +296,22 @@ export default function GestionPage() {
               </div>
 
               {editingPrompt === p.name ? (
-                <div>
+                <div className="sym-fade">
                   <textarea
                     defaultValue={p.body}
                     style={{ width: "100%", minHeight: 180, padding: 14, border: "1.5px solid var(--color-primary-light)", borderRadius: 10, fontSize: 13, lineHeight: 1.6, fontFamily: "monospace", color: "var(--color-text-body)", outline: "none", resize: "vertical" }}
                   />
                   <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
-                    <button style={{ background: "var(--color-primary)", color: "var(--color-text-on-dark)", border: "none", borderRadius: "var(--radius-pill)", padding: "8px 20px", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>
+                    <button className="sym-tap" style={{ background: "linear-gradient(180deg, var(--color-primary), var(--color-primary-hover))", color: "var(--color-text-on-dark)", border: "none", borderRadius: "var(--radius-pill)", padding: "8px 20px", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>
                       Sauvegarder v{parseInt(p.version.slice(1)) + 1}
                     </button>
-                    <button onClick={() => setEditingPrompt(null)} style={{ background: "var(--color-surface)", color: "var(--color-text-body)", border: "1px solid var(--color-border)", borderRadius: "var(--radius-pill)", padding: "8px 20px", fontSize: 13, cursor: "pointer" }}>
+                    <button onClick={() => setEditingPrompt(null)} className="sym-tap" style={{ background: "var(--color-surface)", color: "var(--color-text-body)", border: "1px solid var(--color-border)", borderRadius: "var(--radius-pill)", padding: "8px 20px", fontSize: 13, cursor: "pointer" }}>
                       Annuler
                     </button>
                   </div>
                 </div>
               ) : (
-                <div style={{ fontSize: 13, color: "var(--color-text-muted)", lineHeight: 1.6, padding: "12px 14px", background: "var(--color-canvas)", borderRadius: 8, fontFamily: "monospace" }}>
+                <div className="sym-fade" style={{ fontSize: 13, color: "var(--color-text-muted)", lineHeight: 1.6, padding: "12px 14px", background: "var(--color-canvas)", borderRadius: 8, fontFamily: "monospace" }}>
                   {p.body.slice(0, 200)}…
                 </div>
               )}

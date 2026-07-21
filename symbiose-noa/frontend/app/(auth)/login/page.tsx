@@ -49,25 +49,27 @@ export default function LoginPage() {
       display: "flex",
       alignItems: "center",
       justifyContent: "center",
-      background: "var(--color-canvas)",
+      background: "radial-gradient(circle at 50% -10%, var(--color-primary-subtle), transparent 55%), var(--color-canvas)",
     }}>
-      <div style={card}>
+      <div className="sym-in sym-card" style={card}>
         <img
           src="/symbiose-paysage.svg"
           alt="Symbiose Paysage"
+          className="sym-in sym-in-1"
           style={{ width: 210, maxWidth: "85%", height: "auto", display: "block", margin: "0 auto 32px" }}
         />
 
         {state === "sent" && (
-          <div>
-            <div style={{ fontSize: 40, marginBottom: 16 }}>📬</div>
-            <p style={{ fontWeight: 500, margin: "0 0 8px", color: "var(--color-text-primary)" }}>Vérifiez votre boîte mail</p>
-            <p style={{ color: "var(--color-text-muted)", fontSize: 13, margin: "0 0 24px" }}>
+          <div className="sym-fade">
+            <div className="sym-pop" style={{ fontSize: 40, marginBottom: 16 }}>📬</div>
+            <p className="sym-in sym-in-1" style={{ fontWeight: 500, margin: "0 0 8px", color: "var(--color-text-primary)" }}>Vérifiez votre boîte mail</p>
+            <p className="sym-in sym-in-2" style={{ color: "var(--color-text-muted)", fontSize: 13, margin: "0 0 24px" }}>
               Un lien de connexion a été envoyé à<br />
               <strong>{email}</strong>
             </p>
             <button
               onClick={() => { setState("idle"); setEmail("") }}
+              className="sym-tap sym-in sym-in-3"
               style={{ color: "var(--color-primary)", background: "none", border: "none", cursor: "pointer", fontSize: 13 }}
             >
               Utiliser un autre email
@@ -76,15 +78,16 @@ export default function LoginPage() {
         )}
 
         {state === "refused" && (
-          <div>
-            <div style={{ fontSize: 40, marginBottom: 16 }}>🔒</div>
-            <p style={{ fontWeight: 500, margin: "0 0 8px", color: "var(--color-error-text)" }}>Accès non autorisé</p>
-            <p style={{ color: "var(--color-text-muted)", fontSize: 13, margin: "0 0 24px" }}>
+          <div className="sym-fade">
+            <div className="sym-pop" style={{ fontSize: 40, marginBottom: 16 }}>🔒</div>
+            <p className="sym-in sym-in-1" style={{ fontWeight: 500, margin: "0 0 8px", color: "var(--color-error-text)" }}>Accès non autorisé</p>
+            <p className="sym-in sym-in-2" style={{ color: "var(--color-text-muted)", fontSize: 13, margin: "0 0 24px" }}>
               L'adresse <strong>{email}</strong> n'est pas enregistrée.<br />
               Contactez votre administrateur.
             </p>
             <button
               onClick={() => { setState("idle"); setEmail("") }}
+              className="sym-tap sym-in sym-in-3"
               style={{ color: "var(--color-primary)", background: "none", border: "none", cursor: "pointer", fontSize: 13 }}
             >
               Essayer un autre email
@@ -93,13 +96,14 @@ export default function LoginPage() {
         )}
 
         {(state === "idle" || state === "loading" || state === "error") && (
-          <form onSubmit={handleSubmit}>
+          <form className="sym-fade" onSubmit={handleSubmit}>
             <input
               type="email"
               value={email}
               onChange={e => setEmail(e.target.value)}
               placeholder="votre@email.fr"
               required
+              className="sym-in sym-in-1"
               style={{
                 width: "100%",
                 padding: "10px 14px",
@@ -109,18 +113,20 @@ export default function LoginPage() {
                 marginBottom: 12,
                 boxSizing: "border-box",
                 outline: "none",
+                transition: "border-color .2s ease, box-shadow .2s ease",
               }}
             />
             {error && (
-              <p style={{ color: "var(--color-error-text)", fontSize: 13, margin: "0 0 12px" }}>{error}</p>
+              <p className="sym-pop" style={{ color: "var(--color-error-text)", fontSize: 13, margin: "0 0 12px" }}>{error}</p>
             )}
             <button
               type="submit"
               disabled={state === "loading"}
+              className="sym-tap sym-in sym-in-2"
               style={{
                 width: "100%",
                 padding: "12px 24px",
-                background: "var(--color-primary)",
+                background: "linear-gradient(180deg, var(--color-primary), var(--color-primary-hover))",
                 color: "var(--color-text-on-dark)",
                 border: "none",
                 borderRadius: "var(--radius-pill)",
@@ -128,6 +134,7 @@ export default function LoginPage() {
                 fontWeight: 500,
                 cursor: state === "loading" ? "not-allowed" : "pointer",
                 opacity: state === "loading" ? 0.7 : 1,
+                boxShadow: "var(--shadow-card)",
               }}
             >
               {state === "loading" ? "Vérification..." : "Recevoir un lien de connexion"}
@@ -135,7 +142,7 @@ export default function LoginPage() {
           </form>
         )}
 
-        <p style={{ color: "var(--color-text-muted)", fontSize: 11, margin: "24px 0 0" }}>
+        <p className="sym-in sym-in-4" style={{ color: "var(--color-text-muted)", fontSize: 11, margin: "24px 0 0", letterSpacing: ".04em" }}>
           Accès réservé aux collaborateurs Symbiose Paysage
         </p>
       </div>

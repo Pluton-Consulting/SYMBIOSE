@@ -36,9 +36,9 @@ function VerifyContent() {
       display: "flex",
       alignItems: "center",
       justifyContent: "center",
-      background: "var(--color-canvas)",
+      background: "radial-gradient(circle at 50% -10%, var(--color-primary-subtle), transparent 55%), var(--color-canvas)",
     }}>
-      <div style={{
+      <div className="sym-in sym-card" style={{
         background: "var(--color-surface)",
         borderRadius: "var(--radius-card)",
         padding: "40px 48px",
@@ -46,27 +46,28 @@ function VerifyContent() {
         textAlign: "center",
         maxWidth: 380,
       }}>
-        <div style={{ fontSize: 32, marginBottom: 16 }}>🌿</div>
+        <div className="sym-pop" style={{ fontSize: 32, marginBottom: 16 }}>🌿</div>
         {status === "loading" ? (
           <>
-            <p style={{ fontWeight: 500, margin: "0 0 8px", color: "var(--color-text-primary)" }}>Connexion en cours...</p>
-            <p style={{ color: "var(--color-text-muted)", fontSize: 13, margin: 0 }}>Vous allez être redirigé automatiquement.</p>
+            <p className="sym-in sym-in-1" style={{ fontWeight: 500, margin: "0 0 8px", color: "var(--color-text-primary)" }}>Connexion en cours...</p>
+            <p className="sym-in sym-in-2" style={{ color: "var(--color-text-muted)", fontSize: 13, margin: 0 }}>Vous allez être redirigé automatiquement.</p>
           </>
         ) : (
           <>
-            <p style={{ fontWeight: 500, margin: "0 0 8px", color: "var(--color-error-text)" }}>Lien invalide ou expiré</p>
-            <p style={{ color: "var(--color-text-muted)", fontSize: 13, margin: "0 0 20px" }}>
+            <p className="sym-in sym-in-1" style={{ fontWeight: 500, margin: "0 0 8px", color: "var(--color-error-text)" }}>Lien invalide ou expiré</p>
+            <p className="sym-in sym-in-2" style={{ color: "var(--color-text-muted)", fontSize: 13, margin: "0 0 20px" }}>
               Le lien a peut-être déjà été utilisé ou a expiré (15 min).
             </p>
-            <a href="/login" style={{
+            <a href="/login" className="sym-tap sym-in sym-in-3" style={{
               display: "inline-block",
-              background: "var(--color-primary)",
+              background: "linear-gradient(180deg, var(--color-primary), var(--color-primary-hover))",
               color: "var(--color-text-on-dark)",
               padding: "10px 20px",
               borderRadius: "var(--radius-pill)",
               textDecoration: "none",
               fontSize: 14,
               fontWeight: 500,
+              boxShadow: "var(--shadow-card)",
             }}>
               Demander un nouveau lien
             </a>

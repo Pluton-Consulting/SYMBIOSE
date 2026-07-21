@@ -23,7 +23,7 @@ export default function InputBar({ onSend, disabled }: InputBarProps) {
   }
 
   return (
-    <div style={{ padding: "16px 32px", background: "var(--color-surface)", borderTop: "1px solid var(--color-border)" }}>
+    <div className="sym-in" style={{ padding: "16px 32px", background: "var(--color-surface)", borderTop: "1px solid var(--color-border)" }}>
       <div style={{ display: "flex", gap: 12, alignItems: "flex-end" }}>
         <textarea
           value={value}
@@ -42,13 +42,15 @@ export default function InputBar({ onSend, disabled }: InputBarProps) {
             fontFamily: "var(--font)",
             color: "var(--color-text-body)",
             outline: "none",
+            transition: "border-color .2s ease, box-shadow .2s ease",
           }}
         />
         <button
+          className="sym-tap"
           onClick={handleSend}
           disabled={disabled || !value.trim()}
           style={{
-            background: "var(--color-primary)",
+            background: "linear-gradient(180deg, var(--color-primary-hover), var(--color-primary))",
             color: "var(--color-text-on-dark)",
             border: "none",
             borderRadius: "var(--radius-pill)",
@@ -58,6 +60,7 @@ export default function InputBar({ onSend, disabled }: InputBarProps) {
             cursor: disabled || !value.trim() ? "not-allowed" : "pointer",
             opacity: disabled || !value.trim() ? 0.6 : 1,
             whiteSpace: "nowrap",
+            boxShadow: "var(--shadow-card)",
           }}
         >
           Envoyer
