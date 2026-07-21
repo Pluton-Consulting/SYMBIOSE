@@ -9,12 +9,9 @@
 
 {env.APP_HOSTNAME} {
 	tls {
-		# Le token est un Personal Access Token (PAT) Gandi → auth "Bearer".
-		# (La forme positionnelle `dns gandi <token>` l'envoie en "Apikey" = ancienne
-		#  clé LiveDNS → 403 avec un PAT. On force donc bearer_token.)
-		dns gandi {
-			bearer_token {env.GANDI_API_TOKEN}
-		}
+		# ⚠ caddy-dns/gandi n'accepte que la forme positionnelle, envoyée en "Apikey".
+		# GANDI_API_TOKEN doit donc être une CLÉ API LiveDNS Gandi (pas un PAT/Bearer).
+		dns gandi {env.GANDI_API_TOKEN}
 	}
 	encode zstd gzip
 	# Tout est délégué à nginx (qui route /, /api/ et /api/ws/ + en-têtes de sécurité).
