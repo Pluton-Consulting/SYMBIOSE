@@ -189,6 +189,9 @@ tls_letsencrypt_hostname: vpn.pluton-consulting.fr
 tls_letsencrypt_listen: IP_PUBLIQUE:80
 ```
 
+> ⚠ **Garde bien le `:443` et le `:80`** après l'IP (ex. `54.37.10.28:443`). Une adresse sans
+> port fait planter Headscale en boucle : `failed to bind to TCP address: … missing port in address`.
+
 Enregistre (`Ctrl+O`, `Entrée`, `Ctrl+X`), puis démarre :
 
 ```bash
