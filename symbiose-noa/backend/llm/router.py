@@ -85,8 +85,8 @@ def _tier_chain(tier: LLMTier) -> list[tuple[str, Optional[str]]]:
         ]
     elif tier == LLMTier.STANDARD:
         chain = [
-            ("groq", s.model_groq_large),        # Groq 70B — RAPIDE (principal, ~2-5 s)
-            ("longcat", s.model_longcat),        # LongCat — fallback qualité (raisonnement lent)
+            ("longcat", s.model_longcat),        # LongCat 2.0 — QUALITÉ/raisonnement (principal)
+            ("groq", s.model_groq_large),        # Groq 70B — repli RAPIDE si LongCat indispo/quota
             ("openrouter", s.model_primary),
             ("deepseek", s.model_deepseek),
             ("groq", s.model_groq_light),
@@ -95,8 +95,8 @@ def _tier_chain(tier: LLMTier) -> list[tuple[str, Optional[str]]]:
         ]
     else:  # COMPLEX
         chain = [
-            ("groq", s.model_groq_large),        # Groq 70B — rapide (principal)
-            ("longcat", s.model_longcat),        # LongCat — fallback raisonnement
+            ("longcat", s.model_longcat),        # LongCat 2.0 — principal (raisonnement)
+            ("groq", s.model_groq_large),        # repli rapide
             ("deepseek", s.model_deepseek),
             ("anthropic", s.model_anthropic_vision),
             ("openrouter", s.model_or_free_b),
@@ -207,12 +207,12 @@ def classify_request_tier(query: str, has_attachment: bool = False) -> LLMTier:
     if has_attachment:
         return LLMTier.COMPLEX
 
+    q = query.lower().strip()
     words = len(query.split())
-    simple_keywords = ["retrouve", "cherche", "liste", "montre", "qui", "quand", "quel",
-                       "combien", "où", "statut", "résume", "traduis"]
-    if words < 14 and any(k in query.lower() for k in simple_keywords):
+    greetings = ("bonjour", "salut", "hello", "coucou", "bonsoir", "hey", "merci", "ça va", "ca va")
+    # Salutation / politesse très courte → petit modèle rapide (suffisant).
+    if words <= 4 and any(g in q for g in greetings):
         return LLMTier.LIGHT
-    if words < 8:
-        return LLMTier.LIGHT
-
+    # Tout le reste, questions métier incluses → modèle STANDARD (Groq 70B, rapide ET fiable :
+    # le 8B hallucinait des chiffres/balises sur les questions).
     return LLMTier.STANDARD
