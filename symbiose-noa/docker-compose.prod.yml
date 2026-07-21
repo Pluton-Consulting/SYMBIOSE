@@ -1,0 +1,27 @@
+# ============================================================
+# Overlay PRODUCTION (VPS) — NE PAS utiliser en dev.
+# Usage :  docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+# Ajoute :
+#   - redémarrage automatique (survie aux reboots du VPS)
+#   - injection de l'URL publique de l'API dans le build du frontend
+#     (NEXT_PUBLIC_API_URL est gelée à la compilation → doit être connue au build).
+# La sécurité réseau (app non exposée publiquement) est assurée par UFW + le VPN (voir DEPLOY.md).
+# ============================================================
+services:
+  postgres:
+    restart: unless-stopped
+  backend:
+    restart: unless-stopped
+    # Prod : pas de --reload (le --reload sonde les fichiers en continu et sature le CPU
+    # d'un petit VPS). Le code est rechargé au redéploiement (./deploy.sh).
+    command: ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+  browser-worker:
+    restart: unless-stopped
+  nginx:
+    restart: unless-stopped
+  frontend:
+    restart: unless-stopped
+    build:
+      context: ./frontend
+      args:
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL}

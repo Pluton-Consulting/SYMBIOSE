@@ -7,6 +7,10 @@ FROM node:20-alpine AS builder
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
+# URL publique de l'API, injectée au BUILD (les variables NEXT_PUBLIC_* sont gelées à la
+# compilation). Passée par docker-compose.prod.yml (build.args). Défaut = localhost (dev).
+ARG NEXT_PUBLIC_API_URL=http://localhost:8000
+ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
 RUN npm run build
 
 FROM node:20-alpine AS runner
