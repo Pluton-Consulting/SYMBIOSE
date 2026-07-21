@@ -64,6 +64,33 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           ::-webkit-scrollbar { width: 6px; height: 6px; }
           ::-webkit-scrollbar-track { background: transparent; }
           ::-webkit-scrollbar-thumb { background: var(--color-border); border-radius: 3px; }
+
+          /* ── Animations & micro-interactions (charte : moins de monotonie) ── */
+          @keyframes symFadeUp { from { opacity:0; transform:translateY(12px) } to { opacity:1; transform:translateY(0) } }
+          @keyframes symFadeIn { from { opacity:0 } to { opacity:1 } }
+          @keyframes symShimmer { 0%{background-position:-450px 0} 100%{background-position:450px 0} }
+          @keyframes symFloat { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-5px)} }
+          @keyframes symPop { 0%{transform:scale(.94)} 60%{transform:scale(1.03)} 100%{transform:scale(1)} }
+          /* Entrée en fondu montant (avec délais échelonnés pour listes/grilles) */
+          .sym-in   { animation: symFadeUp .5s cubic-bezier(.22,.61,.36,1) both; }
+          .sym-in-1 { animation-delay:.05s } .sym-in-2 { animation-delay:.11s }
+          .sym-in-3 { animation-delay:.17s } .sym-in-4 { animation-delay:.23s }
+          .sym-in-5 { animation-delay:.29s } .sym-in-6 { animation-delay:.35s }
+          .sym-fade { animation: symFadeIn .45s ease both; }
+          .sym-pop  { animation: symPop .35s cubic-bezier(.22,.61,.36,1) both; }
+          /* Carte : entrée + léger soulèvement au survol */
+          .sym-card { transition: transform .25s cubic-bezier(.22,.61,.36,1), box-shadow .25s ease, border-color .25s ease; }
+          .sym-card:hover { transform: translateY(-3px); box-shadow: var(--shadow-card-hover); }
+          /* Transitions douces par défaut sur les éléments interactifs */
+          button, a, .sym-tap { transition: background-color .2s ease, color .2s ease, transform .12s ease, box-shadow .2s ease, border-color .2s ease; }
+          .sym-tap:active { transform: scale(.97); }
+          /* Squelette de chargement (shimmer) */
+          .sym-skeleton { background:linear-gradient(90deg, var(--color-border) 25%, var(--color-primary-subtle) 50%, var(--color-border) 75%);
+            background-size:900px 100%; animation:symShimmer 1.3s infinite linear; border-radius:var(--radius-card-sm); }
+          @media (prefers-reduced-motion: reduce){
+            .sym-in,.sym-fade,.sym-pop,.sym-card,.sym-tap,.sym-skeleton{ animation:none!important; transition:none!important }
+            .sym-card:hover{ transform:none }
+          }
         ` }} />
       </head>
       <body>

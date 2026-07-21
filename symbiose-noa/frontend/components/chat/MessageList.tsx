@@ -15,9 +15,8 @@ export default function MessageList({ messages }: { messages: Message[] }) {
       gap: 16,
     }}>
       {messages.length === 0 && (
-        <div style={{ textAlign: "center", color: "var(--color-text-muted)", marginTop: 80 }}>
-          <p style={{ fontSize: 32, margin: "0 0 8px" }}>🌿</p>
-          <p style={{ margin: 0 }}>Bonjour, je suis Symbiose. Comment puis-je vous aider ?</p>
+        <div style={{ textAlign: "center", marginTop: 80 }}>
+          <p style={{ margin: 0, fontSize: 17, fontWeight: 500, color: "var(--color-text-body)" }}>Bonjour, comment puis-je vous aider ?</p>
         </div>
       )}
       {messages.map((msg) => (
