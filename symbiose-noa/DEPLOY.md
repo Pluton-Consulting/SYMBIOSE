@@ -210,10 +210,13 @@ sudo systemctl status headscale --no-pager        # "active (running)"
 
 ```bash
 sudo headscale users create symbiose
-sudo headscale users list                          # note l'ID (souvent 1)
-sudo headscale preauthkeys create --user 1 --reusable --expiration 24h
+sudo headscale users list                          # vérifie que "symbiose" apparaît
+sudo headscale preauthkeys create --user symbiose --reusable --expiration 24h
 # → copie la clé "tskey-..." (elle servira pour le VPS et les postes)
 ```
+
+> ⚠ En 0.23.x, `--user` attend le **nom** (`symbiose`), **pas** l'ID numérique : `--user 1`
+> renvoie `user not found`.
 
 ### 5.5 — Connecter le VPS lui-même au VPN
 
@@ -373,7 +376,7 @@ première connexion administrateur.
 *À quoi ça sert :* faire entrer les collaborateurs. Chacun rejoint le VPN, puis reçoit un
 compte applicatif que tu crées.
 
-1. Génère-lui une clé : `sudo headscale preauthkeys create --user 1 --expiration 720h`.
+1. Génère-lui une clé : `sudo headscale preauthkeys create --user symbiose --expiration 720h`.
 2. Il installe le **client tailscale** et lance
    `tailscale up --login-server https://vpn.pluton-consulting.fr --authkey <sa-clé>`.
 3. Il ouvre `https://symbiose.pluton-consulting.fr`.
