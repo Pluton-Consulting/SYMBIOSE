@@ -163,33 +163,43 @@ sudo apt install -y ./headscale.deb
 
 ### 5.3 — Configurer Headscale
 
-*On lui donne son URL publique, et on le fait écouter sur l'IP **publique** (pour laisser les
-ports du VPN libres à Caddy). Il gère aussi son propre certificat Let's Encrypt.*
+*On part du fichier d'exemple **officiel de ta version** — le réécrire à la main est risqué
+(les noms de champs changent entre versions, et un fichier mal collé casse tout : `Error loading
+config … cannot unmarshal`). On ne modifie ensuite que 4 lignes. Headscale écoute sur l'IP
+**publique** (pour laisser les ports du VPN libres à Caddy) et gère son propre certificat.*
 
 ```bash
+headscale version
+```
+
+Récupère l'exemple correspondant (remplace `v0.23.0` par ta version) et ouvre-le :
+
+```bash
+sudo wget -O /etc/headscale/config.yaml https://raw.githubusercontent.com/juanfont/headscale/v0.23.0/config-example.yaml
 sudo nano /etc/headscale/config.yaml
 ```
+
+Dans nano, `Ctrl+W` cherche une ligne. Modifie **seulement** ces 4 réglages (retire le `#` en
+tête des lignes `tls_letsencrypt_*` si elles sont commentées). `IP_PUBLIQUE` = `curl -4 ifconfig.me` :
 
 ```yaml
 server_url: https://vpn.pluton-consulting.fr
 listen_addr: IP_PUBLIQUE:443
-
 tls_letsencrypt_hostname: vpn.pluton-consulting.fr
-tls_letsencrypt_challenge_type: HTTP-01
 tls_letsencrypt_listen: IP_PUBLIQUE:80
-
-prefixes:
-  v4: 100.64.0.0/10
-
-dns:                          # (« dns_config » sur les versions < 0.23)
-  magic_dns: true
-  base_domain: symbiose.internal
 ```
+
+Enregistre (`Ctrl+O`, `Entrée`, `Ctrl+X`), puis démarre :
 
 ```bash
 sudo systemctl enable --now headscale
 sudo systemctl status headscale --no-pager        # "active (running)"
 ```
+
+> **Erreur « cannot unmarshal … » ?** Le YAML est invalide (indentation cassée, ou texte collé
+> par erreur dans le fichier). Relance le `wget` ci-dessus pour repartir propre, puis ne touche
+> qu'aux 4 lignes. Astuce : colle **une commande à la fois** — les collages multi-lignes se
+> chevauchent souvent dans un terminal SSH.
 
 ### 5.4 — Créer un utilisateur + une clé d'inscription
 
