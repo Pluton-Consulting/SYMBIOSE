@@ -1,8 +1,8 @@
-# Prompt — Infrastructure de base Symbiose NOA
+# Prompt — Infrastructure de base Symbiose Pluton
 
 ## Contexte
 
-Tu es un ingénieur senior fullstack et DevOps. Tu vas créer l'infrastructure de base d'une application IA d'entreprise appelée **NOA** pour la société **Symbiose Paysage**.
+Tu es un ingénieur senior fullstack et DevOps. Tu vas créer l'infrastructure de base d'une application IA d'entreprise appelée **Pluton** pour la société **Symbiose Paysage**.
 
 L'objectif de ce prompt est de générer uniquement l'infrastructure de base : pas de logique métier, pas de cas d'usage spécifiques, pas de RAG, pas de pipeline d'ingestion. Uniquement les fondations sur lesquelles tout le reste sera construit.
 
@@ -506,7 +506,7 @@ async def lifespan(app: FastAPI):
     yield
 
 app = FastAPI(
-    title="Symbiose NOA API",
+    title="Symbiose Pluton API",
     version="1.0.0",
     docs_url="/api/docs" if settings.debug else None,
     redoc_url=None,
@@ -622,7 +622,7 @@ Génère `backend/agents/state.py` :
 from typing import TypedDict, Optional, List, Annotated
 from langgraph.graph.message import add_messages
 
-class NOAState(TypedDict):
+class PlutonState(TypedDict):
     """État partagé entre tous les nœuds du graph LangGraph"""
 
     # Identité de la requête
@@ -687,17 +687,17 @@ Rôle : point d'entrée principal information interne
 Cas d'usage : À implémenter dans une prochaine itération
 """
 from langgraph.graph import StateGraph, END
-from agents.state import NOAState
+from agents.state import PlutonState
 from llm.router import get_llm, LLMTier
 
 # --- NŒUDS (stubs — à implémenter) ---
 
-async def rag_node(state: NOAState) -> dict:
+async def rag_node(state: PlutonState) -> dict:
     """Récupère les chunks pertinents depuis pgvector"""
     # TODO: Implémenter la recherche RAG
     return {"raw_chunks": []}
 
-async def anonymize_node(state: NOAState) -> dict:
+async def anonymize_node(state: PlutonState) -> dict:
     """Anonymise les chunks avec spaCy NER avant envoi LLM"""
     # TODO: Implémenter spaCy NER + regex métier
     return {
@@ -705,23 +705,23 @@ async def anonymize_node(state: NOAState) -> dict:
         "entity_map": {}
     }
 
-async def llm_node(state: NOAState) -> dict:
+async def llm_node(state: PlutonState) -> dict:
     """Appel LLM avec chunks anonymisés"""
     # TODO: Implémenter l'appel LLM avec contexte
     llm = get_llm(LLMTier(state.get("llm_tier", "standard")))
     return {"llm_response": ""}
 
-async def rehydrate_node(state: NOAState) -> dict:
+async def rehydrate_node(state: PlutonState) -> dict:
     """Réinjecte les vraies données dans la réponse"""
     # TODO: Implémenter la réhydratation depuis entity_map
     return {"final_response": state.get("llm_response", "")}
 
-async def validation_check_node(state: NOAState) -> dict:
+async def validation_check_node(state: PlutonState) -> dict:
     """Vérifie si une validation humaine est nécessaire"""
     # TODO: Détecter si la réponse contient des actions engageantes
     return {"requires_validation": False}
 
-def should_validate(state: NOAState) -> str:
+def should_validate(state: PlutonState) -> str:
     """Edge conditionnel : validation requise ou non"""
     if state.get("requires_validation"):
         return "wait_for_human"
@@ -730,7 +730,7 @@ def should_validate(state: NOAState) -> str:
 # --- GRAPH ---
 
 def build_agent1_graph():
-    graph = StateGraph(NOAState)
+    graph = StateGraph(PlutonState)
 
     graph.add_node("rag", rag_node)
     graph.add_node("anonymize", anonymize_node)
@@ -760,37 +760,37 @@ Rôle : analyse plans, photos, chiffrage, génération visuels
 Cas d'usage : À implémenter dans une prochaine itération
 """
 from langgraph.graph import StateGraph, END
-from agents.state import NOAState
+from agents.state import PlutonState
 from llm.router import get_llm, LLMTier
 
-async def preprocess_attachment_node(state: NOAState) -> dict:
+async def preprocess_attachment_node(state: PlutonState) -> dict:
     """Prétraitement fichier : suppression EXIF GPS photos, conversion PDF"""
     # TODO: Implémenter preprocessing
     return {}
 
-async def vision_node(state: NOAState) -> dict:
+async def vision_node(state: PlutonState) -> dict:
     """Analyse visuelle via Claude Sonnet Vision"""
     # TODO: Implémenter analyse image/plan
     llm = get_llm(LLMTier.COMPLEX)
     return {"llm_response": ""}
 
-async def extraction_node(state: NOAState) -> dict:
+async def extraction_node(state: PlutonState) -> dict:
     """Extraction postes de travaux, surfaces, éléments clés"""
     # TODO: Implémenter extraction structurée
     return {}
 
-async def similar_projects_node(state: NOAState) -> dict:
+async def similar_projects_node(state: PlutonState) -> dict:
     """Recherche chantiers similaires via RAG"""
     # TODO: Implémenter recherche sémantique chantiers
     return {}
 
-async def prechiffrage_node(state: NOAState) -> dict:
+async def prechiffrage_node(state: PlutonState) -> dict:
     """Prépare les éléments de pré-chiffrage"""
     # TODO: Implémenter logique pré-chiffrage
     return {"requires_validation": True, "validation_reason": "chiffrage"}
 
 def build_agent2_graph():
-    graph = StateGraph(NOAState)
+    graph = StateGraph(PlutonState)
 
     graph.add_node("preprocess", preprocess_attachment_node)
     graph.add_node("vision", vision_node)
@@ -820,27 +820,27 @@ Rôle : détecte les requêtes hors champ, génère des skills, enrichit le Skil
 Cas d'usage : À implémenter dans une prochaine itération
 """
 from langgraph.graph import StateGraph, END
-from agents.state import NOAState
+from agents.state import PlutonState
 from llm.router import get_llm, LLMTier
 
-async def analyze_gap_node(state: NOAState) -> dict:
+async def analyze_gap_node(state: PlutonState) -> dict:
     """Analyse ce qui manque pour répondre à la requête"""
     # TODO: Implémenter l'analyse du gap
     llm = get_llm(LLMTier.COMPLEX)
     return {"out_of_scope": True}
 
-async def search_existing_docs_node(state: NOAState) -> dict:
+async def search_existing_docs_node(state: PlutonState) -> dict:
     """Recherche docs existants comme base pour le skill"""
     # TODO: Implémenter recherche RAG pour contexte skill
     return {}
 
-async def generate_skill_node(state: NOAState) -> dict:
+async def generate_skill_node(state: PlutonState) -> dict:
     """Claude génère le code Python du skill"""
     # TODO: Implémenter génération skill via Claude Sonnet
     llm = get_llm(LLMTier.COMPLEX)
     return {"skill_generated": "# TODO: generated skill code"}
 
-async def test_skill_node(state: NOAState) -> dict:
+async def test_skill_node(state: PlutonState) -> dict:
     """Test du skill dans sandbox Daytona isolé"""
     # TODO: Implémenter tests Daytona (phase 2)
     # Pour phase 1 : test basique subprocess Python isolé
@@ -849,7 +849,7 @@ async def test_skill_node(state: NOAState) -> dict:
         "skill_confidence": 0.0
     }
 
-async def submit_for_validation_node(state: NOAState) -> dict:
+async def submit_for_validation_node(state: PlutonState) -> dict:
     """Soumet le skill à validation humaine"""
     # TODO: Notifier admin via WebSocket + créer entrée en DB
     return {
@@ -857,7 +857,7 @@ async def submit_for_validation_node(state: NOAState) -> dict:
         "validation_reason": "nouveau skill à valider"
     }
 
-def should_retry_or_submit(state: NOAState) -> str:
+def should_retry_or_submit(state: PlutonState) -> str:
     """Edge conditionnel : retry si tests KO (max 3), soumettre si OK"""
     result = state.get("skill_test_result", {})
     if result.get("passed"):
@@ -866,7 +866,7 @@ def should_retry_or_submit(state: NOAState) -> str:
     return "submit"  # Pour l'instant soumet toujours (même si KO)
 
 def build_agent3_graph():
-    graph = StateGraph(NOAState)
+    graph = StateGraph(PlutonState)
 
     graph.add_node("analyze_gap", analyze_gap_node)
     graph.add_node("search_docs", search_existing_docs_node)
@@ -904,14 +904,14 @@ Analyse la requête entrante et dispatche vers le bon agent
 """
 from langgraph.graph import StateGraph, END
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
-from agents.state import NOAState
+from agents.state import PlutonState
 from agents.agent1 import agent1_graph
 from agents.agent2 import agent2_graph
 from agents.agent3 import agent3_graph
 from llm.router import classify_request_tier, LLMTier
 from config import settings
 
-async def classify_node(state: NOAState) -> dict:
+async def classify_node(state: PlutonState) -> dict:
     """
     Nœud 1 : Classification de la requête
     Détermine : quel agent, quel palier LLM
@@ -936,7 +936,7 @@ async def classify_node(state: NOAState) -> dict:
         "llm_tier": tier.value,
     }
 
-async def check_schedule_node(state: NOAState) -> dict:
+async def check_schedule_node(state: PlutonState) -> dict:
     """
     Nœud 2 : Vérification plage horaire
     Bloque si hors 7h-19h et pas bypass_schedule
@@ -945,22 +945,22 @@ async def check_schedule_node(state: NOAState) -> dict:
     # et state["bypass_schedule"]
     return {}
 
-async def dispatch_agent1(state: NOAState) -> dict:
+async def dispatch_agent1(state: PlutonState) -> dict:
     """Exécute Agent 1"""
     result = await agent1_graph.ainvoke(state)
     return result
 
-async def dispatch_agent2(state: NOAState) -> dict:
+async def dispatch_agent2(state: PlutonState) -> dict:
     """Exécute Agent 2"""
     result = await agent2_graph.ainvoke(state)
     return result
 
-async def dispatch_agent3(state: NOAState) -> dict:
+async def dispatch_agent3(state: PlutonState) -> dict:
     """Exécute Agent 3 — déclenché si hors champ"""
     result = await agent3_graph.ainvoke(state)
     return result
 
-def route_to_agent(state: NOAState) -> str:
+def route_to_agent(state: PlutonState) -> str:
     """Edge conditionnel principal"""
     target = state.get("target_agent", "agent1")
     out_of_scope = state.get("out_of_scope", False)
@@ -973,7 +973,7 @@ def route_to_agent(state: NOAState) -> str:
 
 async def build_main_graph(checkpointer):
     """Construit le graph principal avec checkpointing PostgreSQL"""
-    graph = StateGraph(NOAState)
+    graph = StateGraph(PlutonState)
 
     graph.add_node("classify", classify_node)
     graph.add_node("check_schedule", check_schedule_node)
@@ -1924,7 +1924,7 @@ Mets à jour le nœud `test_skill_node` dans `backend/agents/agent3.py` pour uti
 
 from sandbox.daytona_client import sandbox_client, SandboxTestResult
 
-async def test_skill_node(state: NOAState) -> dict:
+async def test_skill_node(state: PlutonState) -> dict:
     """
     Test du skill dans sandbox isolé.
     Utilise Daytona si configuré, subprocess en fallback.
@@ -2003,7 +2003,7 @@ export default function LoginPage() {
         width: "100%"
       }}>
         <div style={{ fontSize: 32, marginBottom: 8 }}>🌿</div>
-        <h1 style={{ fontSize: 22, fontWeight: 500, marginBottom: 4 }}>NOA</h1>
+        <h1 style={{ fontSize: 22, fontWeight: 500, marginBottom: 4 }}>Pluton</h1>
         <p style={{ color: "#888", fontSize: 14, marginBottom: 32 }}>
           Symbiose Paysage
         </p>
@@ -2039,7 +2039,7 @@ export default function LoginPage() {
 À la fin de la génération, crée un fichier `SETUP.md` avec les étapes dans l'ordre :
 
 ```markdown
-# Setup NOA — Symbiose Paysage
+# Setup Pluton — Symbiose Paysage
 
 ## Prérequis
 - Ubuntu 24.04

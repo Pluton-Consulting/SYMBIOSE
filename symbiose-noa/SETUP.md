@@ -1,4 +1,4 @@
-# Setup NOA — Symbiose Paysage
+# Setup Pluton — Symbiose Paysage
 
 ## Prérequis
 - Ubuntu 24.04
