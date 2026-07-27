@@ -28,7 +28,8 @@ VISION_PROMPT = (
     "éléments présents (terrasse, engazonnement, plantations, murets, allées, piscine, "
     "clôtures…), surfaces ou cotes LISIBLES, contraintes (dénivelé, accès, réseaux, mitoyenneté), "
     "et opportunités d'aménagement. Ne devine jamais une mesure non lisible : dis « non lisible ». "
-    "Réponds en français, structuré."
+    "Réponds en français, structuré. "
+    "Typographie : n'utilise JAMAIS de tiret cadratin (—) ni de tiret demi-cadratin (–) ; emploie une virgule, un deux-points, une parenthèse ou un tiret simple « - »."
 )
 
 # Taille max d'image envoyée au modèle vision (coût / limites API).
