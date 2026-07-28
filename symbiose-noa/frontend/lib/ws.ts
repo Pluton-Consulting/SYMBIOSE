@@ -70,8 +70,19 @@ export async function openChatSocket(
  * Envoie une requête utilisateur sur le socket ouvert.
  * No-op silencieux si le socket n'est pas (encore) ouvert.
  */
-export function sendQuery(ws: WebSocket, query: string, has_attachment = false): void {
+export interface AttachmentPayload {
+  attachment_name: string
+  attachment_mime: string
+  attachment_b64: string
+}
+
+export function sendQuery(
+  ws: WebSocket,
+  query: string,
+  has_attachment = false,
+  attachment?: AttachmentPayload,
+): void {
   if (ws.readyState === WebSocket.OPEN) {
-    ws.send(JSON.stringify({ query, has_attachment }))
+    ws.send(JSON.stringify({ query, has_attachment: has_attachment || Boolean(attachment), ...(attachment || {}) }))
   }
 }
