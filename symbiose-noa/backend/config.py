@@ -179,6 +179,9 @@ class Settings(BaseSettings):
     extrabat_api_password: Optional[str] = None
     # Deytime : aucune API — ingestion via export Excel ou via Extrabat (pas de config).
 
+    # Tâches d'agent (planification, webhook)
+    agent_tasks_enabled: bool = True
+
     # Schedule — défaut global (surchargeable par user en DB)
     access_start_hour: int = 8
     access_end_hour: int = 18
