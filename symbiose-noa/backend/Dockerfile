@@ -2,18 +2,25 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
+# tesseract-ocr : reconnaissance de caractères pour les PDF scannés et les photos
+# de documents (import de données). Le pack `fra` est indispensable — sans lui,
+# tesseract lit le français avec le modèle anglais et produit du charabia.
+# OCR LOCAL et volontaire : aucune image de document ne part vers un service externe.
 RUN apt-get update && apt-get install -y \
     build-essential \
     libpq-dev \
+    tesseract-ocr \
+    tesseract-ocr-fra \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Modèle spaCy français (NER pour l'anonymisation RGPD) — OBLIGATOIRE.
-# Essaie lg (idéal) puis md, puis sm. Si AUCUN ne s'installe, le build ÉCHOUE
-# volontairement : sans NER, les noms/adresses/organisations ne seraient pas masqués
-# avant envoi aux LLM externes (fuite PII). Ne jamais accepter un build sans modèle.
+# `md` plutôt que `lg` : ~10× plus léger et nettement plus rapide par requête, pour une
+# précision NER quasi identique (le regex métier couvre déjà email/tél/IBAN/SIRET/montants).
+# Repli `sm`. Si AUCUN ne s'installe, le build ÉCHOUE volontairement : sans NER, les
+# noms/adresses/organisations partiraient en clair aux LLM externes (fuite PII).
 RUN python -m spacy download fr_core_news_md \
     || python -m spacy download fr_core_news_sm
 

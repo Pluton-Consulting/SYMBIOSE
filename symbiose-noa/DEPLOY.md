@@ -9,7 +9,7 @@ Docker Compose) sur un VPS Ubuntu. Accès **privé via VPN auto-hébergé (Heads
 >
 > | Placeholder | Rôle | Ex. Symbiose | Ex. Duret |
 > |---|---|---|---|
-> | `<REPO>` | dépôt GitHub | `BenITNoaBenitez/SYMBIOSE` | `BenITNoaBenitez/DURET-SOLS` |
+> | `<REPO>` | dépôt GitHub | `Pluton-consulting/SYMBIOSE` | `Pluton-consulting/DURET-SOLS` |
 > | `<DOSSIER>` | sous-dossier contenant `docker-compose.yml` | `symbiose-noa` | `duret-sols` |
 > | `<DOMAINE>` | ton domaine (accès DNS requis) | `pluton-consulting.fr` | `ton-domaine.fr` |
 > | `<APP>` | sous-domaine de l'appli | `symbiose` | `duret` |
