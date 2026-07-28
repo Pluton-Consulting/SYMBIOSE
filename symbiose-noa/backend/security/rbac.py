@@ -15,14 +15,14 @@ ROLE_PERMISSIONS: dict[str, List[str]] = {
         "view_dashboard_global", "view_own_stats",
         "validate_skills", "manage_users", "configure_agents",
         "view_costs_global", "view_own_costs", "view_audit_log",
-        "manage_agent3", "manage_system", "run_browser_agent", "import_documents",
+        "manage_agent3", "manage_system", "run_browser_agent", "import_documents", "manage_mailboxes",
     ],
     "direction": [
         "chat_agent1", "chat_agent2", "chat_agent3",
         "view_dashboard_global", "view_own_stats",
         "validate_skills", "manage_users", "configure_agents",
         "view_costs_global", "view_own_costs", "view_audit_log",
-        "manage_agent3", "run_browser_agent", "import_documents",
+        "manage_agent3", "run_browser_agent", "import_documents", "manage_mailboxes",
     ],
     "commercial": [
         "chat_agent1", "view_own_stats", "view_own_costs",
@@ -76,6 +76,7 @@ ALL_FEATURES = [
     "view_dashboard_global", "view_costs_global", "view_audit_log",
     "validate_skills", "configure_agents", "manage_agent3",
     "manage_users", "manage_system", "run_browser_agent", "import_documents",
+    "manage_mailboxes",
 ]
 
 FEATURE_LABELS = {
@@ -92,6 +93,7 @@ FEATURE_LABELS = {
     "manage_agent3": "Gérer Agent 3",
     "manage_users": "Gérer utilisateurs",
     "import_documents": "Importer des documents",
+    "manage_mailboxes": "Gérer les boîtes mail",
     "manage_system": "Admin système",
     "run_browser_agent": "Agent Navigateur",
 }
