@@ -131,8 +131,14 @@ async def _ingerer_dossier(client, headers: dict, boite: str,
     return ingeres
 
 
-async def sync(boites: Optional[list[str]] = None) -> dict:
-    """Synchronise les boîtes Outlook, puis met à jour les profils de style."""
+async def sync(boites: Optional[list[str]] = None,
+               dossiers: tuple[str, ...] = ("inbox", "sentitems"),
+               maximum: Optional[int] = None) -> dict:
+    """Synchronise les boîtes Outlook, puis met à jour les profils de style.
+
+    `dossiers` permet de ne collecter QUE les envois (apprentissage du style
+    déclenché par un utilisateur pour sa propre boîte, cf. mail/collecte.py).
+    """
     if not (settings.ms_tenant_id and settings.ms_client_id and settings.ms_client_secret):
         raise NotImplementedError(
             "Outlook/M365 non configuré : renseignez MS_TENANT_ID, MS_CLIENT_ID et "
@@ -147,14 +153,16 @@ async def sync(boites: Optional[list[str]] = None) -> dict:
             "Aucune boîte à synchroniser : ajoutez des utilisateurs dans l'application "
             "ou renseignez MS_EXTRA_MAILBOXES.")
 
-    maximum = settings.ms_max_messages
+    maximum = maximum or settings.ms_max_messages
     headers = {"Authorization": f"Bearer {await _jeton()}"}
     bilan = {"boites": 0, "recus": 0, "envoyes": 0, "profils": 0, "echecs": []}
 
     async with httpx.AsyncClient(timeout=60) as client:
         for boite in cibles:
-            recus = await _ingerer_dossier(client, headers, boite, "inbox", maximum)
-            envoyes = await _ingerer_dossier(client, headers, boite, "sentitems", maximum)
+            recus = (await _ingerer_dossier(client, headers, boite, "inbox", maximum)
+                     if "inbox" in dossiers else 0)
+            envoyes = (await _ingerer_dossier(client, headers, boite, "sentitems", maximum)
+                       if "sentitems" in dossiers else 0)
             if recus == 0 and envoyes == 0:
                 # Boîte inexistante ou exclue par l'ApplicationAccessPolicy :
                 # on la signale et on poursuit avec les autres.
