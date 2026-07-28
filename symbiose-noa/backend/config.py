@@ -161,7 +161,15 @@ class Settings(BaseSettings):
     ms_tenant_id: Optional[str] = None
     ms_client_id: Optional[str] = None
     ms_client_secret: Optional[str] = None
-    ms_mailbox: Optional[str] = None    # boîte à lire (ex. contact@symbiose-paysage.fr)
+    ms_mailbox: Optional[str] = None    # boîte partagée historique (ex. contact@symbiose-paysage.fr)
+    ms_extra_mailboxes: Optional[str] = None  # boîtes partagées en plus, séparées par des virgules
+    ms_domain: Optional[str] = None     # ex. symbiose-paysage.fr — refuse toute boîte hors domaine
+    ms_max_messages: int = 50           # messages par dossier et par boîte, à chaque synchro
+    ms_access_level: str = "all"        # visibilité des mails ingérés
+
+    # Apprentissage du style rédactionnel (mail/style.py)
+    mail_style_samples: int = 50        # nb de messages envoyés analysés par boîte
+    mail_style_min_samples: int = 3     # en dessous, le profil serait une caricature
 
     # Extrabat (API REST partenaire — activation + identifiants API par l'éditeur).
     extrabat_base_url: str = "https://api.extrabat.com/v1"
