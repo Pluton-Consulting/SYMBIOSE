@@ -309,6 +309,14 @@ async def creer_tache_agent(data: dict, user) -> dict:
 
 SKILLS_NATIFS["creer_tache_agent"] = creer_tache_agent
 
+
+async def rechercher_documents(data: dict, user) -> dict:
+    from skills.documents import rechercher_documents as _chercher
+    return await _chercher(data, user)
+
+
+SKILLS_NATIFS["rechercher_documents"] = rechercher_documents
+
 # EFFET de chaque skill — classification qui décide si une validation humaine est
 # exigée. Déclarée DANS LE CODE, jamais déduite du nom ni fournie par le modèle :
 #   lecture          : ne modifie rien ;
@@ -326,4 +334,7 @@ EFFETS_NATIFS = {
     # Créer une tâche n'a aucun effet hors du système : quand elle s'exécutera,
     # elle repassera par tous les contrôles, validation humaine comprise.
     "creer_tache_agent": "ecriture_interne",
+    # Recherche dans la mémoire d'entreprise : ne modifie rien, et reste bornée
+    # aux droits de l'appelant (cloisonnement des boîtes mail compris).
+    "rechercher_documents": "lecture",
 }
