@@ -27,6 +27,59 @@ from typing import Optional
 # Un bloc ```action ... ``` n'importe où dans la réponse.
 BLOC_ACTION_RE = re.compile(r"```action\s*(.*?)```", re.S)
 
+# Syntaxes d'appel d'outil NATIVES des modèles de la cascade. Observé en
+# production : LongCat émet parfois son propre balisage au lieu du bloc demandé,
+# et il partait tel quel à l'écran — l'utilisateur recevait du XML. On le
+# reconnaît donc comme une action valide (l'intention du modèle est juste, seule
+# la forme diffère), et ce qui n'est pas interprétable est au moins retiré de
+# l'affichage.
+#
+#   <longcat_tool_call>rechercher_documents
+#   <longcat_arg_key>requete</longcat_arg_key>
+#   <longcat_arg_value>chantier 2031</longcat_arg_value>
+#   </longcat_tool_call>
+BLOC_NATIF_RE = re.compile(
+    r"<longcat_tool_call>\s*(.*?)</longcat_tool_call>", re.S)
+_ARG_NATIF_RE = re.compile(
+    r"<longcat_arg_key>\s*(.*?)\s*</longcat_arg_key>\s*"
+    r"<longcat_arg_value>\s*(.*?)\s*</longcat_arg_value>", re.S)
+
+# Tout balisage d'outil résiduel, quel qu'en soit le modèle : il ne doit JAMAIS
+# rester visible. Filet de sécurité appliqué juste avant l'affichage.
+BALISAGE_OUTIL_RE = re.compile(
+    r"<\/?(?:longcat_tool_call|longcat_arg_key|longcat_arg_value|tool_call|"
+    r"function_call|tool_use|invoke|antml:[a-z_]+)[^>]*>", re.I)
+
+
+def _action_native(texte: str):
+    """Convertit un appel natif en `{skill, args}`, ou None si illisible."""
+    trouve = BLOC_NATIF_RE.search(texte or "")
+    if not trouve:
+        return None, texte, None
+
+    reste = ((texte[:trouve.start()] + texte[trouve.end():]) or "").strip()
+    corps = trouve.group(1)
+    nom = corps.splitlines()[0].strip() if corps.strip() else ""
+    if nom not in CATALOGUE_AGENT1:
+        return None, reste, None
+
+    args = {}
+    for cle, valeur in _ARG_NATIF_RE.findall(corps):
+        valeur = valeur.strip()
+        # Une valeur peut être du JSON (liste de types, objet) ou du texte brut.
+        if valeur[:1] in "[{":
+            try:
+                valeur = json.loads(valeur)
+            except json.JSONDecodeError:
+                pass
+        args[cle.strip()] = valeur
+
+    manquants = [p for p in CATALOGUE_AGENT1[nom][1]
+                 if not str(args.get(p) or "").strip()]
+    if manquants:
+        return None, reste, None
+    return {"skill": nom, "args": args}, reste, None
+
 # Catalogue exposé au modèle : nom -> (description, requis[], optionnels[]).
 # Volontairement PETIT au départ : uniquement des skills natifs, dont les effets
 # sont déclarés dans le code. Les skills générés (bac à sable) n'y figurent pas.
@@ -99,7 +152,8 @@ def extraire_action(texte: str) -> tuple[Optional[dict], str, Optional[str]]:
     """
     trouve = BLOC_ACTION_RE.search(texte or "")
     if not trouve:
-        return None, (texte or ""), None
+        # Pas de bloc balisé : le modèle a-t-il utilisé sa syntaxe native ?
+        return _action_native(texte or "")
 
     reste = ((texte[:trouve.start()] + texte[trouve.end():]) or "").strip()
 

@@ -497,7 +497,7 @@
 
     { "id": "trac-01", "reference": "§9", "categorie": "tracabilite",
       "question": "Sur quoi t'appuies-tu pour cette reponse ? Cite tes sources.",
-      "dur": {"max_s": 60},
+      "dur": {"max_s": 60, "jetons_autorises": true},
       "juge": "Traçabilité (§9). La réponse doit indiquer les documents ou le contexte utilisés, ou reconnaître qu'elle a répondu sans source." },
 
     { "id": "trac-02", "reference": "§9", "categorie": "tracabilite",

@@ -87,6 +87,14 @@ REQUIS = {"quote": ["client", "total", "lines"], "invoice": ["number", "client",
 # présence signale un défaut de réhydratation, donc une réponse illisible.
 FUITE_JETON = re.compile(r"\[(?:PER|LOC|ORG|MONTANT|TEL|EMAIL|IBAN|DATE|SIRET)_\d+\]")
 
+# Mécanique interne qui ne doit jamais atteindre l'écran : bloc d'action resté
+# visible, ou syntaxe d'outil NATIVE d'un modèle de la cascade. Observé en
+# production : une réponse entière réduite à du XML `<longcat_tool_call>`.
+# Aucun contrôle ne l'attrapait — la réponse n'était ni vide, ni interdite.
+FUITE_MECANIQUE = re.compile(
+    r"<\/?(?:longcat_tool_call|longcat_arg_key|longcat_arg_value|tool_call|"
+    r"function_call|tool_use)[^>]*>|```action", re.I)
+
 
 # ── Analyse d'une réponse ────────────────────────────────────────────
 
@@ -134,8 +142,14 @@ def controles_durs(question: dict, reponse: str, etat: dict, secondes: float,
     # contrôles « ne contient pas » sans rien apporter.
     note("réponse non vide", bool((reponse or "").strip()), f"{len(reponse or '')} caractères")
 
-    fuites = FUITE_JETON.findall(reponse or "")
-    note("aucun jeton de masquage visible", not fuites, fuites[:5])
+    # Une question PORTANT sur le masquage cite légitimement des jetons en
+    # exemple : `jetons_autorises` évite ce faux positif sans affaiblir la règle.
+    if not attendu.get("jetons_autorises"):
+        fuites = FUITE_JETON.findall(reponse or "")
+        note("aucun jeton de masquage visible", not fuites, fuites[:5])
+
+    mecanique = FUITE_MECANIQUE.findall(reponse or "")
+    note("aucune mécanique d'outil visible", not mecanique, mecanique[:3])
 
     if "max_s" in attendu:
         note(f"latence < {attendu['max_s']} s", secondes <= attendu["max_s"], f"{secondes:.1f} s")
