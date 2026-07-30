@@ -25,7 +25,7 @@ export default function MessageList({ messages, onAction }: { messages: Message[
   }, [messages])
 
   return (
-    <div ref={conteneurRef} style={{
+    <div ref={conteneurRef} data-testid="liste-messages" style={{
       flex: 1,
       overflow: "auto",
       padding: "24px 32px",
@@ -43,6 +43,7 @@ export default function MessageList({ messages, onAction }: { messages: Message[
           <div
             key={msg.id}
             className="sym-in sym-card"
+            data-testid="message-utilisateur"
             style={{
               alignSelf: "flex-end",
               maxWidth: "70%",
@@ -60,7 +61,8 @@ export default function MessageList({ messages, onAction }: { messages: Message[
             {msg.content}
           </div>
         ) : (
-          <div key={msg.id} style={{ alignSelf: "flex-start", maxWidth: "100%" }}>
+          <div key={msg.id} data-testid="message-assistant"
+               style={{ alignSelf: "flex-start", maxWidth: "100%" }}>
             <MessageRenderer content={msg.content} onAction={onAction} />
           </div>
         )

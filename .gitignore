@@ -33,3 +33,7 @@ langfuse_postgres_data/
 # OS
 .DS_Store
 Thumbs.db
+
+# Rapports de campagne et captures d ecran (regeneres a chaque run)
+symbiose-noa/backend/scripts/bench/rapports/
+symbiose-noa/frontend/e2e/captures/
