@@ -11,11 +11,11 @@ from llm.router import get_llm, LLMTier
 
 SYSTEM_PROMPT = """Tu es l'assistant IA interne de Symbiose Paysage, cabinet d'architecture paysagère et d'aménagements extérieurs.
 Tu aides les équipes (commerciaux, bureau d'études, conducteurs de travaux, administratif, terrain) dans leur travail quotidien.
-Tu peux rechercher dans la mémoire d'entreprise (devis, chantiers, clients, catalogues, méthodes internes, plannings). Les documents pertinents te sont fournis ci-dessous sous « Documents internes disponibles ». IMPORTANT : si aucun document ne t'est fourni, c'est que la mémoire n'en contient pas (encore) sur ce sujet — dis-le honnêtement (« je n'ai aucun document là-dessus pour l'instant »), ne liste JAMAIS de contenu imaginaire et ne prétends pas avoir des devis/chantiers si aucun ne t'est donné.
+Tu peux rechercher dans la mémoire d'entreprise (devis, chantiers, clients, catalogues, méthodes internes, plannings). Les documents pertinents te sont fournis ci-dessous sous « Documents internes disponibles ». IMPORTANT : si on te demande une information qui exigerait un document et qu'aucun ne t'est fourni, dis-le honnêtement (« je n'ai aucun document là-dessus pour l'instant »), ne liste JAMAIS de contenu imaginaire et ne prétends pas avoir des devis/chantiers si aucun ne t'est donné. En revanche, pour une salutation, un remerciement ou une conversation courante, réponds simplement et naturellement : ne parle NI de la mémoire d'entreprise, NI de l'absence de documents.
 Réponds toujours en français. Sois précis, professionnel et concis.
 Certaines valeurs des documents peuvent apparaître masquées sous forme de balises [PER_1], [MONTANT_2], etc. — conserve-les telles quelles. IMPORTANT : ne CRÉE jamais toi-même de balise entre crochets (ex. [NB_DEVIS_1]) — elles proviennent UNIQUEMENT des documents fournis.
 Salutation : commence par « Bonjour » UNIQUEMENT si le message de l'utilisateur est lui-même une salutation (bonjour, salut, bonsoir...) ; sinon, pour une question de travail, réponds DIRECTEMENT, sans « Bonjour » ni formule d'accueil, et sans jamais répéter une salutation déjà faite dans la conversation. Ne dis JAMAIS « je suis Symbiose » ni « je m'appelle Symbiose » (Symbiose est le nom de l'entreprise, pas ton identité à énoncer) et ne te présente pas. Pour une question de travail, réponds directement.
-N'invente JAMAIS de donnée : ni montant, ni nom, ni date, ni NOMBRE (par ex. un nombre de devis). Tant qu'aucun document ne t'est fourni ci-dessous, tu n'as accès à AUCUN devis, chantier ou client : dis-le franchement (« je n'ai aucun devis en mémoire pour l'instant, la base n'a pas encore été alimentée »), ne donne jamais de chiffre inventé.
+N'invente JAMAIS de donnée : ni montant, ni nom, ni date, ni NOMBRE (par ex. un nombre de devis). Si l'on t'interroge sur un devis, un chantier ou un client et qu'aucun document ne t'est fourni ci-dessous, dis-le franchement (« je n'ai aucun devis en mémoire pour l'instant ») et ne donne jamais de chiffre inventé.
 Typographie : n'utilise JAMAIS de tiret cadratin (—) ni de tiret demi-cadratin (–) ; emploie plutôt une virgule, un deux-points, une parenthèse ou un tiret simple « - »."""
 
 
@@ -178,13 +178,24 @@ async def llm_node(state: AgentState, config=None) -> dict:
             + _json_out.dumps(resultats_outils, ensure_ascii=False, default=str)[:6000]
             + "\n\n")
 
+    # Une salutation ou un message social n'attend aucun document. Lui accoler
+    # « aucun document trouvé, dis-le honnêtement » poussait le modèle à répondre
+    # « la base n'a pas encore été alimentée » à un simple « hey » : il obéissait,
+    # la consigne était fautive.
+    _social = (state.get("query") or "").strip().lower()
+    est_social = len(_social.split()) <= 4 and any(
+        _social.startswith(m) for m in
+        ("bonjour", "salut", "hey", "hello", "coucou", "bonsoir", "merci", "ok",
+         "d'accord", "daccord", "super", "parfait", "ça va", "ca va", "yo", "re"))
+
     human_content = f"Question : {query}"
     if context_text:
         human_content = f"Documents internes disponibles :\n{context_text}\n\n{human_content}"
-    else:
-        human_content = ("(Aucun document interne n'a été trouvé pour cette requête : la mémoire "
-                         "d'entreprise est vide ou ne contient rien sur ce sujet. Réponds honnêtement, "
-                         "sans inventer de contenu.)\n\n" + human_content)
+    elif not est_social:
+        # Formulation NEUTRE : un constat, pas une consigne d'annonce. C'est le
+        # prompt système qui décide s'il y a lieu d'en parler.
+        human_content = ("(Aucun document interne ne correspond à cette demande.)\n\n"
+                         + human_content)
     human_content = bloc_resultats + human_content
 
     # Composants visuels : l'instruction est TOUJOURS présente.
