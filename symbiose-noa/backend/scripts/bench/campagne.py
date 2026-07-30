@@ -218,10 +218,23 @@ async def preparer(args) -> dict:
     return dict(u)
 
 
-async def nettoyer():
+async def nettoyer(depuis, utilisateur):
+    """Retire ce que la campagne a réellement produit.
+
+    Le document de référence, mais aussi les TÂCHES : la catégorie « actions »
+    demande à l'assistant d'en créer une, et elle est créée pour de bon. Sur une
+    instance de production, la laisser signifierait qu'un planificateur réveille
+    tous les lundis une tâche née d'un test.
+    """
     from database.connection import get_db
     async with get_db() as conn:
         await conn.execute("DELETE FROM documents WHERE source_type = $1", SOURCE_TEST)
+        taches = await conn.fetch(
+            "DELETE FROM agent_tasks WHERE user_id = $1::uuid AND created_at >= $2 "
+            "RETURNING title", str(utilisateur["id"]), depuis)
+    if taches:
+        print(f"{GRIS}tâches créées pendant la campagne, supprimées : "
+              f"{', '.join(t['title'][:40] for t in taches)}{RAZ}")
 
 
 async def poser(question: dict, fil: str, utilisateur: dict) -> tuple[str, dict, float, str]:
@@ -265,6 +278,8 @@ async def campagne(args):
 
     utilisateur = await preparer(args)
     print(f"{GRIS}compte utilisé : {utilisateur['email']} ({utilisateur['role']}){RAZ}\n")
+    # Repère pour ne supprimer QUE ce que cette campagne a créé.
+    depuis = datetime.now(timezone.utc)
 
     # Les questions partageant un `fil` gardent la MÊME conversation : c'est ce
     # qui permet de tester la mémoire d'un tour à l'autre.
@@ -307,7 +322,7 @@ async def campagne(args):
             await asyncio.sleep(args.pause)
 
     if not args.garder:
-        await nettoyer()
+        await nettoyer(depuis, utilisateur)
     return resultats
 
 
