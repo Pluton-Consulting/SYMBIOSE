@@ -44,6 +44,14 @@ from datetime import datetime, timezone
 
 sys.path.insert(0, ".")
 
+# Le rapport contient des accents et des filets. Sur une console Windows en
+# cp1252, l'affichage plante à l'impression ; on force donc l'UTF-8 quand la
+# sortie le permet, plutôt que de brider le rapport.
+try:
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+except (AttributeError, ValueError):  # flux déjà redirigé
+    pass
+
 ICI = os.path.dirname(os.path.abspath(__file__))
 RAPPORTS = os.path.join(ICI, "rapports")
 
@@ -241,10 +249,16 @@ async def poser(question: dict, fil: str, utilisateur: dict) -> tuple[str, dict,
     """Un tour complet. Renvoie (réponse, état final, secondes, statut)."""
     from agents import runtime
 
+    # Une question peut exiger un rôle PARTICULIER : c'est ainsi qu'on éprouve le
+    # cloisonnement du §15 (un profil terrain ne doit pas voir de marge). C'est le
+    # rôle, et non l'identité, qui pilote le filtrage documentaire par niveau
+    # d'accès — on le substitue donc pour le temps du tour.
+    role = question.get("role") or utilisateur["role"]
+
     debut = time.monotonic()
     res = await runtime.run_turn(
         query=question["question"], user_id=str(utilisateur["id"]),
-        user_role=utilisateur["role"], has_attachment=False, thread_id=fil,
+        user_role=role, has_attachment=False, thread_id=fil,
         trigger_kind="chat")
     secondes = time.monotonic() - debut
 
@@ -267,14 +281,24 @@ async def campagne(args):
     questions = banque["questions"]
     if args.categorie:
         questions = [q for q in questions if q["categorie"] == args.categorie]
+    if args.reference:
+        # « 5 », « §5 » et « §5 » écrit avec l'espace sont acceptés indifféremment.
+        cible = args.reference.lstrip("§ ").strip()
+        questions = [q for q in questions if q.get("reference", "").lstrip("§") == cible]
     if args.limite:
         questions = questions[:args.limite]
     if not questions:
         raise SystemExit("Aucune question ne correspond au filtre.")
 
     appels = len(questions) * (1 if args.sans_juge else 2)
-    print(f"\n{JAUNE}Campagne : {len(questions)} question(s), "
-          f"~{appels} appels au modèle, pause {args.pause}s.{RAZ}\n")
+    minutes = (len(questions) * (args.pause + 12)) / 60
+    print(f"\n{JAUNE}Campagne : {len(questions)} question(s), ~{appels} appels au modèle, "
+          f"pause {args.pause}s — compter au moins {minutes:.0f} min.{RAZ}")
+    connus = sum(1 for q in questions if q.get("attendu_ko"))
+    if connus:
+        print(f"{GRIS}dont {connus} question(s) portant sur une exigence du cahier des "
+              f"charges non encore implémentée : leur échec est attendu.{RAZ}")
+    print()
 
     utilisateur = await preparer(args)
     print(f"{GRIS}compte utilisé : {utilisateur['email']} ({utilisateur['role']}){RAZ}\n")
@@ -295,6 +319,8 @@ async def campagne(args):
         except Exception as e:  # noqa: BLE001
             print(f"  {ROUGE}KO{RAZ}   [{q['id']}] tour en échec : {e}")
             resultats.append({"id": q["id"], "categorie": q["categorie"],
+                              "reference": q.get("reference", "?"),
+                              "attendu_ko": bool(q.get("attendu_ko")),
                               "question": q["question"], "erreur": str(e)[:300],
                               "durs": [], "juge": {"ok": False, "motif": "tour en échec"},
                               "secondes": 0, "reponse": ""})
@@ -313,6 +339,9 @@ async def campagne(args):
             print(f"       {GRIS}· juge : {verdict_juge['motif']}{RAZ}")
 
         resultats.append({"id": q["id"], "categorie": q["categorie"],
+                          "reference": q.get("reference", "?"),
+                          "attendu_ko": bool(q.get("attendu_ko")),
+                          "role": q.get("role") or utilisateur["role"],
                           "question": q["question"], "durs": durs, "juge": verdict_juge,
                           "secondes": round(secondes, 2), "statut": statut,
                           "recherche": bool(etat.get("besoin_memoire")),
@@ -359,7 +388,28 @@ def rapport(resultats: list[dict]) -> str:
         print(f"  {len(juge_ko)} réponse(s) jugées hors critère")
     print(f"  latence médiane {resume['latence_mediane']} s, maximum {resume['latence_max']} s")
 
-    # Par catégorie : c'est là qu'on voit OÙ ça casse.
+    # Par SECTION DU CAHIER DES CHARGES : la lecture que veut un dirigeant.
+    SECTIONS = {
+        "§3": "Objectifs / usage courant", "§4": "Orchestration des agents",
+        "§5": "Agent 1 — commercial & admin", "§6": "Agent 2 — conception & chiffrage",
+        "§7": "Intégrations externes", "§8": "Mémoire d'entreprise (RAG)",
+        "§9": "Vigilance, erreurs, traçabilité", "§10": "Adoption",
+        "§15": "Gouvernance et accès",
+    }
+    refs: dict[str, list[dict]] = {}
+    for r in resultats:
+        refs.setdefault(r.get("reference", "?"), []).append(r)
+    print(f"\n  {GRIS}conformité par section du cahier des charges :{RAZ}")
+    for ref in sorted(refs, key=lambda x: int(x.lstrip("§?") or 99)):
+        items = refs[ref]
+        ok = sum(_score(r)[0] for r in items)
+        total = sum(_score(r)[1] for r in items)
+        attendus = sum(1 for r in items if r.get("attendu_ko"))
+        part = f"{100 * ok // total:>3}%" if total else "  - "
+        note = f"  {GRIS}({attendus} écart(s) connu(s)){RAZ}" if attendus else ""
+        print(f"    {ref:<4} {SECTIONS.get(ref, ''):<34} {ok:>3}/{total:<3} {part}{note}")
+
+    # Par catégorie : c'est là qu'on voit OÙ ça casse, techniquement.
     cats: dict[str, list[dict]] = {}
     for r in resultats:
         cats.setdefault(r["categorie"], []).append(r)
@@ -367,7 +417,18 @@ def rapport(resultats: list[dict]) -> str:
     for cat, items in sorted(cats.items()):
         ok = sum(_score(r)[0] for r in items)
         total = sum(_score(r)[1] for r in items)
-        print(f"    {cat:<14} {ok:>3}/{total:<3} contrôles")
+        print(f"    {cat:<16} {ok:>3}/{total:<3} contrôles")
+
+    # Les échecs NON attendus : la liste de travail réelle.
+    surprises = [r for r in resultats
+                 if not r.get("attendu_ko") and any(not c["ok"] for c in (r.get("durs") or []))]
+    if surprises:
+        print(f"\n  {ROUGE}à corriger ({len(surprises)}) :{RAZ}")
+        for r in surprises[:15]:
+            rates = [c["nom"] for c in r["durs"] if not c["ok"]]
+            print(f"    {r['id']:<10} {', '.join(rates)[:70]}")
+        if len(surprises) > 15:
+            print(f"    {GRIS}… et {len(surprises) - 15} autre(s), voir le rapport.{RAZ}")
 
     # Comparaison avec le run précédent : le vrai intérêt de la banque figée.
     precedents = sorted(f for f in os.listdir(RAPPORTS)
@@ -400,6 +461,7 @@ def rapport(resultats: list[dict]) -> str:
 def main():
     p = argparse.ArgumentParser(description="Banc de campagne — pertinence des réponses")
     p.add_argument("--categorie")
+    p.add_argument("--reference", help="section du cahier des charges, ex. §15 ou 15")
     p.add_argument("--limite", type=int)
     p.add_argument("--pause", type=float, default=2.0)
     p.add_argument("--sans-juge", action="store_true")
