@@ -8,29 +8,52 @@
  * brut, que le markdown devient des éléments, que la vue suit les messages, et
  * que le chemin de réflexion progresse.
  *
- * Prérequis (non ajouté aux dépendances du projet, c'est un outil de test) :
- *     npm i -D playwright && npx playwright install chromium
+ * DEUX MODES.
  *
- * L'authentification se fait par LIEN MAGIQUE : il n'y a pas de mot de passe
- * dans cette application. On passe donc le lien complet par l'environnement,
- * et il n'est jamais journalisé.
+ * 1. ATTACHÉ (recommandé) — tu ouvres l'application toi-même, tu te connectes,
+ *    et le banc reprend CETTE session. Cela résout d'un coup les deux obstacles :
+ *    l'accès réseau (ton navigateur sait joindre l'application) et le lien
+ *    magique (tu es déjà authentifié). Rien n'est saisi ni stocké côté banc.
  *
- *     BENCH_URL=http://localhost:3000 \
- *     BENCH_LIEN_MAGIQUE='http://localhost:3000/verify?token=...&email=...' \
- *     node e2e/interface.mjs
+ *      npm i --no-save playwright-core
+ *      # puis, dans un profil SÉPARÉ — obligatoire depuis Chrome 136, et de
+ *      # toute façon souhaitable : le banc ne voit que ce profil-là.
+ *      chrome.exe --remote-debugging-port=9222 \
+ *                 --user-data-dir="%LOCALAPPDATA%\Temp\chrome-bench" <url-app>
+ *      BENCH_CDP=http://localhost:9222 node e2e/interface.mjs
  *
- * Options d'environnement :
- *     BENCH_VISIBLE=1     ouvre une fenêtre au lieu de tourner sans affichage
+ * 2. AUTONOME — le banc lance son propre navigateur et se connecte via un lien
+ *    magique fourni par l'environnement (l'application n'a pas de mot de passe).
+ *    Le lien n'est jamais journalisé.
+ *
+ *      BENCH_URL=http://localhost:3000 \
+ *      BENCH_LIEN_MAGIQUE='http://.../verify?token=...&email=...' \
+ *      node e2e/interface.mjs
+ *
+ * Options communes :
+ *     BENCH_VISIBLE=1     mode autonome : ouvre une fenêtre visible
  *     BENCH_CAPTURES=1    enregistre une capture par cas dans e2e/captures/
+ *     BENCH_LECTURE=1     n'envoie AUCUN message ; vérifie seulement ce qui est
+ *                         déjà affiché. Utile pour un premier contact prudent
+ *                         sur une instance de production.
  */
-import { chromium } from "playwright"
 import { mkdirSync } from "node:fs"
 
-const URL = process.env.BENCH_URL || "http://localhost:3000"
+// playwright-core suffit et ne télécharge aucun navigateur : en mode attaché,
+// c'est le navigateur DÉJÀ ouvert qui est piloté.
+let chromium
+try { ({ chromium } = await import("playwright-core")) }
+catch { ({ chromium } = await import("playwright")) }
+
+const CDP = process.env.BENCH_CDP
 const LIEN = process.env.BENCH_LIEN_MAGIQUE
 const VISIBLE = process.env.BENCH_VISIBLE === "1"
 const CAPTURES = process.env.BENCH_CAPTURES === "1"
+const LECTURE_SEULE = process.env.BENCH_LECTURE === "1"
 const DELAI_REPONSE = 120_000
+// Pas `URL` : ce nom masquerait le constructeur global du même nom, dont on se
+// sert pour lire l'origine de l'onglet attaché.
+let BASE = process.env.BENCH_URL || "http://localhost:3000"
 
 const VERT = "\x1b[92m", ROUGE = "\x1b[91m", GRIS = "\x1b[90m", RAZ = "\x1b[0m"
 let ok = 0, ko = 0
@@ -71,24 +94,60 @@ async function capture(page, nom) {
   await page.screenshot({ path: `e2e/captures/${nom}.png`, fullPage: false })
 }
 
+/** Retrouve l'onglet de l'application parmi ceux déjà ouverts. */
+async function ongletApplication(navigateur) {
+  const pages = navigateur.contexts().flatMap((c) => c.pages())
+  if (!pages.length) throw new Error("aucun onglet ouvert dans le navigateur attaché")
+  // Priorité à un onglet qui montre déjà le chat, sinon le premier onglet
+  // dont l'adresse n'est pas une page interne du navigateur.
+  for (const p of pages) {
+    if (await p.getByTestId("saisie-message").count()) return p
+  }
+  const utile = pages.find((p) => /^https?:/.test(p.url()))
+  if (!utile) throw new Error("aucun onglet sur une page web — ouvre l'application d'abord")
+  return utile
+}
+
 async function main() {
-  if (!LIEN) {
-    console.error("BENCH_LIEN_MAGIQUE manquant : impossible de se connecter.")
-    process.exit(2)
+  let navigateur, contexte, page, attache = false
+
+  if (CDP) {
+    // Mode attaché : on reprend la session ouverte par l'utilisateur.
+    navigateur = await chromium.connectOverCDP(CDP)
+    attache = true
+    page = await ongletApplication(navigateur)
+    BASE = new URL(page.url()).origin
+    console.log(`${GRIS}attaché à ${BASE} — onglet : ${page.url()}${RAZ}`)
+  } else {
+    if (!LIEN) {
+      console.error("Ni BENCH_CDP ni BENCH_LIEN_MAGIQUE : aucun moyen de se connecter.")
+      process.exit(2)
+    }
+    navigateur = await chromium.launch({ headless: !VISIBLE })
+    contexte = await navigateur.newContext({ viewport: { width: 1440, height: 900 } })
+    page = await contexte.newPage()
+    await page.goto(LIEN, { waitUntil: "networkidle" })
   }
 
-  const navigateur = await chromium.launch({ headless: !VISIBLE })
-  const contexte = await navigateur.newContext({ viewport: { width: 1440, height: 900 } })
-  const page = await contexte.newPage()
-
   try {
-    // ── Connexion ────────────────────────────────────────────────────
-    await page.goto(LIEN, { waitUntil: "networkidle" })
-    await page.goto(`${URL}/chat`, { waitUntil: "networkidle" })
+    if (!attache || !(await page.getByTestId("saisie-message").count())) {
+      await page.goto(`${BASE}/chat`, { waitUntil: "networkidle" })
+    }
     const connecte = await page.getByTestId("saisie-message").count()
-    verdict("connexion par lien magique", connecte > 0,
-            "la zone de saisie n'apparaît pas — lien expiré ou déjà consommé ?")
+    verdict("session authentifiée sur le chat", connecte > 0,
+            attache ? "connecte-toi dans le navigateur, puis relance"
+                    : "lien magique expiré ou déjà consommé ?")
     if (!connecte) return
+
+    if (LECTURE_SEULE) {
+      const etapes = await page.getByTestId("etape-reflexion").count()
+      const bulles = await page.getByTestId("message-assistant").count()
+      verdict("chemin de réflexion présent", etapes > 0, `${etapes} étape(s)`)
+      console.log(`${GRIS}lecture seule : ${bulles} réponse(s) déjà affichée(s), `
+                  + `aucun message envoyé.${RAZ}`)
+      await capture(page, "00-lecture-seule")
+      return
+    }
 
     // ── 1. Conversation courante : pas de hors-sujet ─────────────────
     let bulle = await demander(page, "saluut")
@@ -138,8 +197,8 @@ async function main() {
 
     // ── 6. La conversation survit à un changement d'onglet ───────────
     const avant = await page.getByTestId("message-assistant").count()
-    await page.goto(`${URL}/accueil`, { waitUntil: "networkidle" })
-    await page.goto(`${URL}/chat`, { waitUntil: "networkidle" })
+    await page.goto(`${BASE}/accueil`, { waitUntil: "networkidle" })
+    await page.goto(`${BASE}/chat`, { waitUntil: "networkidle" })
     await page.waitForTimeout(2500)
     const apres = await page.getByTestId("message-assistant").count()
     verdict("la conversation est retrouvée après changement d'onglet",
@@ -147,7 +206,10 @@ async function main() {
     await capture(page, "04-retour-onglet")
 
   } finally {
-    await navigateur.close()
+    // En mode attaché, on se contente de se DÉTACHER : le navigateur appartient
+    // à l'utilisateur, le banc n'a pas à le fermer sous ses yeux.
+    if (attache) await navigateur.close().catch(() => {})
+    else await navigateur.close()
   }
 
   console.log(`\n  ${ok} contrôle(s) OK, ${ko} en échec`)
