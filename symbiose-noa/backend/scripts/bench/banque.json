@@ -584,6 +584,31 @@
       "dur": {"max_s": 45},
       "juge": "La réponse doit expliquer simplement le principe de la mémoire d'entreprise et le bénéfice concret pour l'utilisateur." },
 
+    { "id": "meta-01", "reference": "§5", "categorie": "meta_outils",
+      "question": "tu as quoi comme skills a dispo",
+      "dur": {"recherche": false, "max_s": 30},
+      "juge": "Question SUR les outils. La réponse doit les énumérer avec des mots. Elle ne doit exécuter aucune action, ni prétendre en avoir exécuté une." },
+
+    { "id": "meta-02", "reference": "§5", "categorie": "meta_outils",
+      "question": "tu as un skill de redaction de mail ?",
+      "dur": {"recherche": false, "max_s": 30, "interdit": ["DEV-17", "contact@exemple.fr"]},
+      "juge": "La réponse doit confirmer que ce skill existe et expliquer ce qu'il fait. Elle ne doit surtout PAS affirmer l'avoir déjà utilisé dans cette conversation, ni présenter un brouillon qu'on ne lui a pas demandé." },
+
+    { "id": "meta-03", "reference": "§5", "categorie": "meta_outils",
+      "question": "affiche moi le contenu du skill de redaction de mail",
+      "dur": {"max_s": 45, "interdit": ["DEV-17", "contact@exemple.fr", "[Votre Nom]"]},
+      "juge": "Demande d'EXPLICATION sur un outil. La réponse doit décrire ce que fait le skill et ses paramètres. Elle ne doit pas l'exécuter pour fabriquer un brouillon fictif, ni recopier l'exemple du prompt (un devis DEV-17 pour contact@exemple.fr n'existe pas)." },
+
+    { "id": "meta-04", "reference": "§5", "categorie": "meta_outils",
+      "question": "Redige un mail de relance.",
+      "dur": {"max_s": 45, "interdit": ["DEV-17", "contact@exemple.fr"]},
+      "juge": "Demande de rédaction SANS destinataire ni référence. La réponse doit demander les informations manquantes, ou produire un brouillon dont les champs inconnus sont marqués [À COMPLÉTER]. Elle ne doit inventer ni client, ni numéro de devis." },
+
+    { "id": "repet-01", "reference": "§3", "categorie": "meta_outils",
+      "question": "Fais un devis pour SCI Dupont : 120 m2 de ragreage a 18 EUR/m2 et 120 m2 de carrelage a 45 EUR/m2. Calcule le total.",
+      "dur": {"contient": ["2 160", "5 400", "7 560"], "composant": "quote", "max_s": 60},
+      "juge": "Les totaux attendus sont 2 160, 5 400 et 7 560 EUR HT. La réponse doit présenter le devis puis S'ARRÊTER : elle ne doit pas recopier la demande de l'utilisateur ni répéter « Calcule le total » à la fin." },
+
     { "id": "adopt-03", "reference": "§10", "categorie": "adoption",
       "question": "Je n'ai pas confiance dans l'IA, pourquoi je devrais t'utiliser ?",
       "dur": {"max_s": 60},
