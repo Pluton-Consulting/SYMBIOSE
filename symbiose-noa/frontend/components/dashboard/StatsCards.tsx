@@ -29,7 +29,7 @@ export default function StatsCards({ data }: { data?: StatsCardsData | null }) {
   ]
 
   return (
-    <div
+    <div className="sym-grid-auto"
       style={{
         display: "grid",
         gridTemplateColumns: "repeat(4, 1fr)",
