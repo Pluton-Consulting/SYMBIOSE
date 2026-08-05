@@ -173,6 +173,16 @@ CATALOGUE_AGENT1: dict[str, tuple[str, list[str], list[str]]] = {
     "apprendre_style_email": (
         "Apprend le style d'écriture d'une boîte à partir de ses messages envoyés",
         [], ["mailbox"]),
+    "lancer_enrichissement": (
+        "ADMINISTRATION UNIQUEMENT. Lance une campagne de fond : l'assistant relit "
+        "toutes les boîtes mail, construit un profil d'écriture par personne, et en "
+        "tire des connaissances, des manières de faire et des brouillons de skills. "
+        "Dure plusieurs heures. Ne la propose jamais de toi-même : uniquement sur "
+        "demande explicite",
+        [], ["collecter", "max_lots_par_boite"]),
+    "statut_enrichissement": (
+        "Avancement de la campagne d'enrichissement en cours (administration)",
+        [], []),
     "creer_tache_agent": (
         "Enregistre une tâche que l'assistant exécutera plus tard, éventuellement de "
         "façon répétée. recurrence : interval (avec interval_minutes, minimum 5), "
