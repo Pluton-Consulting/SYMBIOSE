@@ -52,11 +52,20 @@ async def lancer_enrichissement(data: dict, user) -> dict:
     exiger = data.get("exiger_modele_principal")
     exiger = True if exiger is None else bool(exiger)
 
+    # Portée des skills produits : ouverte par défaut, restreignable à un profil.
+    # Une valeur fantaisiste retombe sur « all » plutôt que de faire échouer la
+    # demande : c'est le comportement historique, et la portée se corrige ensuite.
+    from security.acces import NIVEAUX
+    acces = str(data.get("acces_skills") or "all").strip()
+    if acces not in NIVEAUX:
+        acces = "all"
+
     asyncio.create_task(enrichissement.executer(
         lance_par=getattr(user, "email", "?"),
         collecter=collecter,
         max_lots_par_boite=max(1, min(lots, 40)),
-        exiger_modele_principal=exiger))
+        exiger_modele_principal=exiger,
+        acces_skills=acces))
 
     return {
         "lance": True,

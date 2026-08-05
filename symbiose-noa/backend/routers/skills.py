@@ -114,8 +114,9 @@ async def importer_skill(file: UploadFile = File(...),
             async with get_db() as conn:
                 await conn.execute(
                     """INSERT INTO skills (name, description, code, prompt_template,
-                                           status, created_by, agent, category, effect, enabled)
-                       VALUES ($1, $2, $3, $4, 'draft', 'import', $5, $6, $7, false)
+                                           status, created_by, agent, category, effect,
+                                           access_level, enabled)
+                       VALUES ($1, $2, $3, $4, 'draft', 'import', $5, $6, $7, $8, false)
                        ON CONFLICT (name) DO UPDATE
                            SET description = EXCLUDED.description,
                                code = EXCLUDED.code,
@@ -123,13 +124,14 @@ async def importer_skill(file: UploadFile = File(...),
                                agent = EXCLUDED.agent,
                                category = EXCLUDED.category,
                                effect = EXCLUDED.effect,
+                               access_level = EXCLUDED.access_level,
                                version = skills.version + 1,
                                status = 'draft',
                                enabled = false,
                                updated_at = NOW()""",
                     skill["name"], skill["description"], skill["code"],
                     skill["prompt_template"], skill["agent"], skill["category"],
-                    skill["effect"])
+                    skill["effect"], skill["access_level"])
             importes.append(skill["name"])
         except Exception as e:  # noqa: BLE001 - un skill fautif n'annule pas les autres
             logger.warning("Import du skill %s échoué : %s", skill["name"], e)
@@ -247,6 +249,9 @@ class UpdateBody(BaseModel):
     code: Optional[str] = None
     agent: Optional[str] = None
     category: Optional[str] = None
+    # Portée : à qui ce skill est annoncé, et donc par qui il est appelable.
+    # Même échelle que les documents (security/acces.py).
+    access_level: Optional[str] = None
 
 
 @router.patch("/{name}")
@@ -255,12 +260,20 @@ async def update_skill(name: str, body: UpdateBody, current_user: User = Depends
     fields = {k: v for k, v in body.model_dump().items() if v is not None}
     if not fields:
         raise HTTPException(status_code=http.HTTP_422_UNPROCESSABLE_ENTITY, detail="aucun champ à modifier")
+    if "access_level" in fields:
+        from security.acces import NIVEAUX
+        if fields["access_level"] not in NIVEAUX:
+            raise HTTPException(status_code=http.HTTP_422_UNPROCESSABLE_ENTITY,
+                                detail=f"portée invalide. Attendu : {', '.join(NIVEAUX)}")
     sets, args = [], []
     for k, v in fields.items():
         args.append(v)
         sets.append(f"{k} = ${len(args)}")
     # éditer un skill le repasse en 'draft' (re-validation nécessaire), sauf si on ne touche
     # qu'aux métadonnées d'organisation (agent/category).
+    # `access_level` volontairement absent : restreindre la portée d'un skill
+    # ne change pas ce qu'il fait, seulement à qui il est annoncé — le
+    # repasser en brouillon obligerait à tout revalider pour rien.
     if any(k in fields for k in ("code", "prompt_template", "description")):
         sets.append("status = 'draft'")
         sets.append("version = version + 1")

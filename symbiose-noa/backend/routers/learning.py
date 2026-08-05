@@ -221,6 +221,9 @@ class EnrichissementBody(BaseModel):
     # Par défaut la campagne EXIGE le modèle principal et s'arrête s'il
     # n'est pas disponible : ce qu'elle écrit reste en mémoire.
     exiger_modele_principal: bool = True
+    # Portée des skills créés : 'all' par défaut, ou restreinte à un
+    # profil (commercial_plus, bureau_etudes_plus, direction_only...).
+    acces_skills: str = "all"
 
 
 @router.post("/enrichir")
@@ -247,6 +250,11 @@ async def enrichir(body: EnrichissementBody, current_user: User = Depends(get_cu
         raise HTTPException(status_code=http.HTTP_409_CONFLICT,
                             detail="Une campagne est déjà en cours.")
 
+    from security.acces import NIVEAUX
+    if body.acces_skills not in NIVEAUX:
+        raise HTTPException(status_code=http.HTTP_422_UNPROCESSABLE_ENTITY,
+                            detail=f"portée invalide. Attendu : {', '.join(NIVEAUX)}")
+
     await log_action(action="enrichissement_lance", user_id=str(current_user.id),
                      metadata={"collecter": body.collecter,
                                "max_lots_par_boite": body.max_lots_par_boite})
@@ -255,7 +263,8 @@ async def enrichir(body: EnrichissementBody, current_user: User = Depends(get_cu
         lance_par=current_user.email,
         collecter=body.collecter,
         max_lots_par_boite=max(1, min(body.max_lots_par_boite, 40)),
-        exiger_modele_principal=body.exiger_modele_principal))
+        exiger_modele_principal=body.exiger_modele_principal,
+        acces_skills=body.acces_skills))
 
     return {"lance": True,
             "note": ("La campagne tourne en tâche de fond. Les connaissances déduites "

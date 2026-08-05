@@ -164,6 +164,12 @@ class Settings(BaseSettings):
     ms_mailbox: Optional[str] = None    # boîte partagée historique (ex. contact@symbiose-paysage.fr)
     ms_extra_mailboxes: Optional[str] = None  # boîtes partagées en plus, séparées par des virgules
     ms_domain: Optional[str] = None     # ex. symbiose-paysage.fr — refuse toute boîte hors domaine
+    # Demander à Graph la liste des boîtes du tenant, au lieu de se limiter aux
+    # comptes de l'application. Exige la permission `User.Read.All`. Activé par
+    # défaut : sans cela, une personne sans compte applicatif a une boîte
+    # invisible, y compris pour un administrateur. Le filtre `ms_domain` et la
+    # politique ApplicationAccessPolicy restent les vraies bornes.
+    ms_decouvrir_domaine: bool = True
     ms_max_messages: int = 50           # messages par dossier et par boîte, à chaque synchro
     ms_access_level: str = "all"        # visibilité des mails ingérés
 

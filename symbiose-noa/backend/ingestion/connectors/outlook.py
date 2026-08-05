@@ -8,7 +8,8 @@ d'APPLICATION, qui permet de lire les boîtes sans consentement individuel.
 
 Prérequis (voir SETUP_CONNECTEURS.md) :
   1. App Entra : ms_tenant_id / ms_client_id / ms_client_secret.
-  2. Permission d'application Mail.Read + « Grant admin consent ».
+  2. Permissions d'application Mail.Read (+ User.Read.All pour découvrir les
+     boîtes du domaine) et « Grant admin consent ».
   3. ⚠ RESTREINDRE les boîtes accessibles via ApplicationAccessPolicy. Sans
      cette politique, l'application peut lire TOUTES les boîtes du tenant.
 
@@ -46,8 +47,60 @@ def _corps(message: dict) -> str:
     return (contenu or message.get("bodyPreview") or "").strip()
 
 
+async def boites_du_domaine() -> list[str]:
+    """Toutes les boîtes du tenant, demandées à Graph.
+
+    Sans cela, une personne sans compte dans l'application a une boîte
+    INVISIBLE : la liste était déduite des seuls comptes applicatifs, et il
+    fallait déclarer chaque adresse à la main.
+
+    Exige la permission d'application `User.Read.All` en plus de `Mail.Read`.
+    Si elle manque, on renvoie une liste vide plutôt que d'échouer : la
+    découverte est un CONFORT, l'appel aux comptes applicatifs reste la base.
+    """
+    import httpx
+
+    domaine = (settings.ms_domain or "").strip().lower()
+    try:
+        jeton = await _jeton()
+    except Exception as e:  # noqa: BLE001
+        logger.info("Découverte du domaine impossible (%s)", e)
+        return []
+
+    trouvees: list[str] = []
+    # `accountEnabled` : un compte désactivé n'a plus de boîte à lire.
+    url = ("https://graph.microsoft.com/v1.0/users"
+           "?$select=mail,userPrincipalName,accountEnabled&$top=999")
+    try:
+        async with httpx.AsyncClient(timeout=30) as client:
+            while url:
+                r = await client.get(url, headers={"Authorization": f"Bearer {jeton}"})
+                if r.status_code == 403:
+                    logger.info("Découverte du domaine refusée : permission "
+                                "User.Read.All absente. Seuls les comptes de "
+                                "l'application seront synchronisés.")
+                    return []
+                r.raise_for_status()
+                data = r.json()
+                for u in data.get("value", []):
+                    if u.get("accountEnabled") is False:
+                        continue
+                    adresse = (u.get("mail") or u.get("userPrincipalName") or "").strip().lower()
+                    if "@" in adresse:
+                        trouvees.append(adresse)
+                url = data.get("@odata.nextLink")     # pagination Graph
+    except Exception as e:  # noqa: BLE001
+        logger.info("Découverte du domaine interrompue (%s) — %d boîte(s) déjà vues",
+                    e, len(trouvees))
+
+    if domaine:
+        trouvees = [b for b in trouvees if b.endswith("@" + domaine)]
+    logger.info("Découverte du domaine : %d boîte(s)", len(trouvees))
+    return trouvees
+
+
 async def boites_a_synchroniser() -> list[str]:
-    """Boîtes à parcourir : comptes actifs de l'application + boîtes partagées."""
+    """Boîtes à parcourir : comptes de l'application, boîtes partagées, domaine."""
     boites: list[str] = []
     async with get_db() as conn:
         rows = await conn.fetch("SELECT email FROM users WHERE actif = true AND email IS NOT NULL")
@@ -55,6 +108,13 @@ async def boites_a_synchroniser() -> list[str]:
         adresse = (r["email"] or "").strip().lower()
         if "@" in adresse:
             boites.append(adresse)
+
+    # Puis tout le domaine, si la permission le permet. L'ordre compte : les
+    # comptes de l'application restent en tête, ce sont les plus utiles.
+    if settings.ms_decouvrir_domaine:
+        for adresse in await boites_du_domaine():
+            if adresse not in boites:
+                boites.append(adresse)
 
     for source in (settings.ms_extra_mailboxes, settings.ms_mailbox):
         for extra in (source or "").split(","):

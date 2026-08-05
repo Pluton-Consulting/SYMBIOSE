@@ -45,7 +45,7 @@ import unicodedata
 
 # Champs de l'en-tête que l'on accepte de lire. `status` et `enabled` en sont
 # volontairement absents : ils ne se décrètent pas depuis un fichier.
-CHAMPS_ENTETE = ("name", "description", "agent", "category", "effect")
+CHAMPS_ENTETE = ("name", "description", "agent", "category", "effect", "access_level")
 EFFETS_VALIDES = ("lecture", "ecriture_interne", "externe")
 AGENTS_VALIDES = ("agent1", "agent2", "agent3")
 
@@ -61,7 +61,7 @@ class MarkdownInvalide(ValueError):
 def vers_markdown(skill: dict) -> str:
     """Sérialise un skill de la base en Markdown."""
     entete = [f"name: {skill.get('name', '')}"]
-    for champ in ("description", "agent", "category", "effect"):
+    for champ in ("description", "agent", "category", "effect", "access_level"):
         valeur = (skill.get(champ) or "").strip() if skill.get(champ) else ""
         if valeur:
             # Une description multiligne casserait l'en-tête : on l'aplatit.
@@ -222,4 +222,8 @@ def depuis_markdown(texte: str, nom_fichier: str | None = None) -> dict:
         "effect": effet,
         "prompt_template": role,
         "code": code,
+        # Portée FAIL-CLOSED à l'envers : un fichier muet ouvre à tous, ce qui
+        # est le comportement historique et sans surprise. C'est RESTREINDRE
+        # qui demande une déclaration explicite, pas ouvrir.
+        "access_level": (entete.get("access_level") or "").strip() or "all",
     }

@@ -32,7 +32,7 @@ class SkillError(Exception):
 
 async def list_skills(agent: str | None = None, statuses: tuple | None = None,
                       include_code: bool = False) -> list[dict]:
-    cols = ("name, description, status, agent, category, enabled, "
+    cols = ("name, description, status, agent, category, enabled, access_level, "
             "confidence_score, usage_count, updated_at")
     if include_code:
         cols += ", code, prompt_template"
@@ -56,6 +56,7 @@ async def get_skill(name: str) -> dict | None:
     async with get_db() as conn:
         row = await conn.fetchrow(
             "SELECT name, description, status, agent, category, code, prompt_template, "
+            "access_level, "
             "confidence_score, usage_count, version, updated_at "
             "FROM skills WHERE name = $1",
             name,

@@ -174,7 +174,8 @@ async def _lire_lot(boite: str, messages: list[str],
 
 
 async def _creer_skills(competences: list[dict],
-                        exiger_principal: bool = True) -> list[str]:
+                        exiger_principal: bool = True,
+                        acces: str = "all") -> list[str]:
     """Crée les compétences retenues en BROUILLON désactivé.
 
     Le code est écrit par un modèle : la même exigence qu'à la lecture
@@ -196,7 +197,8 @@ async def _creer_skills(competences: list[dict],
                                            status, created_by, enabled)
                        VALUES ($1, $2, $3, $4, 'draft', 'enrichissement', false)
                        ON CONFLICT (name) DO NOTHING""",
-                    item["nom"], item["description"], code, item.get("entrees") or "")
+                    item["nom"], item["description"], code,
+                    item.get("entrees") or "", acces)
             crees.append(item["nom"])
         except Exception as e:  # noqa: BLE001
             logger.warning("Skill %s non créé : %s", item.get("nom"), e)
@@ -205,7 +207,8 @@ async def _creer_skills(competences: list[dict],
 
 async def executer(lance_par: str, collecter: bool = True,
                    max_lots_par_boite: int = MAX_LOTS_PAR_BOITE,
-                   exiger_modele_principal: bool = True) -> dict:
+                   exiger_modele_principal: bool = True,
+                   acces_skills: str = "all") -> dict:
     """Déroule la campagne. Longue : à lancer en tâche de fond."""
     from learning.debrief import enregistrer
 
@@ -272,7 +275,8 @@ async def executer(lance_par: str, collecter: bool = True,
 
                 skills = await _creer_skills(
                     propositions.get("competences") or [],
-                    exiger_principal=exiger_modele_principal)
+                    exiger_principal=exiger_modele_principal,
+                    acces=acces_skills)
                 _ETAT["skills"].extend(s for s in skills if s not in _ETAT["skills"])
 
                 await asyncio.sleep(PAUSE_ENTRE_LOTS_S)
