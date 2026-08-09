@@ -165,6 +165,19 @@ CATALOGUE_AGENT1: dict[str, tuple[str, list[str], list[str]]] = {
         "as-tu ». C'est un INVENTAIRE, pas une recherche : il rend ce qui existe, sans "
         "seuil de pertinence. sujet : mot-clé optionnel pour filtrer",
         [], ["sujet"]),
+    "preparer_visuel": (
+        "PREPARE le brief d'un visuel paysager (rendu d'aménagement) sans rien "
+        "generer : gratuit, rejouable autant de fois qu'il faut. TOUJOURS passer "
+        "par lui avant `generer_visuel`. demande : ce qu'il faut representer ; "
+        "contraintes : materiaux, style, saison ; format : 16:9, 1:1...",
+        ["demande"], ["contraintes", "format", "resolution"]),
+    "generer_visuel": (
+        "GENERE reellement le visuel a partir d'un brief valide. ATTENTION : cet "
+        "appel est FACTURE et demande une validation humaine. Ne l'appelle jamais "
+        "de ta propre initiative ni pour iterer sur la formulation - c'est le role "
+        "de `preparer_visuel`. Le resultat est une illustration, pas une simulation "
+        "du terrain reel",
+        ["brief"], ["format", "resolution"]),
     "mes_droits": (
         "Explique les DROITS D'ACCES : ce que la personne connectee peut consulter, "
         "ce qui lui est ferme, quelles boites mail elle peut lire, et comment le "

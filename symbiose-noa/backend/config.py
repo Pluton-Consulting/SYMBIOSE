@@ -62,6 +62,10 @@ class Settings(BaseSettings):
 
     # Groq (gratuit) — actions simples/backend, rapides
     groq_api_key: Optional[str] = None
+
+    # Higgsfield — generation de visuels paysagers (facturee a l'usage).
+    higgsfield_api_key: Optional[str] = None
+    higgsfield_api_secret: Optional[str] = None
     model_groq_light: str = "llama-3.1-8b-instant"      # rapide, gros quota séparé
     model_groq_large: str = "llama-3.3-70b-versatile"   # plus gros, quota journalier limité
     model_groq_vision: str = "meta-llama/llama-4-scout-17b-16e-instruct"  # multimodal (Agent 2)

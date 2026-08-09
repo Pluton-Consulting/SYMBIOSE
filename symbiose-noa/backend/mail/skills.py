@@ -519,6 +519,20 @@ async def mes_droits(data: dict, user) -> dict:
 SKILLS_NATIFS["mes_droits"] = mes_droits
 
 
+async def preparer_visuel(data: dict, user) -> dict:
+    from skills.visuels import preparer_visuel as _preparer
+    return await _preparer(data, user)
+
+
+async def generer_visuel(data: dict, user) -> dict:
+    from skills.visuels import generer_visuel as _generer
+    return await _generer(data, user)
+
+
+SKILLS_NATIFS["preparer_visuel"] = preparer_visuel
+SKILLS_NATIFS["generer_visuel"] = generer_visuel
+
+
 async def lancer_enrichissement(data: dict, user) -> dict:
     from learning.skills import lancer_enrichissement as _lancer
     return await _lancer(data, user)
@@ -561,6 +575,12 @@ EFFETS_NATIFS = {
     "interroger_donnees": "lecture",
     # Description des droits de l'appelant : lecture de sa propre configuration.
     "mes_droits": "lecture",
+    # Preparer un brief ne coute rien et n'appelle personne.
+    "preparer_visuel": "lecture",
+    # Generer est FACTURE et sort de l'entreprise : effet externe, donc
+    # validation humaine avant depart. Une generation lancee par erreur ne
+    # se rembourse pas.
+    "generer_visuel": "externe",
     # Campagne d'enrichissement : elle n'écrit QUE dans nos propres données
     # (mémoire, profils de style, brouillons de skills) et ne sort rien du
     # système. Le vrai garde-fou n'est pas l'effet mais la PERMISSION, vérifiée
