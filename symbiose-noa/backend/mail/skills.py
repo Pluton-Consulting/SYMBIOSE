@@ -553,6 +553,31 @@ SKILLS_NATIFS["ajouter_document"] = ajouter_document
 SKILLS_NATIFS["terminer_document"] = terminer_document
 
 
+async def retenir(data: dict, user) -> dict:
+    from learning.consignes import ajouter
+    return await ajouter(data.get("consigne") or data.get("texte") or "", user,
+                         pour_tous=bool(data.get("pour_tous")),
+                         access_level=(data.get("acces") or "all"))
+
+
+async def consignes_retenues(data: dict, user) -> dict:
+    from learning.consignes import lister
+    liste = await lister(user)
+    return {"nombre": len(liste), "consignes": liste,
+            "message": ("Aucune consigne enregistree." if not liste else
+                        f"{len(liste)} consigne(s) active(s).")}
+
+
+async def oublier(data: dict, user) -> dict:
+    from learning.consignes import retirer
+    return await retirer(data.get("consigne") or data.get("reference") or "", user)
+
+
+SKILLS_NATIFS["retenir"] = retenir
+SKILLS_NATIFS["consignes_retenues"] = consignes_retenues
+SKILLS_NATIFS["oublier"] = oublier
+
+
 async def lancer_enrichissement(data: dict, user) -> dict:
     from learning.skills import lancer_enrichissement as _lancer
     return await _lancer(data, user)
@@ -606,6 +631,12 @@ EFFETS_NATIFS = {
     "creer_document": "ecriture_interne",
     "ajouter_document": "ecriture_interne",
     "terminer_document": "ecriture_interne",
+    # Apprendre une consigne modifie le comportement de l'assistant, pas le
+    # monde exterieur : ecriture interne. Le droit d'ecrire POUR TOUS est
+    # verifie dans le skill lui-meme.
+    "retenir": "ecriture_interne",
+    "oublier": "ecriture_interne",
+    "consignes_retenues": "lecture",
     # Campagne d'enrichissement : elle n'écrit QUE dans nos propres données
     # (mémoire, profils de style, brouillons de skills) et ne sort rien du
     # système. Le vrai garde-fou n'est pas l'effet mais la PERMISSION, vérifiée
