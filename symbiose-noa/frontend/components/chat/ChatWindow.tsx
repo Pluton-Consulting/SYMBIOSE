@@ -6,6 +6,7 @@ import InputBar, { PieceJointe } from "./InputBar"
 import ReasoningPath from "./ReasoningPath"
 import { apiRequest } from "@/lib/api"
 import { openChatSocket, sendQuery, ChatEvent } from "@/lib/ws"
+import { Callout, KeyValueTable, PrimaryButton, GhostButton } from "@/components/blocks"
 
 interface Message {
   id: string
@@ -69,6 +70,45 @@ function stepLabel(node: string | null | undefined): string {
   return NODE_LABELS[node] || "Traitement en cours"
 }
 
+// Une action a effet externe suspendue, en attente d'une decision humaine.
+interface EnAttente {
+  id: string
+  motif?: string | null
+  skill?: string | null
+  args?: Record<string, any> | null
+}
+
+// Ce que l'action va faire, dit en francais. Le nom technique (`nas_deposer`)
+// n'apprend rien a qui doit decider s'il l'autorise.
+const ACTIONS_EXTERNES: Record<string, string> = {
+  nas_deposer: "Déposer un fichier sur le serveur de l'entreprise",
+  generer_visuel: "Générer un visuel — cette génération est facturée",
+  rediger_email: "Envoyer un message",
+  redaction_email: "Envoyer un message",
+}
+
+// Les reperes qui permettent de decider : ou, quoi, pour qui. Jamais le
+// contenu lui-meme — une bulle de chat n'est pas le bon endroit pour relire un
+// corps de mail, et la file de validation le montre deja.
+const REPERES: [string, string][] = [
+  ["dossier", "Dossier"],
+  ["chemin", "Chemin"],
+  ["nom", "Nom du fichier"],
+  ["destinataire", "Destinataire"],
+  ["titre", "Titre"],
+  ["format", "Format"],
+]
+
+function decrireAction(v: EnAttente): { titre: string; lignes: [string, string][] } {
+  const titre =
+    (v.skill && ACTIONS_EXTERNES[v.skill]) || v.motif || "Action à effet externe"
+  const a = v.args || {}
+  const lignes = REPERES
+    .filter(([cle]) => a[cle] !== undefined && a[cle] !== null && a[cle] !== "")
+    .map(([cle, etiquette]) => [etiquette, String(a[cle])] as [string, string])
+  return { titre, lignes }
+}
+
 export default function ChatWindow({ threadId: initialThreadId = null, token: tokenProp }: ChatWindowProps) {
   const { data: session } = useSession()
   const token = tokenProp || (session as any)?.backendToken
@@ -81,7 +121,14 @@ export default function ChatWindow({ threadId: initialThreadId = null, token: to
   // SEULE ligne qui se remplace : un journal qui s'allonge oblige a lire
   // pour retrouver l'etat courant, alors qu'on veut le voir d'un coup d'oeil.
   const [activite, setActivite] = useState<string>("")
-  const [pendingValidation, setPendingValidation] = useState(false)
+  // CE QUI est en attente, pas seulement QU'IL Y A une attente. L'ecran
+  // affichait « en attente de validation humaine » et rien d'autre : ni ce
+  // qu'on validait, ni ou le faire — les boutons vivaient sur une autre page,
+  // que personne ne peut deviner. La decision se prend ici, dans la
+  // conversation ou elle a ete demandee.
+  const [pendingValidation, setPendingValidation] = useState<EnAttente | null>(null)
+  const [validationBusy, setValidationBusy] = useState(false)
+  const [validationErreur, setValidationErreur] = useState<string | null>(null)
   const wsRef = useRef<WebSocket | null>(null)
 
   // Enregistre le thread courant (state + localStorage) dès qu'il est connu.
@@ -101,6 +148,45 @@ export default function ChatWindow({ threadId: initialThreadId = null, token: to
         window.localStorage.removeItem(STORAGE_PREFIX)   // ancienne clé non préfixée
       }
     } catch { /* no-op */ }
+  }
+
+  // Décision humaine prise DANS la conversation. Le tour est suspendu au
+  // `human_gate` : la réponse de cet appel est la SUITE du tour, une fois
+  // l'action exécutée (ou refusée) — on la pousse donc comme un message de
+  // l'assistant, sans quoi la conversation resterait figée sur l'attente.
+  const resoudreValidation = async (accorde: boolean) => {
+    const attente = pendingValidation
+    if (!attente || !attente.id || validationBusy) return
+    setValidationBusy(true)
+    setValidationErreur(null)
+    try {
+      const res = await apiRequest<{ status?: string; response?: string; validation_id?: string | null }>(
+        `/api/validations/${attente.id}/resolve`,
+        { method: "POST", token, body: JSON.stringify({ approved: accorde }) }
+      )
+      setPendingValidation(null)
+      // La reprise peut buter sur une NOUVELLE action à effet externe : une
+      // demande en plusieurs étapes en compte parfois deux. Sans ce cas, la
+      // seconde attente ne s'afficherait jamais et le tour semblerait perdu.
+      if (res.status === "pending_validation" && res.validation_id) {
+        setPendingValidation({ id: String(res.validation_id) })
+      }
+      if (res.response) {
+        setMessages((prev) => [...prev, { id: newId(), role: "assistant", content: res.response as string }])
+      } else if (!accorde) {
+        setMessages((prev) => [...prev, { id: newId(), role: "assistant", content: "Action refusée — rien n'a été fait." }])
+      }
+    } catch (e: any) {
+      // 403 : la personne n'a pas le droit de valider. Le dire, plutôt que de
+      // laisser un bouton qui échoue sans expliquer pourquoi.
+      setValidationErreur(
+        e?.status === 403
+          ? "Vous n'avez pas le droit d'approuver cette action. Une personne de la direction doit le faire, depuis la file de validation."
+          : e?.message || "La décision n'a pas pu être enregistrée."
+      )
+    } finally {
+      setValidationBusy(false)
+    }
   }
 
   // Restaure la conversation au montage : thread passé en prop, sinon dernier thread
@@ -157,7 +243,8 @@ export default function ChatWindow({ threadId: initialThreadId = null, token: to
     setThinkingNode(null)
     setThinkingSteps([])
     setActivite("")
-    setPendingValidation(false)
+    setPendingValidation(null)
+    setValidationErreur(null)
 
     const tid = threadId ?? newId()
     if (!threadId) rememberThread(tid)
@@ -176,12 +263,12 @@ export default function ChatWindow({ threadId: initialThreadId = null, token: to
     const clearStall = () => { if (stallTimer) { clearTimeout(stallTimer); stallTimer = null } }
     const closeWs = () => { try { wsRef.current?.close() } catch { /* no-op */ } }
 
-    const finish = (assistantContent: string | null, isPending: boolean) => {
+    const finish = (assistantContent: string | null, enAttente: EnAttente | null) => {
       if (settled) return
       settled = true
       clearStall()
       setThinkingNode(null)
-      if (isPending) setPendingValidation(true)
+      if (enAttente) setPendingValidation(enAttente)
       else if (assistantContent !== null) pushAssistant(assistantContent)
       setLoading(false)
       closeWs()
@@ -194,7 +281,11 @@ export default function ChatWindow({ threadId: initialThreadId = null, token: to
       clearStall()
       closeWs()
       const post = (threadForCall: string) =>
-        apiRequest<{ response: string; thread_id: string; status?: string; validation_id?: string | null }>(
+        apiRequest<{
+          response: string; thread_id: string; status?: string
+          validation_id?: string | null
+          validation?: { reason?: string | null; payload?: Record<string, any> | null } | null
+        }>(
           "/api/chat/",
           { method: "POST", token, body: JSON.stringify({ query: text, thread_id: threadForCall, ...(attachment || {}) }) }
         )
@@ -213,8 +304,15 @@ export default function ChatWindow({ threadId: initialThreadId = null, token: to
         if (res.thread_id) rememberThread(res.thread_id)
         const needsValidation =
           res.status === "pending_validation" || res.status === "validation_required" || Boolean(res.validation_id)
-        if (needsValidation) setPendingValidation(true)
-        else pushAssistant(res.response ?? "")
+        if (needsValidation && res.validation_id) {
+          const charge = res.validation?.payload || {}
+          setPendingValidation({
+            id: String(res.validation_id),
+            motif: res.validation?.reason ?? null,
+            skill: charge.skill ?? null,
+            args: charge.args ?? null,
+          })
+        } else pushAssistant(res.response ?? "")
       } catch (err: any) {
         pushAssistant(`Erreur : ${err?.message ?? "requête impossible"}`)
       } finally {
@@ -231,9 +329,28 @@ export default function ChatWindow({ threadId: initialThreadId = null, token: to
           clearStall()  // le WS répond → on annule le repli anti-blocage
           const t = event.type
           if (t === "final" || (t === undefined && event.response !== undefined)) {
-            finish(event.response ?? "", false)
-          } else if (t === "validation_required" || t === "pending_validation") {
-            finish(null, true)
+            finish(event.response ?? "", null)
+          } else if (t === "pending_validation") {
+            finish(null, {
+              id: String(event.validation_id ?? ""),
+              motif: event.reason ?? null,
+              skill: event.skill ?? null,
+              args: event.args ?? null,
+            })
+          } else if (t === "validation_required") {
+            // Emis PENDANT le parcours, avant que la ligne de validation existe :
+            // il n'a pas encore d'identifiant, donc rien a decider. On laisse
+            // `pending_validation`, qui suit, ouvrir la decision.
+            const d = event.data || {}
+            const charge = d.payload || {}
+            if (d.validation_id) {
+              finish(null, {
+                id: String(d.validation_id),
+                motif: d.reason ?? null,
+                skill: charge.skill ?? null,
+                args: charge.args ?? null,
+              })
+            }
           } else if (t === "error") {
             fallbackPost()
           } else if (t === "node" || event.node !== undefined) {
@@ -296,11 +413,30 @@ export default function ChatWindow({ threadId: initialThreadId = null, token: to
           </div>
         )}
 
-        {pendingValidation && (
-          <div className="sym-pop" style={{ display: "inline-flex", alignItems: "center", gap: 8, margin: "8px 32px", padding: "10px 16px", background: "var(--color-pending-bg)", color: "var(--color-pending-text)", borderRadius: "var(--radius-pill)", border: "1px solid var(--color-pending-text)", boxShadow: "var(--shadow-card)", fontSize: 13, fontWeight: 600 }}>
-            ⏳ En attente de validation humaine
-          </div>
-        )}
+        {/* Bibliotheque de composants, pas de styles refaits a la main : la
+            carte est un `Callout` d'alerte, les reperes un `KeyValueTable`, les
+            deux issues un `PrimaryButton` et un `GhostButton`. Les memes blocs
+            que l'assistant rend lui-meme dans le chat — une demande d'accord ne
+            doit pas ressembler a une piece rapportee. */}
+        {pendingValidation && (() => {
+          const { titre, lignes } = decrireAction(pendingValidation)
+          return (
+            <div className="sym-pop" role="group" aria-label="Action en attente de votre décision"
+                 style={{ margin: "8px 32px", display: "flex", flexDirection: "column", gap: 10 }}>
+              <Callout tone="warning" title="Votre accord est nécessaire">{titre}</Callout>
+              {lignes.length > 0 && <KeyValueTable rows={lignes} />}
+              {validationErreur && <Callout tone="error">{validationErreur}</Callout>}
+              <div style={{ display: "flex", gap: 10 }}>
+                <PrimaryButton onClick={() => resoudreValidation(true)} disabled={validationBusy}>
+                  {validationBusy ? "…" : "Approuver"}
+                </PrimaryButton>
+                <GhostButton danger onClick={() => resoudreValidation(false)} disabled={validationBusy}>
+                  Refuser
+                </GhostButton>
+              </div>
+            </div>
+          )
+        })()}
 
         <InputBar onSend={sendMessage} disabled={loading} />
       </div>
