@@ -51,7 +51,15 @@ def main() -> int:
     print("Connectez-vous avec le compte Google qui a accès aux dossiers à lire.\n")
 
     flow = InstalledAppFlow.from_client_secrets_file(CREDENTIALS, SCOPES)
-    creds = flow.run_local_server(port=0)
+    # `access_type=offline` demande le REFRESH TOKEN — c'est lui, et lui seul,
+    # qui permet au serveur de se reconnecter sans personne devant l'écran.
+    #
+    # `prompt=consent` le REDEMANDE à chaque passage. Sans ça, Google ne le
+    # délivre qu'au tout premier consentement : relancer ce script après un
+    # échec rendait un jeton sans refresh token, et il fallait d'abord aller
+    # retirer l'application dans son compte Google pour s'en sortir. Le piège
+    # se referme des semaines plus tard, quand l'accès expire en silence.
+    creds = flow.run_local_server(port=0, access_type="offline", prompt="consent")
 
     os.makedirs(os.path.dirname(TOKEN) or ".", exist_ok=True)
     with open(TOKEN, "w", encoding="utf-8") as f:
@@ -68,9 +76,13 @@ def main() -> int:
     print("  refresh token présent :", "oui" if donnees.get("refresh_token") else "NON")
 
     if not donnees.get("refresh_token"):
+        # Ne devrait plus arriver depuis `prompt=consent`. Le contrôle reste :
+        # un jeton sans refresh token expire en silence quelques jours plus
+        # tard, et le connecteur semblerait alors « avoir cessé de marcher ».
         print("\n⚠ SANS refresh token, le serveur perdra l'accès dès l'expiration.\n"
               "  Retirez l'accès de l'application sur https://myaccount.google.com/permissions\n"
-              "  puis relancez ce script : Google ne le redonne qu'au premier consentement.")
+              "  puis relancez ce script.")
+        return 1
 
     print("\nÀ FAIRE ENSUITE — copier les DEUX fichiers sur le serveur :")
     print("    scp secrets/google_credentials.json secrets/google_token.json \\")
