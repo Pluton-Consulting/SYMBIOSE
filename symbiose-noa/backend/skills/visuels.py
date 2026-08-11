@@ -48,8 +48,11 @@ async def preparer_visuel(data: dict, user) -> dict:
 
     demande = (data.get("demande") or data.get("description") or "").strip()
     if not demande:
-        return {"message": "Décris l'aménagement à représenter (lieu, ouvrages, "
-                           "matériaux, ambiance) pour que je prépare le brief."}
+        # Un paramètre manquant est un ÉCHEC de l'appel. Rendu comme un
+        # dictionnaire ordinaire, il passait pour un brief réussi.
+        from skills.erreurs import SkillError
+        raise SkillError("Décris l'aménagement à représenter (lieu, ouvrages, "
+                         "matériaux, ambiance) pour que je prépare le brief.")
 
     contraintes = (data.get("contraintes") or "").strip()
     ratio = (data.get("format") or "16:9").strip()
@@ -76,8 +79,9 @@ async def generer_visuel(data: dict, user) -> dict:
 
     brief = (data.get("brief") or data.get("demande") or "").strip()
     if not brief:
-        return {"message": "Aucun brief fourni. Prépare-le d'abord avec "
-                           "`preparer_visuel`, c'est gratuit."}
+        from skills.erreurs import SkillError
+        raise SkillError("Aucun brief fourni. Prépare-le d'abord avec "
+                         "`preparer_visuel`, c'est gratuit.")
 
     # Le cadre métier est réappliqué : rien ne garantit que le brief validé soit
     # celui qu'a produit `preparer_visuel` (il a pu être réécrit à la main).
