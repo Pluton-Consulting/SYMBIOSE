@@ -33,11 +33,35 @@ def _build_service():
     from google_auth_oauthlib.flow import InstalledAppFlow
     from googleapiclient.discovery import build
 
+    # 1. COMPTE DE SERVICE, s'il est depose. Aucun consentement humain, aucun
+    #    jeton a renouveler : l'application s'authentifie seule. C'est la seule
+    #    voie tenable pour un Drive d'entreprise — l'alternative obligerait
+    #    chaque personne a se connecter a Google, et le jeton obtenu
+    #    n'appartiendrait qu'a elle.
+    if os.path.exists(settings.google_service_account_file):
+        from google.oauth2 import service_account
+        creds = service_account.Credentials.from_service_account_file(
+            settings.google_service_account_file, scopes=_SCOPES)
+        sujet = (settings.google_admin_subject or "").strip()
+        if sujet:
+            # Delegation a l'echelle du domaine : on AGIT AU NOM de ce compte.
+            # Ne sert qu'aux « Mon Drive » individuels ; pour un Drive PARTAGE,
+            # ajouter le compte de service comme membre suffit, et c'est moins
+            # de pouvoir accorde.
+            creds = creds.with_subject(sujet)
+        logger.info("Google Drive : compte de service%s",
+                    f" (au nom de {sujet})" if sujet else " (Drive partages)")
+        return build("drive", "v3", credentials=creds)
+
+    # 2. Sinon, consentement OAuth d'un utilisateur (voie historique).
     if not os.path.exists(settings.google_credentials_file):
         raise NotImplementedError(
-            f"Google Drive non configuré : dépose le client OAuth dans "
-            f"{settings.google_credentials_file} (voir SETUP_CONNECTEURS.md). "
-            "Voie la plus simple : Make.com → POST /api/ingestion/webhook.")
+            "Google Drive non configuré. Deux voies : "
+            "1. RECOMMANDÉ pour un Drive d'entreprise — déposer la clé d'un compte "
+            f"de service dans {settings.google_service_account_file} : personne "
+            "n'a alors à se connecter à Google. "
+            f"2. Client OAuth dans {settings.google_credentials_file}, avec un "
+            "consentement interactif (scripts/google_consentement.py).")
 
     creds = None
     if os.path.exists(settings.google_token_file):

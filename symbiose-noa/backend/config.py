@@ -168,6 +168,15 @@ class Settings(BaseSettings):
     ingestion_webhook_secret: Optional[str] = None
 
     # Google Drive (voie API directe — alternative à Make). Voir SETUP_CONNECTEURS.md.
+    # COMPTE DE SERVICE — la voie a privilegier pour un Drive d'ENTREPRISE :
+    # l'application s'authentifie seule, sans qu'aucun utilisateur ait a se
+    # connecter a Google, et le jeton n'expire jamais.
+    google_service_account_file: str = "secrets/google_service_account.json"
+    # Delegation a l'echelle du domaine : le compte de service AGIT AU NOM de
+    # cette adresse. Necessaire seulement pour lire les « Mon Drive » individuels.
+    # Pour un Drive PARTAGE, laisser vide et ajouter le compte de service comme
+    # membre du Drive : moins de pouvoir, et le partage se voit dans l'interface.
+    google_admin_subject: Optional[str] = None
     google_credentials_file: str = "secrets/google_credentials.json"  # client OAuth (client_id/secret)
     google_token_file: str = "secrets/google_token.json"              # refresh token (1er consentement)
     google_drive_folder_id: Optional[str] = None                      # dossier à ingérer (None = tout)
