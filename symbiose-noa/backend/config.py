@@ -180,6 +180,17 @@ class Settings(BaseSettings):
     google_credentials_file: str = "secrets/google_credentials.json"  # client OAuth (client_id/secret)
     google_token_file: str = "secrets/google_token.json"              # refresh token (1er consentement)
     google_drive_folder_id: Optional[str] = None                      # dossier à ingérer (None = tout)
+    # QUI POURRA LIRE CE QUI VIENT DU DRIVE. Un Drive d'entreprise ne contient
+    # pas que des documents de chantier : paie, contrats, dossiers du personnel
+    # y cohabitent souvent avec le reste. Ingérés au niveau « all », ils
+    # deviendraient consultables par TOUS les rôles à travers l'assistant, sans
+    # que personne ait rien fait de mal.
+    #
+    # Le défaut reste « all » : c'est le comportement actuel, et le changer en
+    # silence ferait « disparaître » des documents déjà ingérés. Mais c'est une
+    # décision à prendre AVANT la première synchronisation, pas après.
+    # Valeurs : all | commercial_plus | bureau_etudes_plus | direction_only | admin_only
+    google_drive_access_level: str = "all"
 
     # Outlook / Microsoft 365 (voie API directe — Microsoft Graph, alternative à Make).
     ms_tenant_id: Optional[str] = None

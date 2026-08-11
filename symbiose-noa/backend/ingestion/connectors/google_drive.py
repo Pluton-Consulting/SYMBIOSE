@@ -135,10 +135,25 @@ async def sync(folder_id: Optional[str] = None) -> dict:
         if not token:
             break
 
+    # Niveau d'accès des documents importés. Un Drive d'entreprise mélange
+    # souvent les dossiers de chantier et ceux du personnel : sans ce réglage,
+    # tout arrivait en « all » et devenait consultable par n'importe quel rôle.
+    # Un niveau mal orthographié retomberait silencieusement sur le plus ouvert
+    # — on refuse plutôt que d'élargir un accès par faute de frappe.
+    from security.acces import NIVEAUX
+    niveau = (settings.google_drive_access_level or "all").strip()
+    if niveau not in NIVEAUX:
+        raise ValueError(
+            f"GOOGLE_DRIVE_ACCESS_LEVEL « {niveau} » inconnu. "
+            f"Valeurs possibles : {', '.join(NIVEAUX)}.")
+
     ingested = 0
     for f in files:
         text = _download_text(service, f)
         if text and await ingest_document(text=text, source_type="drive",
-                                          source_id=f["id"], source_filename=f["name"]):
+                                          source_id=f["id"], source_filename=f["name"],
+                                          access_level=niveau):
             ingested += 1
-    return {"fichiers": len(files), "ingérés": ingested}
+    logger.info("Drive : %d fichiers, %d ingérés au niveau « %s »",
+                len(files), ingested, niveau)
+    return {"fichiers": len(files), "ingérés": ingested, "niveau_acces": niveau}
