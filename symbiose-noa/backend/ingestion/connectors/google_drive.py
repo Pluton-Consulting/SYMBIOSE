@@ -116,7 +116,19 @@ async def sync(folder_id: Optional[str] = None) -> dict:
     while True:
         resp = service.files().list(
             q=q, spaces="drive", fields="nextPageToken, files(id,name,mimeType)",
-            pageToken=token, includeItemsFromAllDrives=True, supportsAllDrives=True, pageSize=100,
+            pageToken=token,
+            # `corpora` MANQUAIT, et c'est ce qui rendait un Drive partagé
+            # invisible. Par défaut l'API cherche dans le corpus « user »,
+            # c'est-à-dire le « Mon Drive » du compte : sans dossier précisé,
+            # la synchronisation d'un Drive PARTAGÉ ne remontait rien, et le
+            # tour se terminait sur « 0 fichier » sans la moindre erreur — le
+            # pire des symptômes, celui qui ressemble à un Drive vide.
+            #
+            # `includeItemsFromAllDrives` et `supportsAllDrives` ne suffisent
+            # pas : ils autorisent les résultats hors « Mon Drive », ils ne
+            # décident pas où l'on cherche.
+            corpora="allDrives",
+            includeItemsFromAllDrives=True, supportsAllDrives=True, pageSize=100,
         ).execute()
         files.extend(resp.get("files", []))
         token = resp.get("nextPageToken")
