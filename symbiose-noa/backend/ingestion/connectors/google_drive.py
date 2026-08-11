@@ -106,10 +106,57 @@ def _download_text(service, f) -> Optional[str]:
     return None  # docx, images… : gérés via Make ou à ajouter ici
 
 
-async def sync(folder_id: Optional[str] = None) -> dict:
-    """Parcourt un dossier Drive (récursif via l'API) et ingère les fichiers texte/PDF/Docs."""
-    service = _build_service()
-    folder = folder_id or settings.google_drive_folder_id
+def perimetres() -> list[tuple[Optional[str], str]]:
+    """Les couples (dossier, niveau d'accès) à synchroniser.
+
+    POURQUOI DÉCOUPER ICI, ET PAS PAR IDENTIFIANT. Segmenter avec un compte de
+    service par service — un pour le commercial, un pour la direction — ne
+    change RIEN à ce que voient les utilisateurs : tout finit dans la même base,
+    et c'est le niveau d'accès du document qui décide qui le retrouve. Ça ne
+    réduit que la portée d'une clé volée, au prix d'autant de secrets à créer, à
+    déposer et à faire tourner — c'est-à-dire d'autant d'occasions de fuite.
+
+    Le découpage qui compte pour l'équipe est celui-ci : un dossier, un niveau.
+    Un seul identifiant suffit, et chaque document arrive avec les droits de son
+    dossier d'origine.
+
+    Format : « dossierA:commercial_plus, dossierB:direction_only ». Sans ce
+    réglage, on retombe sur le dossier unique et son niveau.
+    """
+    from security.acces import NIVEAUX
+
+    brut = (settings.google_drive_perimetres or "").strip()
+    if not brut:
+        niveau = (settings.google_drive_access_level or "all").strip()
+        if niveau not in NIVEAUX:
+            raise ValueError(f"GOOGLE_DRIVE_ACCESS_LEVEL « {niveau} » inconnu. "
+                             f"Valeurs possibles : {', '.join(NIVEAUX)}.")
+        return [(settings.google_drive_folder_id, niveau)]
+
+    couples: list[tuple[Optional[str], str]] = []
+    for morceau in brut.split(","):
+        morceau = morceau.strip()
+        if not morceau:
+            continue
+        dossier, _, niveau = morceau.partition(":")
+        dossier, niveau = dossier.strip(), niveau.strip()
+        # Un dossier vide prendrait TOUT le Drive au niveau indiqué : dans une
+        # configuration qui déclare plusieurs périmètres, c'est forcément une
+        # erreur de frappe, et elle exposerait tout au niveau le plus ouvert.
+        if not dossier:
+            raise ValueError(
+                f"GOOGLE_DRIVE_PERIMETRES : périmètre « {morceau} » sans dossier. "
+                "Attendu « identifiant_du_dossier:niveau ».")
+        if niveau not in NIVEAUX:
+            raise ValueError(
+                f"GOOGLE_DRIVE_PERIMETRES : niveau « {niveau or '(vide)'} » inconnu "
+                f"pour le dossier {dossier}. Valeurs possibles : {', '.join(NIVEAUX)}.")
+        couples.append((dossier, niveau))
+    return couples
+
+
+async def _lister(service, folder: Optional[str]) -> list[dict]:
+    """Fichiers d'un dossier (ou de tout ce qui est visible si `folder` est vide)."""
     q = f"'{folder}' in parents and trashed=false" if folder else "trashed=false"
 
     files, token = [], None
@@ -134,26 +181,45 @@ async def sync(folder_id: Optional[str] = None) -> dict:
         token = resp.get("nextPageToken")
         if not token:
             break
+    return files
 
-    # Niveau d'accès des documents importés. Un Drive d'entreprise mélange
-    # souvent les dossiers de chantier et ceux du personnel : sans ce réglage,
-    # tout arrivait en « all » et devenait consultable par n'importe quel rôle.
-    # Un niveau mal orthographié retomberait silencieusement sur le plus ouvert
-    # — on refuse plutôt que d'élargir un accès par faute de frappe.
-    from security.acces import NIVEAUX
-    niveau = (settings.google_drive_access_level or "all").strip()
-    if niveau not in NIVEAUX:
-        raise ValueError(
-            f"GOOGLE_DRIVE_ACCESS_LEVEL « {niveau} » inconnu. "
-            f"Valeurs possibles : {', '.join(NIVEAUX)}.")
 
-    ingested = 0
-    for f in files:
-        text = _download_text(service, f)
-        if text and await ingest_document(text=text, source_type="drive",
-                                          source_id=f["id"], source_filename=f["name"],
-                                          access_level=niveau):
-            ingested += 1
-    logger.info("Drive : %d fichiers, %d ingérés au niveau « %s »",
-                len(files), ingested, niveau)
-    return {"fichiers": len(files), "ingérés": ingested, "niveau_acces": niveau}
+async def sync(folder_id: Optional[str] = None) -> dict:
+    """Ingère chaque périmètre déclaré, avec le niveau d'accès de son dossier.
+
+    Un dossier passé en argument l'emporte sur la configuration : c'est ce qui
+    permet de tester un seul dossier avant d'ouvrir plus large.
+    """
+    service = _build_service()
+
+    if folder_id:
+        from security.acces import NIVEAUX
+        niveau = (settings.google_drive_access_level or "all").strip()
+        if niveau not in NIVEAUX:
+            raise ValueError(f"GOOGLE_DRIVE_ACCESS_LEVEL « {niveau} » inconnu.")
+        cibles = [(folder_id, niveau)]
+    else:
+        cibles = perimetres()
+
+    total_vus = total_ingeres = 0
+    detail = []
+    for dossier, niveau in cibles:
+        files = await _lister(service, dossier)
+        ingeres = 0
+        for f in files:
+            text = _download_text(service, f)
+            if text and await ingest_document(
+                    text=text, source_type="drive", source_id=f["id"],
+                    source_filename=f["name"], access_level=niveau):
+                ingeres += 1
+        total_vus += len(files)
+        total_ingeres += ingeres
+        detail.append({"dossier": dossier or "(tout)", "niveau_acces": niveau,
+                       "fichiers": len(files), "ingérés": ingeres})
+        logger.info("Drive : dossier %s — %d fichiers, %d ingérés au niveau « %s »",
+                    dossier or "(tout)", len(files), ingeres, niveau)
+
+    # Le détail par périmètre remonte jusqu'à l'écran : c'est la seule façon de
+    # vérifier qu'un dossier sensible est bien arrivé au niveau qu'on croit,
+    # sans avoir à relire un fichier de configuration sur le serveur.
+    return {"fichiers": total_vus, "ingérés": total_ingeres, "périmètres": detail}

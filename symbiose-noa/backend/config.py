@@ -191,6 +191,13 @@ class Settings(BaseSettings):
     # décision à prendre AVANT la première synchronisation, pas après.
     # Valeurs : all | commercial_plus | bureau_etudes_plus | direction_only | admin_only
     google_drive_access_level: str = "all"
+    # DÉCOUPAGE PAR SERVICE : « dossierA:commercial_plus, dossierB:direction_only ».
+    # Chaque dossier arrive avec ses propres droits, en une seule synchronisation
+    # et avec un seul identifiant Google. Segmenter par comptes de service
+    # séparés ne changerait rien à ce que voient les utilisateurs — tout finit
+    # dans la même base — mais multiplierait les secrets à protéger.
+    # Vide : on retombe sur le dossier unique ci-dessus et son niveau.
+    google_drive_perimetres: Optional[str] = None
 
     # Outlook / Microsoft 365 (voie API directe — Microsoft Graph, alternative à Make).
     ms_tenant_id: Optional[str] = None
