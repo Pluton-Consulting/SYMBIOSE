@@ -519,18 +519,9 @@ async def mes_droits(data: dict, user) -> dict:
 SKILLS_NATIFS["mes_droits"] = mes_droits
 
 
-async def preparer_visuel(data: dict, user) -> dict:
-    from skills.visuels import preparer_visuel as _preparer
-    return await _preparer(data, user)
-
-
-async def generer_visuel(data: dict, user) -> dict:
-    from skills.visuels import generer_visuel as _generer
-    return await _generer(data, user)
-
-
-SKILLS_NATIFS["preparer_visuel"] = preparer_visuel
-SKILLS_NATIFS["generer_visuel"] = generer_visuel
+# Les visuels ne passent plus par ici : skills/visuels.py les declare dans son
+# dictionnaire SKILLS (fonction, description, effet, libelle — tout au meme
+# endroit), et l'executeur les trouve via skills/registre.py.
 
 
 async def creer_document(data: dict, user) -> dict:
@@ -621,11 +612,9 @@ EFFETS_NATIFS = {
     # Description des droits de l'appelant : lecture de sa propre configuration.
     "mes_droits": "lecture",
     # Preparer un brief ne coute rien et n'appelle personne.
-    "preparer_visuel": "lecture",
     # Generer est FACTURE et sort de l'entreprise : effet externe, donc
     # validation humaine avant depart. Une generation lancee par erreur ne
     # se rembourse pas.
-    "generer_visuel": "externe",
     # Produire un fichier telechargeable : rien ne sort de l'entreprise et
     # rien n'est envoye, donc ecriture interne et non effet externe.
     "creer_document": "ecriture_interne",

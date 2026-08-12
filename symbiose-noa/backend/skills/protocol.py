@@ -180,40 +180,25 @@ CATALOGUE_AGENT1: dict[str, tuple[str, list[str], list[str]]] = {
         "RETIRE une consigne retenue, par son texte ou son identifiant. A utiliser sur "
         "« oublie que », « ne tiens plus compte de »",
         ["consigne"], []),
+    # ── DOCUMENTS ──────────────────────────────────────────────────────
+    # `produire_document` (registre, skills/outils.py) est la voie normale.
+    # L'atelier en trois temps reste au socle : identique dans tous les projets,
+    # il sert les documents trop gros pour un seul appel.
     "creer_document": (
-        "OUVRE un document telechargeable (docx, pdf ou xlsx). Ne produit encore "
-        "aucun fichier. format : docx|pdf|xlsx ; titre ; entete et pied : textes "
-        "repetes sur chaque page ; paysage : bool. Enchaine ensuite avec "
-        "`ajouter_document` autant de fois qu'il le faut, puis `terminer_document`",
+        "OUVRE un document a remplir en PLUSIEURS fois (documents longs "
+        "seulement ; sinon `produire_document`). Ne produit aucun fichier",
         ["titre"], ["format", "sous_titre", "entete", "pied", "paysage", "numeroter"]),
     "ajouter_document": (
-        "VERSE du contenu dans un document ouvert. `elements` est une liste de "
-        "blocs : {bloc:titre, texte, niveau}, {bloc:paragraphe, texte}, "
-        "{bloc:liste, items, ordonnee}, {bloc:tableau, entetes, lignes, legende}, "
-        "un paragraphe acceptant aussi gras, italique, centre (booleens), "
-        "taille (petit|normal|grand|tres_grand) et couleur (rouge|vert|bleu|"
-        "orange|gris|noir), "
-        "{bloc:feuille, nom, entetes, lignes} (onglet en xlsx), {bloc:saut_page}, "
-        "{bloc:separateur}. APPELLE-LE PLUSIEURS FOIS pour un document long : "
-        "environ 400 blocs par appel, sans limite au nombre d'appels",
+        "VERSE du contenu dans un document ouvert. Meme vocabulaire de blocs que "
+        "`produire_document`. A appeler autant de fois qu'il le faut",
         ["document_id", "elements"], []),
     "terminer_document": (
-        "FERME le document et rend le lien de telechargement. A appeler une seule "
-        "fois, quand tout le contenu est verse",
+        "FERME le document et rend le lien. Tant qu'il n'est pas appele, "
+        "AUCUN fichier n'existe",
         ["document_id"], []),
-    "preparer_visuel": (
-        "PREPARE le brief d'un visuel paysager (rendu d'aménagement) sans rien "
-        "generer : gratuit, rejouable autant de fois qu'il faut. TOUJOURS passer "
-        "par lui avant `generer_visuel`. demande : ce qu'il faut representer ; "
-        "contraintes : materiaux, style, saison ; format : 16:9, 1:1...",
-        ["demande"], ["contraintes", "format", "resolution"]),
-    "generer_visuel": (
-        "GENERE reellement le visuel a partir d'un brief valide. ATTENTION : cet "
-        "appel est FACTURE et demande une validation humaine. Ne l'appelle jamais "
-        "de ta propre initiative ni pour iterer sur la formulation - c'est le role "
-        "de `preparer_visuel`. Le resultat est une illustration, pas une simulation "
-        "du terrain reel",
-        ["brief"], ["format", "resolution"]),
+    # Les visuels (propres a Symbiose) se declarent dans skills/visuels.py
+    # (dictionnaire SKILLS, lu par le registre) : le socle ne bouge pas quand
+    # on duplique le projet.
     "mes_droits": (
         "Explique les DROITS D'ACCES : ce que la personne connectee peut consulter, "
         "ce qui lui est ferme, quelles boites mail elle peut lire, et comment le "
@@ -312,7 +297,13 @@ def catalogue(role: str | None = None) -> dict[str, tuple[str, list[str], list[s
     visibles = _niveaux_visibles(role)
     externes = {nom: valeur[:3] for nom, valeur in _EXTERNES.items()
                 if valeur[3] in visibles}
-    return {**externes, **CATALOGUE_AGENT1}
+    # Le REGISTRE porte les skills propres au projet (visuels, bibliothèque
+    # d'outils…) : un module déposé dans skills/ suffit à les faire apparaître
+    # ici, sans toucher ce fichier — c'est ce qui rend le projet dupliquable.
+    # Même rang que les natifs : du code livré, non filtré par rôle, ses propres
+    # gardes s'appliquant au moment d'agir.
+    from skills.registre import catalogue_declare
+    return {**externes, **catalogue_declare(), **CATALOGUE_AGENT1}
 
 
 async def rafraichir_catalogue(force: bool = False) -> int:

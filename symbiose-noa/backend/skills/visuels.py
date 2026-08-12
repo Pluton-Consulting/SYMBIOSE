@@ -109,3 +109,37 @@ async def generer_visuel(data: dict, user) -> dict:
                  "engagement sur ce qui sera réalisé : présente-le comme une "
                  "intention d'aménagement. Donne les liens tels quels."),
     }
+
+
+# ── Déclarations : tout ce que le système doit savoir, ICI ───────────
+# Les deux actions restent volontairement SÉPARÉES : le brief est gratuit et
+# rejouable, la génération est facturée et validée. Les réunir reviendrait à
+# payer un tirage à chaque reformulation (cf. outils/docs/visuels.md).
+from skills.registre import Declaration
+
+SKILLS = {
+    "preparer_visuel": Declaration(
+        fonction=preparer_visuel,
+        description=(
+            "PREPARE le brief d'un visuel paysager (rendu d'amenagement) sans "
+            "rien generer : gratuit, rejouable autant de fois qu'il faut. "
+            "TOUJOURS passer par lui avant `generer_visuel`. demande : ce "
+            "qu'il faut representer ; contraintes : materiaux, style, saison ; "
+            "format : 16:9, 1:1..."),
+        requis=["demande"], optionnels=["contraintes", "format", "resolution"],
+        effet="lecture",
+        libelle="je prépare le brief du visuel"),
+    "generer_visuel": Declaration(
+        fonction=generer_visuel,
+        description=(
+            "GENERE reellement le visuel a partir d'un brief valide. "
+            "ATTENTION : cet appel est FACTURE et demande une validation "
+            "humaine. Ne l'appelle jamais de ta propre initiative ni pour "
+            "iterer sur la formulation - c'est le role de `preparer_visuel`. "
+            "Le resultat est une illustration, pas une simulation du terrain "
+            "reel"),
+        requis=["brief"], optionnels=["format", "resolution"],
+        # FACTURE et hors du systeme : effet externe, validation humaine.
+        effet="externe",
+        libelle="je génère le visuel"),
+}
