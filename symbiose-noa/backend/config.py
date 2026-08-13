@@ -179,6 +179,13 @@ class Settings(BaseSettings):
     google_admin_subject: Optional[str] = None
     google_credentials_file: str = "secrets/google_credentials.json"  # client OAuth (client_id/secret)
     google_token_file: str = "secrets/google_token.json"              # refresh token (1er consentement)
+    # LE MÊME JETON, EN VARIABLE. Sur un serveur, copier un fichier de secret
+    # suppose les bons droits sur `secrets/` — souvent root, créé par Docker,
+    # d'où un « Permission denied » au scp. Coller ici le contenu de
+    # `google_token.json` (une seule ligne) évite tout transfert de fichier.
+    # Il porte déjà client_id, client_secret et refresh_token : quand il est
+    # renseigné, aucun autre fichier Google n'est nécessaire.
+    google_token_json: Optional[str] = None
     google_drive_folder_id: Optional[str] = None                      # dossier à ingérer (None = tout)
     # QUI POURRA LIRE CE QUI VIENT DU DRIVE. Un Drive d'entreprise ne contient
     # pas que des documents de chantier : paie, contrats, dossiers du personnel
