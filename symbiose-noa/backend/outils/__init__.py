@@ -35,7 +35,12 @@ DOSSIER_DOCS = Path(__file__).parent / "docs"
 # nom de l'outil -> (libellé pour l'écran, module des fonctions composées)
 OUTILS: dict[str, tuple[str, str]] = {
     "documents": ("Documents téléchargeables (PDF, Word, Excel)", "outils.documents"),
-    "visuels": ("Visuels paysagers (rendus d'aménagement)", "outils.visuels"),
+    # Les visuels n'ont PAS de module composé, et c'est délibéré : réunir le
+    # brief (gratuit) et la génération (facturée) en un geste ferait payer un
+    # tirage à chaque reformulation. Voir `docs/visuels.md`. Le pointeur désigne
+    # donc les fonctions réelles — il annonçait `outils.visuels`, qui n'existe
+    # pas, et personne ne s'en apercevait puisque rien ne l'importe.
+    "visuels": ("Visuels paysagers (rendus d'aménagement)", "skills.visuels"),
 }
 
 
