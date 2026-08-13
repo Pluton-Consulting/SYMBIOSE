@@ -34,6 +34,7 @@ DOSSIER_DOCS = Path(__file__).parent / "docs"
 
 # nom de l'outil -> (libellé pour l'écran, module des fonctions composées)
 OUTILS: dict[str, tuple[str, str]] = {
+    "drive": ("Google Drive de l'entreprise (compter, parcourir, ouvrir)", "outils.drive"),
     "documents": ("Documents téléchargeables (PDF, Word, Excel)", "outils.documents"),
     # Les visuels n'ont PAS de module composé, et c'est délibéré : réunir le
     # brief (gratuit) et la génération (facturée) en un geste ferait payer un
