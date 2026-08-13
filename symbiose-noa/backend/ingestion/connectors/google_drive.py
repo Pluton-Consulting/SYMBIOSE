@@ -27,6 +27,7 @@ _EXPORTABLE = {
 
 
 def _build_service():
+    import json
     import os
     from google.oauth2.credentials import Credentials
     from google.auth.transport.requests import Request
@@ -53,7 +54,59 @@ def _build_service():
                     f" (au nom de {sujet})" if sujet else " (Drive partages)")
         return build("drive", "v3", credentials=creds)
 
-    # 2. Sinon, consentement OAuth d'un utilisateur (voie historique).
+    # 2. JETON OAUTH DONNÉ PAR L'ENVIRONNEMENT. Déposer un fichier de secret sur
+    #    un serveur suppose un accès au disque ET les bons droits : le dossier
+    #    `secrets/` y appartient souvent à root — créé par Docker — et la copie
+    #    échoue sur « Permission denied ». Le jeton se fournit donc aussi comme
+    #    les autres identifiants, par variable d'environnement.
+    #
+    #    Il se suffit à lui-même : le JSON rendu par le consentement porte déjà
+    #    `client_id`, `client_secret` et `refresh_token`. Le client OAuth n'a
+    #    donc PAS à être copié à côté — un fichier de moins à protéger.
+    brut = (settings.google_token_json or "").strip()
+    if brut:
+        try:
+            infos = json.loads(brut)
+        except ValueError as e:
+            raise NotImplementedError(
+                f"GOOGLE_TOKEN_JSON illisible ({e}). Attendu : le contenu exact "
+                "de secrets/google_token.json, sur UNE seule ligne.") from e
+        # Un jeton amputé de son `refresh_token` fonctionne… jusqu'à la première
+        # expiration, quelques jours plus tard, et l'accès tombe sans rien dire.
+        # On le refuse tout de suite, avec le moyen de s'en sortir.
+        manquants = [c for c in ("client_id", "client_secret", "refresh_token")
+                     if not infos.get(c)]
+        if manquants:
+            raise NotImplementedError(
+                f"GOOGLE_TOKEN_JSON incomplet : {', '.join(manquants)} manque(nt). "
+                "Relancez scripts/google_consentement.py et vérifiez qu'il "
+                "affiche « refresh token présent : oui ».")
+        creds = Credentials.from_authorized_user_info(infos, _SCOPES)
+        if not creds.valid:
+            # Aucun repli interactif ici : sur un serveur, `run_local_server`
+            # attendrait un navigateur qui n'existe pas et le tour resterait
+            # pendu. On rafraîchit, ou on échoue en le disant.
+            from google.auth.exceptions import RefreshError
+            try:
+                creds.refresh(Request())
+            except RefreshError as e:
+                # Jeton révoqué, client OAuth supprimé, ou consentement resté
+                # « en test » — Google y fait expirer le refresh token au bout
+                # de sept jours. L'erreur brute (« invalid_client ») s'affichait
+                # telle quelle sur l'écran de synchronisation, sans dire quoi
+                # faire. `NotImplementedError` la range en « non configuré »,
+                # ce qu'elle est devenue.
+                raise NotImplementedError(
+                    f"Le jeton Google n'est plus valide ({e}). Relancez "
+                    "scripts/google_consentement.py et recollez le résultat "
+                    "dans GOOGLE_TOKEN_JSON. Si l'écran de consentement Google "
+                    "est resté « en test », passez-le en « interne » ou « en "
+                    "production » : sinon le jeton meurt tous les 7 jours."
+                ) from e
+        logger.info("Google Drive : jeton OAuth lu dans l'environnement")
+        return build("drive", "v3", credentials=creds)
+
+    # 3. Sinon, consentement OAuth d'un utilisateur par FICHIER (voie historique).
     if not os.path.exists(settings.google_credentials_file):
         raise NotImplementedError(
             "Google Drive non configuré. Deux voies : "
@@ -61,7 +114,8 @@ def _build_service():
             f"de service dans {settings.google_service_account_file} : personne "
             "n'a alors à se connecter à Google. "
             f"2. Client OAuth dans {settings.google_credentials_file}, avec un "
-            "consentement interactif (scripts/google_consentement.py).")
+            "consentement interactif (scripts/google_consentement.py) — ou son "
+            "résultat collé dans GOOGLE_TOKEN_JSON, sans aucun fichier à copier.")
 
     creds = None
     if os.path.exists(settings.google_token_file):
