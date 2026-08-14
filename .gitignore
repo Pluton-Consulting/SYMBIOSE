@@ -37,3 +37,9 @@ Thumbs.db
 # Rapports de campagne et captures d ecran (regeneres a chaque run)
 symbiose-noa/backend/scripts/bench/rapports/
 symbiose-noa/frontend/e2e/captures/
+
+# Sorties de graphify (graphe de connaissance) : artefacts, pas du code
+graphify-out/
+
+# Cache incremental de TypeScript
+*.tsbuildinfo
