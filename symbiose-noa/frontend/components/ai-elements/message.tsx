@@ -15,7 +15,6 @@ import { cn } from "@/lib/utils";
 import { cjk } from "@streamdown/cjk";
 import { code } from "@streamdown/code";
 import { math } from "@streamdown/math";
-import { mermaid } from "@streamdown/mermaid";
 import type { UIMessage } from "ai";
 import { ChevronLeftIcon, ChevronRightIcon } from "lucide-react";
 import type { ComponentProps, HTMLAttributes, ReactElement } from "react";
@@ -321,7 +320,14 @@ export const MessageBranchPage = ({
 
 export type MessageResponseProps = ComponentProps<typeof Streamdown>;
 
-const streamdownPlugins = { cjk, code, math, mermaid };
+// PAS DE MERMAID. Le greffon d'origine est importé statiquement, ce qui
+// entraîne les 82 Mo de la bibliothèque `mermaid` dans le paquet du chat —
+// chargés à chaque ouverture, sur un VPN, pour une syntaxe que l'assistant
+// n'émet jamais. Il rend en outre un langage de DESSIN fourni par le modèle,
+// là où toute notre chaîne de rendu ne manipule que des DONNÉES validées
+// (voir le registre de types de MessageRenderer). On garde donc les trois
+// greffons utiles : idéogrammes, coloration de code, formules.
+const streamdownPlugins = { cjk, code, math };
 
 export const MessageResponse = memo(
   ({ className, ...props }: MessageResponseProps) => (
