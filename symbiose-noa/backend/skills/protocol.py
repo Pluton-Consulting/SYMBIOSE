@@ -206,9 +206,16 @@ CATALOGUE_AGENT1: dict[str, tuple[str, list[str], list[str]]] = {
         "AUCUN fichier n'existe",
         ["document_id"], []),
     "abandonner_document": (
-        "JETTE un document ouvert : contenu perdu, aucun fichier. Pour faire "
-        "le menage quand des documents ouverts trainent ou pour repartir de zero",
-        ["document_id"], []),
+        # Le catalogue disait « ou pour repartir de zero » : sur une demande
+        # contenant le mot « nouveau », le modele y a lu l'autorisation de
+        # detruire un document en cours de redaction. Une action irreversible
+        # ne se propose pas, elle s'execute quand on la demande.
+        "JETTE un document ouvert : son contenu est DEFINITIVEMENT perdu. "
+        "UNIQUEMENT quand la personne demande explicitement de supprimer ou "
+        "d'abandonner un document. JAMAIS de ta propre initiative, et jamais "
+        "pour « repartir de zero » : un document deja ouvert sous le bon titre "
+        "se POURSUIT avec `ajouter_document`",
+        ["document_id"], ["confirme"]),
     # Les visuels (propres a Symbiose) se declarent dans skills/visuels.py
     # (dictionnaire SKILLS, lu par le registre) : le socle ne bouge pas quand
     # on duplique le projet.
