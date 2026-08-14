@@ -65,16 +65,44 @@ def perimetres_visibles(role: Optional[str]) -> list[tuple[Optional[str], str]]:
     return [(d, n) for d, n in perimetres() if n in autorises]
 
 
+# LE CLIENT EST GARDÉ, et ce n'est pas une micro-optimisation. Le construire
+# coûte DEUX allers-retours avec Google : un éventuel rafraîchissement du jeton
+# OAuth, puis le téléchargement du document de description de l'API Drive. Une
+# à deux secondes, payées à CHAQUE action — l'assistant paraissait « beaucoup
+# trop lent » pour cette seule raison, avant même d'avoir lu quoi que ce soit.
+#
+# Durée de vie courte : un jeton d'accès Google vaut une heure, on se reconstruit
+# bien avant pour ne jamais servir un client périmé.
+_CLIENT: dict = {"service": None, "expire": 0.0}
+_DUREE_CLIENT_S = 1800
+
+
 async def _service():
-    """Le client Drive, construit HORS de la boucle d'événements.
+    """Le client Drive, construit HORS de la boucle d'événements, et gardé.
 
     `_build_service` fait un rafraîchissement OAuth synchrone : laissé dans la
     boucle, il gèle tout le backend le temps de l'aller-retour avec Google.
-    C'est exactement ce qui a rendu l'application inutilisable pendant une
-    synchronisation.
     """
+    import time
+    if _CLIENT["service"] is not None and time.monotonic() < _CLIENT["expire"]:
+        return _CLIENT["service"]
     from ingestion.connectors.google_drive import _build_service
-    return await asyncio.to_thread(_build_service)
+    service = await asyncio.to_thread(_build_service)
+    _CLIENT.update({"service": service, "expire": time.monotonic() + _DUREE_CLIENT_S})
+    return service
+
+
+def _tout_le_drive(perimetres: list) -> bool:
+    """Le périmètre couvre-t-il le Drive ENTIER ?
+
+    Sans `GOOGLE_DRIVE_PERIMETRES` ni `GOOGLE_DRIVE_FOLDER_ID`, `perimetres()`
+    rend `[(None, 'all')]` — ce qui signifie « tout le Drive à ce niveau », pas
+    « aucun dossier ». Je l'avais lu comme une absence, et l'aperçu refusait :
+    l'assistant redemandait alors la même action, en boucle, jusqu'au garde-fou
+    anti-répétition. C'est ce qui donnait « redemandée à l'identique sans que la
+    demande avance ».
+    """
+    return any(d is None for d, _ in perimetres)
 
 
 async def _lister(service, dossier: str, limite: int = MAX_ENTREES) -> dict:
@@ -122,12 +150,13 @@ async def apercu(dossier: Optional[str] = None,
                 "Aucun dossier du Drive n'est ouvert à l'assistant pour ce rôle. "
                 "Un administrateur doit renseigner GOOGLE_DRIVE_PERIMETRES. Ce "
                 "n'est PAS un Drive vide : dis-le tel quel.")
-        cibles = [d for d, _ in perimetres if d]
+        # Périmètre ouvert sur tout le Drive : on part de sa RACINE. « root » est
+        # l'alias que l'API reconnaît pour le dossier de tête.
+        cibles = [d for d, _ in perimetres if d] or (
+            ["root"] if _tout_le_drive(perimetres) else [])
         if not cibles:
             raise DriveRefuse(
-                "Le Drive est configuré sans dossier précis : l'aperçu porterait "
-                "sur l'intégralité du Drive, ce qui n'est pas exploitable. "
-                "Demande un dossier, ou fais renseigner les périmètres.")
+                "Aucun dossier du Drive n'est ouvert à l'assistant pour ce rôle.")
     else:
         _garde_perimetre(dossier, perimetres)
         cibles = [dossier]
@@ -242,26 +271,45 @@ async def ouvrir(nom: str, perimetres: Optional[list] = None) -> dict:
             "Aucun dossier du Drive n'est ouvert à l'assistant pour ce rôle.")
 
     service = await _service()
-    # On cherche DANS les périmètres autorisés, jamais dans tout le Drive :
-    # sinon un nom bien choisi ramènerait un document hors périmètre.
     echappe = nom.replace("\\", "\\\\").replace("'", "\\'")
     trouves = []
-    for d, _niveau in perimetres:
-        if not d:
-            continue
-        def _appel(dossier=d):
+
+    if _tout_le_drive(perimetres):
+        # TOUT LE DRIVE EST OUVERT : on cherche PARTOUT, à toutes les
+        # profondeurs. Se limiter aux enfants directs de la racine ne trouvait
+        # presque rien — les fichiers d'une entreprise vivent dans des
+        # sous-dossiers, jamais à la racine. C'est ce qui faisait échouer
+        # « ouvre tel fichier » alors que le fichier existait bien.
+        def _partout():
             return service.files().list(
-                q=(f"'{dossier}' in parents and trashed=false "
-                   f"and name contains '{echappe}'"),
+                q=f"trashed=false and name contains '{echappe}'",
                 spaces="drive", fields="files(id,name,mimeType,size,modifiedTime)",
                 corpora="allDrives", includeItemsFromAllDrives=True,
                 supportsAllDrives=True, pageSize=10,
             ).execute()
         try:
-            trouves.extend((await asyncio.to_thread(_appel)).get("files", []))
+            trouves = (await asyncio.to_thread(_partout)).get("files", [])
         except Exception as e:  # noqa: BLE001
-            logger.warning("Drive : recherche de « %s » dans %s échouée : %s",
-                           nom, d, e)
+            logger.warning("Drive : recherche de « %s » échouée : %s", nom, e)
+    else:
+        # Périmètres déclarés : on cherche DEDANS, jamais ailleurs — sinon un
+        # nom bien choisi ramènerait un document hors périmètre.
+        for d, _niveau in perimetres:
+            if not d:
+                continue
+            def _appel(dossier=d):
+                return service.files().list(
+                    q=(f"'{dossier}' in parents and trashed=false "
+                       f"and name contains '{echappe}'"),
+                    spaces="drive", fields="files(id,name,mimeType,size,modifiedTime)",
+                    corpora="allDrives", includeItemsFromAllDrives=True,
+                    supportsAllDrives=True, pageSize=10,
+                ).execute()
+            try:
+                trouves.extend((await asyncio.to_thread(_appel)).get("files", []))
+            except Exception as e:  # noqa: BLE001
+                logger.warning("Drive : recherche de « %s » dans %s échouée : %s",
+                               nom, d, e)
 
     trouves = [f for f in trouves if f.get("mimeType") != _MIME_DOSSIER]
     if not trouves:
@@ -297,31 +345,35 @@ async def lire_lot(motif: str, dossier: Optional[str] = None,
         raise DriveRefuse("Donne le motif des fichiers à lire.")
     perimetres = perimetres or []
     limite = max(1, min(int(limite or MAX_LOT), MAX_LOT))
+    partout = _tout_le_drive(perimetres) and not dossier
     if dossier:
         _garde_perimetre(dossier, perimetres)
         cibles = [(dossier, None)]
     else:
         cibles = [(d, n) for d, n in perimetres if d]
-    if not cibles:
+    if not cibles and not partout:
         raise DriveRefuse(
             "Aucun dossier du Drive n'est ouvert à l'assistant pour ce rôle.")
 
     service = await _service()
     echappe = motif.replace("\\", "\\\\").replace("'", "\\'")
     candidats = []
-    for d, _n in cibles:
-        def _appel(dos=d):
+    # Même raison que pour `ouvrir` : tout le Drive ouvert veut dire à toutes
+    # les profondeurs, pas seulement à la racine.
+    requetes = ([f"trashed=false and name contains '{echappe}'"] if partout
+                else [f"'{d}' in parents and trashed=false "
+                      f"and name contains '{echappe}'" for d, _ in cibles])
+    for q in requetes:
+        def _appel(requete=q):
             return service.files().list(
-                q=(f"'{dos}' in parents and trashed=false "
-                   f"and name contains '{echappe}'"),
-                spaces="drive", fields="files(id,name,mimeType)",
+                q=requete, spaces="drive", fields="files(id,name,mimeType)",
                 corpora="allDrives", includeItemsFromAllDrives=True,
                 supportsAllDrives=True, pageSize=limite * 2,
             ).execute()
         try:
             candidats.extend((await asyncio.to_thread(_appel)).get("files", []))
         except Exception as e:  # noqa: BLE001
-            logger.warning("Drive : lot « %s » dans %s échoué : %s", motif, d, e)
+            logger.warning("Drive : lot « %s » échoué : %s", motif, e)
 
     candidats = [f for f in candidats if f.get("mimeType") != _MIME_DOSSIER]
     from ingestion.connectors.google_drive import _download_text
@@ -349,7 +401,12 @@ def _garde_perimetre(dossier: str, perimetres: list) -> None:
     SANS CE CONTRÔLE, il suffirait de connaître un identifiant Drive pour lire
     hors de son périmètre — et les identifiants circulent dans les URL que les
     gens se partagent.
+
+    Quand le périmètre couvre tout le Drive, il n'y a rien à cloisonner : tout
+    est déjà autorisé, et refuser serait absurde.
     """
+    if _tout_le_drive(perimetres):
+        return
     autorises = {d for d, _ in perimetres if d}
     if dossier not in autorises:
         raise DriveRefuse(
