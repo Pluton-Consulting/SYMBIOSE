@@ -35,11 +35,20 @@ from typing import Optional
 logger = logging.getLogger("symbiose.outils.drive")
 
 # ── Bornes ───────────────────────────────────────────────────────────
-# Les mêmes esprits que pour le NAS de Duret : ces gestes servent un tour de
-# conversation, pas une ingestion. Le modèle n'exploite pas quarante dossiers,
-# et chaque niveau supplémentaire coûte un appel réseau que l'utilisateur attend.
-MAX_PROFONDEUR = 3
-MAX_DOSSIERS_PARCOURUS = 40
+# Ces gestes servent un tour de conversation, pas une ingestion — mais
+# « parcours TOUT le Drive et fais-moi le schéma » est une demande légitime, et
+# elle doit aboutir en UN appel. Les anciennes bornes (3 niveaux, 40 dossiers)
+# la faisaient échouer : l'arbre revenait tronqué, le modèle relançait avec
+# d'autres paramètres, et le budget d'actions du tour y passait sans réponse.
+#
+# Le balayage global rend ça possible SANS explosion réseau : une seule requête
+# paginée ramène jusqu'à mille dossiers, structure comprise. La profondeur
+# n'est donc plus une affaire de coût, seulement d'affichage.
+MAX_PROFONDEUR = 20                # l'arbre COMPLET, plafonné contre les cycles
+MAX_DOSSIERS_ARBRE = 3000          # au-delà, on l'écrit honnêtement
+MAX_PAGES_BALAYAGE = 5             # 5 × 1000 dossiers par balayage global
+MAX_PAGES_FICHIERS = 10            # 10 × 1000 fichiers pour les comptes
+MAX_SCHEMA_CARACTERES = 9000       # le schéma texte rendu au modèle
 MAX_LOT = 5
 MAX_ENTREES = 200          # par dossier listé, comme l'API le pagine
 
@@ -345,60 +354,378 @@ async def apercu(dossier: Optional[str] = None,
     return sortie
 
 
-async def arborescence(dossier: str, profondeur: int = 2,
-                       perimetres: Optional[list] = None) -> dict:
-    """L'arbre d'un dossier sur plusieurs niveaux, en UN appel.
+async def _balayer_dossiers(service) -> tuple[dict, bool]:
+    """TOUS les dossiers du Drive (id → nom, parents), en quelques requêtes.
 
-    Descendre de trois niveaux demandait trois listages, donc trois
-    allers-retours de modèle. Bornée en profondeur ET en nombre de dossiers :
-    un Drive d'entreprise peut en contenir des milliers.
+    C'est le collecteur qui rend « parcours tout le Drive » possible en UN
+    appel : une requête paginée ramène MILLE dossiers avec leur structure,
+    là où le parcours dossier-par-dossier payait un aller-retour réseau par
+    dossier. Trois cents dossiers : une requête au lieu de trois cents.
+
+    RÉSERVÉ AU DRIVE ENTIÈREMENT OUVERT. Avec des périmètres déclarés, un
+    balayage global ramènerait les noms des dossiers interdits — et un dossier
+    « Licenciement Untel » dit déjà l'essentiel. Le chemin cloisonné passe par
+    `_enfants_par_lots`, qui ne sort jamais des racines autorisées.
     """
+    dossiers: dict[str, dict] = {}
+    jeton = None
+    for _ in range(MAX_PAGES_BALAYAGE):
+        def _appel(jeton=jeton):
+            return service.files().list(
+                q=f"mimeType = '{_MIME_DOSSIER}' and trashed = false",
+                spaces="drive", corpora="allDrives",
+                includeItemsFromAllDrives=True, supportsAllDrives=True,
+                fields="nextPageToken, files(id,name,parents)",
+                pageSize=1000, pageToken=jeton,
+            ).execute()
+        resp = await asyncio.to_thread(_appel)
+        for f in resp.get("files", []):
+            dossiers[f["id"]] = {"nom": f.get("name"),
+                                 "parents": f.get("parents") or []}
+        jeton = resp.get("nextPageToken")
+        if not jeton:
+            break
+    return dossiers, bool(jeton)
+
+
+async def _compter_fichiers(service) -> tuple[dict, bool]:
+    """Nombre de fichiers et octets PAR dossier parent, en quelques requêtes.
+
+    Même logique de balayage que les dossiers : on ne demande que `parents` et
+    `size`, mille fichiers par page. Un Drive qui en contient davantage que le
+    plafond rend des comptes PARTIELS — et le drapeau le dit, pour que le
+    schéma ne présente jamais un compte tronqué comme un compte exact.
+    """
+    comptes: dict[str, list] = {}
+    jeton = None
+    for _ in range(MAX_PAGES_FICHIERS):
+        def _appel(jeton=jeton):
+            return service.files().list(
+                q=f"mimeType != '{_MIME_DOSSIER}' and trashed = false",
+                spaces="drive", corpora="allDrives",
+                includeItemsFromAllDrives=True, supportsAllDrives=True,
+                fields="nextPageToken, files(parents,size)",
+                pageSize=1000, pageToken=jeton,
+            ).execute()
+        resp = await asyncio.to_thread(_appel)
+        for f in resp.get("files", []):
+            for p in (f.get("parents") or []):
+                c = comptes.setdefault(p, [0, 0])
+                c[0] += 1
+                c[1] += int(f.get("size") or 0)
+        jeton = resp.get("nextPageToken")
+        if not jeton:
+            break
+    return comptes, bool(jeton)
+
+
+async def _enfants_par_lots(service, parents: list[str]) -> dict:
+    """Les enfants (dossiers ET fichiers) de tous ces parents, par paquets.
+
+    Le chemin CLOISONNÉ de l'arborescence : chaque requête porte jusqu'à
+    quinze parents en `or`, donc un niveau entier de l'arbre se lit en une
+    poignée de requêtes — sans jamais interroger quoi que ce soit hors des
+    dossiers passés en argument. `parents` sur chaque résultat dit à quel
+    parent le rattacher.
+    """
+    resultat = {p: {"dossiers": [], "fichiers": 0, "octets": 0, "tronque": False}
+                for p in parents}
+    for i in range(0, len(parents), 15):
+        paquet = parents[i:i + 15]
+        ou = " or ".join(f"'{_echappe(p)}' in parents" for p in paquet)
+        q = f"({ou}) and trashed = false"
+        jeton = None
+        for _ in range(3):
+            def _appel(jeton=jeton):
+                return service.files().list(
+                    q=q, spaces="drive",
+                    fields="nextPageToken, files(id,name,mimeType,parents,size)",
+                    corpora="allDrives", includeItemsFromAllDrives=True,
+                    supportsAllDrives=True, pageSize=1000, pageToken=jeton,
+                ).execute()
+            resp = await asyncio.to_thread(_appel)
+            for f in resp.get("files", []):
+                for p in (f.get("parents") or []):
+                    if p not in resultat:
+                        continue
+                    if f.get("mimeType") == _MIME_DOSSIER:
+                        resultat[p]["dossiers"].append(
+                            {"id": f["id"], "nom": f.get("name")})
+                    else:
+                        resultat[p]["fichiers"] += 1
+                        resultat[p]["octets"] += int(f.get("size") or 0)
+            jeton = resp.get("nextPageToken")
+            if not jeton:
+                break
+        if jeton:
+            for p in paquet:
+                resultat[p]["tronque"] = True
+    return resultat
+
+
+def _rendre_schema(racines: list[dict], profondeur_max: int) -> tuple[str, int]:
+    """L'arbre en texte, prêt à afficher — et la profondeur réellement rendue.
+
+    UN SCHÉMA, PAS UN JSON. Le résultat repart vers le modèle avec un plafond
+    de caractères : un arbre en JSON verbeux se faisait couper au milieu, et le
+    modèle relançait l'exploration « car le résultat précédent était tronqué »
+    — c'est mot pour mot ce qu'il a répondu. Le texte indenté porte la même
+    information pour un cinquième du poids, et se recopie tel quel dans une
+    réponse.
+
+    Si même le texte déborde, on RÉDUIT LA PROFONDEUR D'AFFICHAGE, jamais la
+    vérité : les niveaux repliés sont comptés et annoncés, pas perdus.
+    """
+    def _ligne(n: dict) -> str:
+        bouts = []
+        if n.get("sous_dossiers_total"):
+            bouts.append(f"{n['sous_dossiers_total']} dossiers")
+        if n.get("fichiers"):
+            bouts.append(f"{n['fichiers']} fichiers")
+        if n.get("cycle"):
+            bouts.append("déjà détaillé plus haut")
+        if n.get("tronque"):
+            bouts.append("liste partielle")
+        return (n.get("nom") or "?") + (f"  ({', '.join(bouts)})" if bouts else "")
+
+    def _rendre(noeuds: list[dict], prefixe: str, niveau: int,
+                limite: int, lignes: list[str]) -> int:
+        """Rend un niveau ; renvoie le nombre de dossiers REPLIÉS (non montrés)."""
+        replies = 0
+        for i, n in enumerate(noeuds):
+            dernier = i == len(noeuds) - 1
+            lignes.append(prefixe + ("└─ " if dernier else "├─ ") + _ligne(n))
+            enfants = n.get("enfants") or []
+            if not enfants:
+                continue
+            if niveau + 1 >= limite:
+                replies += n.get("sous_dossiers_total") or len(enfants)
+                continue
+            suite = prefixe + ("   " if dernier else "│  ")
+            replies += _rendre(enfants, suite, niveau + 1, limite, lignes)
+        return replies
+
+    for limite in range(profondeur_max, 0, -1):
+        lignes: list[str] = []
+        replies = 0
+        for r in racines:
+            lignes.append(_ligne(r))
+            replies += _rendre(r.get("enfants") or [], "", 1, limite, lignes)
+        schema = "\n".join(lignes)
+        if len(schema) <= MAX_SCHEMA_CARACTERES or limite == 1:
+            if replies:
+                schema += (f"\n… détail limité à {limite} niveau(x) : "
+                           f"{replies} sous-dossier(s) repliés, comptés ci-dessus.")
+            return schema, limite
+    return "", 0
+
+
+def _assembler(racines: list[dict], catalogue: dict, comptes: dict) -> int:
+    """Monte la forêt depuis le balayage global. Rend le nombre de dossiers.
+
+    Anti-cycle GLOBAL : un dossier à plusieurs parents (héritage de l'ancien
+    Drive) n'est détaillé qu'une fois ; les autres occurrences le nomment avec
+    la marque « déjà détaillé plus haut ». Sans cela, deux dossiers qui se
+    référencent feraient boucler l'assemblage.
+    """
+    enfants_de: dict[str, list[str]] = {}
+    for did, d in catalogue.items():
+        for p in d["parents"]:
+            enfants_de.setdefault(p, []).append(did)
+
+    vus: set[str] = set()
+    total = 0
+
+    def _noeud(did: str, nom: str, niveau: int) -> dict:
+        nonlocal total
+        total += 1
+        n = {"nom": nom, "enfants": [],
+             "fichiers": comptes.get(did, [0, 0])[0],
+             "octets": comptes.get(did, [0, 0])[1]}
+        if did in vus:
+            n["cycle"] = True
+            return n
+        vus.add(did)
+        if niveau >= MAX_PROFONDEUR or total > MAX_DOSSIERS_ARBRE:
+            n["sous_dossiers_total"] = len(enfants_de.get(did, []))
+            return n
+        ids = sorted(enfants_de.get(did, []),
+                     key=lambda x: (catalogue.get(x, {}).get("nom") or "").lower())
+        n["enfants"] = [_noeud(x, catalogue.get(x, {}).get("nom") or "?", niveau + 1)
+                        for x in ids]
+        n["sous_dossiers_total"] = len(ids)
+        return n
+
+    for r in racines:
+        base = _noeud(r["id"], r["nom"], 0)
+        r.update(base)
+    return total
+
+
+async def arborescence(dossier: Optional[str] = None, profondeur: int = 0,
+                       perimetres: Optional[list] = None) -> dict:
+    """L'arbre — COMPLET si on ne précise rien — en UN appel.
+
+    « Parcours tous les dossiers et sous-dossiers du Drive et fais-moi un
+    schéma » doit aboutir ICI, en une action. L'ancienne version exigeait un
+    dossier de départ, s'arrêtait à trois niveaux et quarante dossiers : le
+    modèle relançait avec d'autres paramètres jusqu'à épuiser son budget
+    d'actions, sans jamais rendre le schéma.
+
+    Deux collecteurs, choisis selon le cloisonnement :
+      - Drive entièrement ouvert : BALAYAGE GLOBAL, une requête par millier de
+        dossiers, Drive partagés compris — la structure entière en quelques
+        secondes.
+      - périmètres déclarés : descente PAR NIVEAUX, quinze parents par
+        requête, sans jamais interroger hors des racines autorisées.
+
+    Le résultat porte `schema` : l'arbre en texte, à recopier tel quel.
+    """
+    import time as _t
+    debut = _t.monotonic()
     perimetres = perimetres or []
     service = await _service()
-    racines = ([d for d, _ in perimetres if d]
-               or (await _racines(service) if _tout_le_drive(perimetres) else []))
-    dossier = await _resoudre(service, dossier, racines,
-                                partout=_tout_le_drive(perimetres))
-    _garde_perimetre(dossier, perimetres)
-    profondeur = max(1, min(int(profondeur or 2), MAX_PROFONDEUR))
-    vus = 0
-    racine: dict = {"dossier": dossier, "enfants": []}
-    file_attente = [(dossier, racine, 0)]
-    inexplores = 0
+    profondeur = min(int(profondeur), MAX_PROFONDEUR) if profondeur else MAX_PROFONDEUR
+    profondeur = max(1, profondeur)
 
-    while file_attente and vus < MAX_DOSSIERS_PARCOURUS:
-        courant, noeud, niveau = file_attente.pop(0)
-        vus += 1
+    if _tout_le_drive(perimetres):
+        catalogue, dossiers_partiels = await _balayer_dossiers(service)
+        comptes, fichiers_partiels = await _compter_fichiers(service)
+
+        # Les racines : Mon Drive (id réel, pas l'alias) et chaque Drive partagé.
+        def _racine_reelle():
+            return service.files().get(fileId="root", fields="id").execute()
         try:
-            brut = await _lister(service, courant)
+            mon_drive = (await asyncio.to_thread(_racine_reelle)).get("id")
+        except Exception:  # noqa: BLE001 - compte de service sans « Mon Drive »
+            mon_drive = None
+        racines = [{"id": mon_drive, "nom": "Mon Drive"}] if mon_drive else []
+        try:
+            def _drives():
+                return service.drives().list(
+                    pageSize=100, fields="drives(id,name)").execute()
+            for d in (await asyncio.to_thread(_drives)).get("drives", []):
+                racines.append({"id": d["id"],
+                                "nom": f"Drive partagé « {d.get('name')} »"})
         except Exception as e:  # noqa: BLE001
-            noeud["illisible"] = str(e)[:120]
-            continue
-        sous_dossiers, fichiers = _classer(brut["entrees"])
-        noeud["fichiers"] = len(fichiers)
-        noeud["tronque"] = brut["tronque"]
-        for sd in sous_dossiers:
-            enfant = {"dossier": sd["id"], "nom": sd.get("name"), "enfants": []}
-            noeud["enfants"].append(enfant)
-            if niveau + 1 < profondeur:
-                file_attente.append((sd["id"], enfant, niveau + 1))
-            else:
-                # UN DOSSIER NON EXPLORÉ N'EST PAS UN DOSSIER VIDE. Sans cette
-                # marque, l'arbre présentait des branches vides que le modèle
-                # rapportait comme telles à l'utilisateur.
-                enfant["explore"] = False
-                inexplores += 1
+            logger.info("Drive : liste des Drive partagés indisponible (%s)", e)
 
-    sortie = {"arbre": racine, "dossiers_parcourus": vus,
-              "profondeur": profondeur}
-    if file_attente:
-        sortie["note"] = (
-            f"Parcours ARRÊTÉ à {MAX_DOSSIERS_PARCOURUS} dossiers : l'arbre est "
-            "incomplet. Ne le présente pas comme exhaustif.")
-    elif inexplores:
-        sortie["note"] = (
-            f"{inexplores} dossier(s) atteints à la profondeur maximale n'ont "
-            "pas été ouverts : leur contenu est inconnu, pas vide.")
+        # Un dossier précis ? On réduit la forêt à SON sous-arbre.
+        if dossier:
+            vise = await _resoudre(service, dossier, [r["id"] for r in racines],
+                                   partout=True)
+            nom = catalogue.get(vise, {}).get("nom") or dossier
+            racines = [{"id": vise, "nom": nom}]
+
+        # Les dossiers « partagés avec moi » n'ont aucun parent visible : sans
+        # cette racine de rattachement, ils disparaissaient du schéma alors
+        # qu'ils sont bien là.
+        if not dossier:
+            ids_racines = {r["id"] for r in racines}
+            orphelins = [did for did, d in catalogue.items()
+                         if not any(p in catalogue or p in ids_racines
+                                    for p in d["parents"])]
+            if orphelins:
+                pseudo = "__orphelins__"
+                for did in orphelins:
+                    catalogue[did]["parents"] = [pseudo]
+                racines.append({"id": pseudo, "nom": "Partagés avec moi (hors racines)"})
+
+        total = _assembler(racines, catalogue, comptes)
+        schema, rendu = _rendre_schema(racines, profondeur)
+        complet = not dossiers_partiels and total <= MAX_DOSSIERS_ARBRE
+        total_fichiers = sum(c[0] for c in comptes.values())
+
+        sortie = {
+            "schema": schema,
+            "dossiers_total": len(catalogue),
+            "fichiers_total": total_fichiers,
+            "profondeur_affichee": rendu,
+            "complet": complet,
+            "duree_s": round(_t.monotonic() - debut, 1),
+        }
+        if complet and not fichiers_partiels:
+            sortie["note"] = (
+                "ARBORESCENCE COMPLÈTE : tous les dossiers y sont, comptes "
+                "exacts. Recopie le `schema` TEL QUEL dans un bloc ``` — ne "
+                "relance PAS l'exploration, il n'y a rien de plus à trouver.")
+        else:
+            morceaux = []
+            if dossiers_partiels or total > MAX_DOSSIERS_ARBRE:
+                morceaux.append(
+                    f"le Drive dépasse {MAX_PAGES_BALAYAGE * 1000} dossiers, "
+                    "l'arbre s'arrête là")
+            if fichiers_partiels:
+                morceaux.append(
+                    f"plus de {MAX_PAGES_FICHIERS * 1000} fichiers : les comptes "
+                    "de fichiers sont partiels")
+            sortie["note"] = ("Arborescence rendue, mais " + " ; ".join(morceaux)
+                              + ". Dis-le tel quel — ne présente pas ces "
+                                "nombres comme exhaustifs.")
+        return sortie
+
+    # ── Périmètres déclarés : descente par niveaux, sans balayage global ──
+    racines_ids = [d for d, _ in perimetres if d]
+    if dossier:
+        vise = await _resoudre(service, dossier, racines_ids, partout=False)
+        _garde_perimetre(vise, perimetres)
+        racines = [{"id": vise, "nom": dossier}]
+    else:
+        if not racines_ids:
+            raise DriveRefuse(
+                "Aucun dossier du Drive n'est ouvert à l'assistant pour ce rôle. "
+                "Un administrateur doit renseigner GOOGLE_DRIVE_PERIMETRES.")
+        racines = [{"id": rid, "nom": rid} for rid in racines_ids]
+
+    par_id = {r["id"]: r for r in racines}
+    for r in racines:
+        r.update({"enfants": [], "fichiers": 0, "octets": 0})
+    niveau_courant = [r["id"] for r in racines]
+    total = len(racines)
+    partiel = False
+    for niveau in range(profondeur):
+        if not niveau_courant:
+            break
+        if total >= MAX_DOSSIERS_ARBRE:
+            partiel = True
+            break
+        infos = await _enfants_par_lots(service, niveau_courant)
+        prochain: list[str] = []
+        for pid in niveau_courant:
+            noeud = par_id[pid]
+            info = infos.get(pid) or {}
+            noeud["fichiers"] = info.get("fichiers", 0)
+            noeud["octets"] = info.get("octets", 0)
+            noeud["tronque"] = info.get("tronque", False)
+            sous = sorted(info.get("dossiers") or [],
+                          key=lambda d: (d.get("nom") or "").lower())
+            noeud["sous_dossiers_total"] = len(sous)
+            for sd in sous:
+                enfant = {"nom": sd["nom"], "enfants": [], "fichiers": 0,
+                          "octets": 0}
+                noeud["enfants"].append(enfant)
+                par_id[sd["id"]] = enfant
+                prochain.append(sd["id"])
+                total += 1
+        niveau_courant = prochain
+    if niveau_courant:
+        partiel = True
+
+    schema, rendu = _rendre_schema(racines, profondeur)
+    sortie = {
+        "schema": schema,
+        "dossiers_total": total,
+        "profondeur_affichee": rendu,
+        "complet": not partiel,
+        "duree_s": round(_t.monotonic() - debut, 1),
+    }
+    sortie["note"] = (
+        "ARBORESCENCE COMPLÈTE du périmètre autorisé. Recopie le `schema` TEL "
+        "QUEL dans un bloc ``` — ne relance pas l'exploration."
+        if not partiel else
+        f"Arbre partiel (plafond de {MAX_DOSSIERS_ARBRE} dossiers ou de "
+        "profondeur atteint) : précise un sous-dossier pour le détail. Ne le "
+        "présente pas comme exhaustif.")
     return sortie
 
 

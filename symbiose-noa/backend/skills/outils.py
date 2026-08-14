@@ -63,12 +63,11 @@ async def drive_apercu(data: dict, user) -> dict:
 
 
 async def drive_arborescence(data: dict, user) -> dict:
-    """L'arbre d'un dossier du Drive sur plusieurs niveaux, en un appel."""
+    """L'arbre du Drive — complet si aucun dossier n'est précisé — en un appel."""
     from outils.drive import arborescence
-    dossier = (data.get("dossier") or "").strip()
-    if not dossier:
-        _echec("Donne le `dossier` dont tu veux l'arborescence.")
-    return await _drive(arborescence, dossier, data.get("profondeur") or 2,
+    return await _drive(arborescence,
+                        (data.get("dossier") or "").strip() or None,
+                        data.get("profondeur") or 0,
                         perimetres=_perimetres(user))
 
 
@@ -154,9 +153,11 @@ SKILLS = {
         libelle="je regarde ce que contient le dossier"),
     "drive_arborescence": Declaration(
         fonction=drive_arborescence,
-        description=("ARBRE d'un dossier du Drive sur plusieurs niveaux, en une "
-                     "fois. `dossier` accepte le NOM ou le CHEMIN"),
-        requis=["dossier"], optionnels=["profondeur"],
+        description=("ARBRE COMPLET du Drive (Drives partages inclus) en UNE "
+                     "action : sans `dossier`, TOUT y passe, avec les comptes. "
+                     "Rend `schema` : recopie-le TEL QUEL dans un bloc ```. "
+                     "`dossier` (NOM ou CHEMIN) limite a un sous-arbre"),
+        optionnels=["dossier", "profondeur"],
         effet="lecture",
         libelle="je parcours les dossiers du Drive"),
     "drive_ouvrir": Declaration(
