@@ -1,0 +1,65 @@
+/* ═══════════════════════════════════════════════════════════════════════
+   LA CHARTE — LE SEUL FICHIER À CHANGER QUAND ON COPIE LE PROJET.
+   ═══════════════════════════════════════════════════════════════════════
+
+   Tout ce qui distingue visuellement un client d'un autre est ICI, et
+   nulle part ailleurs. Dupliquer l'application pour une nouvelle
+   entreprise se réduit donc à réécrire les valeurs de ce fichier : ni
+   composant à retoucher, ni classe à chercher dans le code.
+
+   CE FICHIER NE CONTIENT QUE DES VALEURS. La traduction vers le
+   vocabulaire de Tailwind et de shadcn vit dans `theme.css`, qui lui est
+   IDENTIQUE d'un projet à l'autre. Cette séparation est ce qui rend la
+   promesse tenable : si les deux étaient mêlés, copier reviendrait à
+   trier à la main ce qui relève de la marque et ce qui relève du socle.
+
+   Charte Symbiose Paysage — vert forêt.
+   ═══════════════════════════════════════════════════════════════════════ */
+
+:root {
+  /* ── Identité ─────────────────────────────────────────────────────── */
+  --color-primary:        #182B16;
+  --color-primary-hover:  #2D5A27;
+  --color-primary-mid:    #3F7A36;
+  --color-primary-light:  #C8E6C0;
+  --color-primary-subtle: #EDF4EC;
+  --color-leaf:           #3F7A36;
+
+  /* ── Fonds et bordures ────────────────────────────────────────────── */
+  --color-canvas:         #F5F6F5;
+  --color-surface:        #FFFFFF;
+  --color-border:         #E8EBE8;
+
+  /* ── Textes ───────────────────────────────────────────────────────── */
+  --color-text-primary:   #111A10;
+  --color-text-body:      #3D4D3C;
+  --color-text-muted:     #8FA08E;
+  --color-text-on-dark:   #FFFFFF;
+  --color-on-dark-accent: #A8D4A0;
+
+  /* ── États métier ─────────────────────────────────────────────────── */
+  --color-paid-bg:        #E6F4E3;
+  --color-paid-text:      #2D6B26;
+  --color-pending-bg:     #FDF3E3;
+  --color-pending-text:   #9A6520;
+  --color-progress-bg:    #E8F0FE;
+  --color-progress-text:  #3557A0;
+  --color-error-bg:       #FEE2E2;
+  --color-error-text:     #DC2626;
+  --color-error:          #DC2626;
+
+  /* ── Formes ───────────────────────────────────────────────────────── */
+  --radius-card:          20px;
+  --radius-card-sm:       14px;
+  --radius-pill:          9999px;
+  --radius-icon:          10px;
+  --shadow-card:          0 2px 12px rgba(24, 43, 22, 0.06);
+  --shadow-hover:         0 4px 20px rgba(24, 43, 22, 0.10);
+  --shadow-card-hover:    0 4px 20px rgba(24, 43, 22, 0.10);
+
+  /* ── Typographie ──────────────────────────────────────────────────
+     La police fait partie de l'identité au même titre que les couleurs :
+     elle se change ici, pas dans les composants. */
+  --font:        'Plus Jakarta Sans', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-family: 'Plus Jakarta Sans', 'Inter', sans-serif;
+}

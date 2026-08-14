@@ -1,0 +1,176 @@
+/* ═══════════════════════════════════════════════════════════════════════
+   LE PONT — IDENTIQUE D'UN PROJET À L'AUTRE. NE PAS LE PERSONNALISER.
+   ═══════════════════════════════════════════════════════════════════════
+
+   `charte.css` porte les COULEURS d'un client. Ce fichier-ci porte leur
+   TRADUCTION vers les deux vocabulaires que les bibliothèques attendent :
+
+     - Tailwind 4, qui lit ses tokens dans `@theme` ;
+     - shadcn/ui (donc AI Elements et Extend UI, tous deux bâtis dessus),
+       qui exige des noms fixes : --background, --foreground, --primary,
+       --muted, --border, --ring…
+
+   POURQUOI DEUX FICHIERS. Les composants installés depuis un registre
+   sont écrits contre les noms de shadcn. Si la charte les portait
+   directement, chaque copie de projet obligerait à distinguer, parmi
+   trente variables, celles qui relèvent de la marque et celles qui
+   relèvent du socle. Ici la frontière est un nom de fichier.
+
+   AUCUNE VALEUR EN DUR ICI. Toute couleur descend de `charte.css` : une
+   valeur écrite en clair dans ce fichier survivrait à la copie et
+   contaminerait le client suivant.
+   ═══════════════════════════════════════════════════════════════════════ */
+
+@import "tailwindcss";
+@import "./charte.css";
+
+/* ── Ce que shadcn/ui, AI Elements et Extend UI vont lire ──────────────
+   Les noms sont imposés par shadcn ; les valeurs viennent de la charte. */
+:root {
+  --background:            var(--color-canvas);
+  --foreground:            var(--color-text-primary);
+
+  --card:                  var(--color-surface);
+  --card-foreground:       var(--color-text-primary);
+  --popover:               var(--color-surface);
+  --popover-foreground:    var(--color-text-primary);
+
+  --primary:               var(--color-primary);
+  --primary-foreground:    var(--color-text-on-dark);
+
+  --secondary:             var(--color-primary-subtle);
+  --secondary-foreground:  var(--color-primary);
+
+  --muted:                 var(--color-primary-subtle);
+  --muted-foreground:      var(--color-text-muted);
+
+  --accent:                var(--color-primary-light);
+  --accent-foreground:     var(--color-primary);
+
+  --destructive:           var(--color-error-text);
+  --destructive-foreground: var(--color-text-on-dark);
+
+  --border:                var(--color-border);
+  --input:                 var(--color-border);
+  --ring:                  var(--color-primary-mid);
+
+  --radius:                var(--radius-card-sm);
+}
+
+/* ── Le thème Tailwind : `bg-primary`, `text-muted-foreground`, `rounded-lg`
+      s'adossent aux variables ci-dessus, donc à la charte. ─────────────── */
+@theme inline {
+  --color-background:            var(--background);
+  --color-foreground:            var(--foreground);
+  --color-card:                  var(--card);
+  --color-card-foreground:       var(--card-foreground);
+  --color-popover:               var(--popover);
+  --color-popover-foreground:    var(--popover-foreground);
+  --color-primary:               var(--primary);
+  --color-primary-foreground:    var(--primary-foreground);
+  --color-secondary:             var(--secondary);
+  --color-secondary-foreground:  var(--secondary-foreground);
+  --color-muted:                 var(--muted);
+  --color-muted-foreground:      var(--muted-foreground);
+  --color-accent:                var(--accent);
+  --color-accent-foreground:     var(--accent-foreground);
+  --color-destructive:           var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border:                var(--border);
+  --color-input:                 var(--input);
+  --color-ring:                  var(--ring);
+
+  /* ── États sémantiques ───────────────────────────────────────────────
+     Extend UI et AI Elements les réclament (`success`, `warning`, `info`,
+     `error`) ; la charte les possédait déjà sous des noms métier. Les
+     brancher ici, plutôt que d'écrire des couleurs dans les composants,
+     est ce qui fait qu'une révision annotée ou un badge d'état prend
+     automatiquement les teintes du client. */
+  --color-success:            var(--color-paid-text);
+  --color-success-bg:         var(--color-paid-bg);
+  --color-warning:            var(--color-pending-text);
+  --color-warning-bg:         var(--color-pending-bg);
+  --color-info:               var(--color-progress-text);
+  --color-info-bg:            var(--color-progress-bg);
+  --color-error:              var(--color-error-text);
+  --color-error-bg:           var(--color-error-bg);
+
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   LE SOCLE D'ÉCRAN, repris INTÉGRALEMENT de l'ancien `layout.tsx`.
+   ═══════════════════════════════════════════════════════════════════════
+   Les 41 composants existants s'appuient sur ces classes (`sym-in`,
+   `sym-tap`, `sym-card`, `sym-skeleton`…) et sur les media queries. Elles
+   restent donc mot pour mot : la bascule vers AI Elements est progressive,
+   et rien de ce qui marche aujourd'hui ne doit s'arrêter en chemin.
+   ═══════════════════════════════════════════════════════════════════════ */
+
+*, *::before, *::after { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  font-family: var(--font);
+  color: var(--color-text-body);
+  background: var(--color-canvas);
+  -webkit-font-smoothing: antialiased;
+}
+
+a { color: inherit; text-decoration: none; }
+button, input, select, textarea { font-family: var(--font); }
+
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--color-border); border-radius: 3px; }
+
+/* ── Animations & micro-interactions (charte : moins de monotonie) ── */
+@keyframes symFadeUp { from { opacity: 0; transform: translateY(12px) } to { opacity: 1; transform: translateY(0) } }
+@keyframes symFadeIn { from { opacity: 0 } to { opacity: 1 } }
+@keyframes symShimmer { 0% { background-position: -450px 0 } 100% { background-position: 450px 0 } }
+@keyframes symFloat { 0%, 100% { transform: translateY(0) } 50% { transform: translateY(-5px) } }
+@keyframes symPop { 0% { transform: scale(.94) } 60% { transform: scale(1.03) } 100% { transform: scale(1) } }
+
+.sym-in   { animation: symFadeUp .5s cubic-bezier(.22,.61,.36,1) both; }
+.sym-in-1 { animation-delay: .05s } .sym-in-2 { animation-delay: .11s }
+.sym-in-3 { animation-delay: .17s } .sym-in-4 { animation-delay: .23s }
+.sym-in-5 { animation-delay: .29s } .sym-in-6 { animation-delay: .35s }
+.sym-fade { animation: symFadeIn .45s ease both; }
+.sym-pop  { animation: symPop .35s cubic-bezier(.22,.61,.36,1) both; }
+
+.sym-card { transition: transform .25s cubic-bezier(.22,.61,.36,1), box-shadow .25s ease, border-color .25s ease; }
+.sym-card:hover { transform: translateY(-3px); box-shadow: var(--shadow-card-hover); }
+
+button, a, .sym-tap { transition: background-color .2s ease, color .2s ease, transform .12s ease, box-shadow .2s ease, border-color .2s ease; }
+.sym-tap:active { transform: scale(.97); }
+
+.sym-skeleton {
+  background: linear-gradient(90deg, var(--color-border) 25%, var(--color-primary-subtle) 50%, var(--color-border) 75%);
+  background-size: 900px 100%;
+  animation: symShimmer 1.3s infinite linear;
+  border-radius: var(--radius-card-sm);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sym-in, .sym-fade, .sym-pop, .sym-card, .sym-tap, .sym-skeleton { animation: none !important; transition: none !important }
+  .sym-card:hover { transform: none }
+}
+
+/* ── Adaptation aux petits écrans ────────────────────────────────────
+   TOUT est enfermé dans cette media query : au-dessus de 900px, aucune de
+   ces règles n'existe, donc la version bureau est inchangée par
+   construction. Le !important est nécessaire (et sans risque ici) parce
+   que les pages posent leurs styles en ligne, qui l'emportent autrement
+   sur une classe. */
+@media (max-width: 900px) {
+  .sym-page { padding-left: 16px !important; padding-right: 16px !important;
+              padding-top: 20px !important; padding-bottom: 24px !important; }
+  .sym-grid-auto { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)) !important; }
+  .sym-grid-1 { grid-template-columns: 1fr !important; }
+  .sym-scroll-x { overflow-x: auto !important; }
+  .sym-fluide { max-width: 100% !important; }
+  .sym-bulle { max-width: 88% !important; }
+}

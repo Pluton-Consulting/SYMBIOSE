@@ -1,6 +1,20 @@
 import type { Metadata } from "next"
 import { SessionProvider } from "next-auth/react"
 
+// LE STYLE VIT DANS DES FICHIERS CSS, PLUS DANS CE COMPOSANT.
+//
+// Il était injecté ici par `dangerouslySetInnerHTML` : praticable tant que
+// tout tenait en styles inline, intenable dès lors que Tailwind, shadcn,
+// AI Elements et Extend UI doivent lire les mêmes tokens. La chaîne est
+// désormais explicite et à un seul sens :
+//
+//     charte.css  (les couleurs du client — LE SEUL fichier à changer)
+//        ↓
+//     theme.css   (la traduction vers Tailwind + shadcn — identique partout)
+//        ↓
+//     les composants
+import "./theme.css"
+
 export const metadata: Metadata = {
   title: "Symbiose Paysage",
   description: "Assistant IA interne Symbiose Paysage",
@@ -16,109 +30,6 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700&display=swap"
           rel="stylesheet"
         />
-        <style dangerouslySetInnerHTML={{ __html: `
-          :root {
-            /* Charte graphique Symbiose — vert forêt */
-            --color-primary:        #182B16;
-            --color-primary-hover:  #2D5A27;
-            --color-primary-mid:    #3F7A36;
-            --color-primary-light:  #C8E6C0;
-            --color-primary-subtle: #EDF4EC;
-            --color-leaf:           #3F7A36;
-            --color-canvas:         #F5F6F5;
-            --color-surface:        #FFFFFF;
-            --color-border:         #E8EBE8;
-            --color-text-primary:   #111A10;
-            --color-text-body:      #3D4D3C;
-            --color-text-muted:     #8FA08E;
-            --color-text-on-dark:   #FFFFFF;
-            --color-on-dark-accent: #A8D4A0;
-            --color-paid-bg:        #E6F4E3;
-            --color-paid-text:      #2D6B26;
-            --color-pending-bg:     #FDF3E3;
-            --color-pending-text:   #9A6520;
-            --color-progress-bg:    #E8F0FE;
-            --color-progress-text:  #3557A0;
-            --color-error-bg:       #FEE2E2;
-            --color-error-text:     #DC2626;
-            --radius-card:          20px;
-            --radius-card-sm:       14px;
-            --radius-pill:          9999px;
-            --radius-icon:          10px;
-            --shadow-card:          0 2px 12px rgba(24,43,22,0.06);
-            --shadow-hover:         0 4px 20px rgba(24,43,22,0.10);
-            --shadow-card-hover:    0 4px 20px rgba(24,43,22,0.10);
-            --font:                 'Plus Jakarta Sans', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-            --font-family:          'Plus Jakarta Sans', 'Inter', sans-serif;
-          }
-          *, *::before, *::after { box-sizing: border-box; }
-          body {
-            margin: 0;
-            font-family: var(--font);
-            color: var(--color-text-body);
-            background: var(--color-canvas);
-            -webkit-font-smoothing: antialiased;
-          }
-          a { color: inherit; text-decoration: none; }
-          button, input, select, textarea { font-family: var(--font); }
-          ::-webkit-scrollbar { width: 6px; height: 6px; }
-          ::-webkit-scrollbar-track { background: transparent; }
-          ::-webkit-scrollbar-thumb { background: var(--color-border); border-radius: 3px; }
-
-          /* ── Animations & micro-interactions (charte : moins de monotonie) ── */
-          @keyframes symFadeUp { from { opacity:0; transform:translateY(12px) } to { opacity:1; transform:translateY(0) } }
-          @keyframes symFadeIn { from { opacity:0 } to { opacity:1 } }
-          @keyframes symShimmer { 0%{background-position:-450px 0} 100%{background-position:450px 0} }
-          @keyframes symFloat { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-5px)} }
-          @keyframes symPop { 0%{transform:scale(.94)} 60%{transform:scale(1.03)} 100%{transform:scale(1)} }
-          /* Entrée en fondu montant (avec délais échelonnés pour listes/grilles) */
-          .sym-in   { animation: symFadeUp .5s cubic-bezier(.22,.61,.36,1) both; }
-          .sym-in-1 { animation-delay:.05s } .sym-in-2 { animation-delay:.11s }
-          .sym-in-3 { animation-delay:.17s } .sym-in-4 { animation-delay:.23s }
-          .sym-in-5 { animation-delay:.29s } .sym-in-6 { animation-delay:.35s }
-          .sym-fade { animation: symFadeIn .45s ease both; }
-          .sym-pop  { animation: symPop .35s cubic-bezier(.22,.61,.36,1) both; }
-          /* Carte : entrée + léger soulèvement au survol */
-          .sym-card { transition: transform .25s cubic-bezier(.22,.61,.36,1), box-shadow .25s ease, border-color .25s ease; }
-          .sym-card:hover { transform: translateY(-3px); box-shadow: var(--shadow-card-hover); }
-          /* Transitions douces par défaut sur les éléments interactifs */
-          button, a, .sym-tap { transition: background-color .2s ease, color .2s ease, transform .12s ease, box-shadow .2s ease, border-color .2s ease; }
-          .sym-tap:active { transform: scale(.97); }
-          /* Squelette de chargement (shimmer) */
-          .sym-skeleton { background:linear-gradient(90deg, var(--color-border) 25%, var(--color-primary-subtle) 50%, var(--color-border) 75%);
-            background-size:900px 100%; animation:symShimmer 1.3s infinite linear; border-radius:var(--radius-card-sm); }
-          @media (prefers-reduced-motion: reduce){
-            .sym-in,.sym-fade,.sym-pop,.sym-card,.sym-tap,.sym-skeleton{ animation:none!important; transition:none!important }
-            .sym-card:hover{ transform:none }
-          }
-          /* ── Adaptation aux petits écrans ────────────────────────────
-             TOUT est enfermé dans cette media query : au-dessus de 900px,
-             aucune de ces règles n'existe, donc la version bureau est
-             inchangée par construction. Le !important est nécessaire (et
-             sans risque ici) parce que les pages posent leurs styles en
-             ligne, qui l'emportent autrement sur une classe. */
-          @media (max-width: 900px){
-            /* Marges de page : 32px sur un écran de 390px, c'est un sixième
-               de la largeur perdu de chaque côté. */
-            .sym-page{ padding-left:16px!important; padding-right:16px!important;
-                       padding-top:20px!important; padding-bottom:24px!important; }
-            /* Grilles d'indicateurs : elles se REPLIENT au lieu de se
-               comprimer. À 4, 5 ou 6 colonnes fixes, chaque carte tombait
-               sous 70px et devenait illisible. */
-            .sym-grid-auto{ grid-template-columns:repeat(auto-fit,minmax(150px,1fr))!important; }
-            /* Grilles à deux colonnes de formulaire : une seule colonne. */
-            .sym-grid-1{ grid-template-columns:1fr!important; }
-            /* Blocs à largeur plancher : ils défilent au lieu de pousser
-               la page entière hors de l'écran. */
-            .sym-scroll-x{ overflow-x:auto!important; }
-            /* Cartes à largeur figée (tableaux, graphiques) : elles suivent
-               la largeur disponible. */
-            .sym-fluide{ max-width:100%!important; }
-            /* Bulles de conversation : 70% d'un petit écran ne laisse pas
-               de place au texte. */
-            .sym-bulle{ max-width:88%!important; }
-          }
-        ` }} />
       </head>
       <body>
         {/* refetch coupé : évite le repolling en boucle de /api/auth/session (jusqu'à 6 s
