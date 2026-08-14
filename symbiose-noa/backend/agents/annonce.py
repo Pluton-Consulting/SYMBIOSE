@@ -132,6 +132,18 @@ CLOTURES = {
     "ajouter_document": "terminer_document",
 }
 
+# UNE CLÔTURE PEUT ÊTRE SATISFAITE AUTREMENT QUE PAR L'ACTION QU'ON NOMME.
+#
+# Relevé sur le projet jumeau, dont le serveur de fichiers offre un geste
+# composé « finalise ET dépose » : absent de cette table, il laissait la
+# clôture insatisfaite après un dépôt réussi, et le rappel poussait vers la
+# fermeture SEULE — document jamais déposé. Symbiose n'a pas encore d'action
+# de dépôt sur le Drive ; la table est prête pour le jour où elle arrivera, et
+# le mécanisme reste identique des deux côtés.
+SATISFAIT_PAR: dict[str, set[str]] = {
+    "terminer_document": {"terminer_document"},
+}
+
 
 def est_une_annonce(texte: str) -> bool:
     """Le texte promet-il une action au lieu de la faire ?
@@ -170,6 +182,6 @@ def cloture_attendue(resultats) -> str | None:
         skill = r.get("skill") or ""
         if skill in CLOTURES:
             attendue = CLOTURES[skill]
-        elif skill == attendue:
+        elif attendue and skill in SATISFAIT_PAR.get(attendue, {attendue}):
             attendue = None
     return attendue
