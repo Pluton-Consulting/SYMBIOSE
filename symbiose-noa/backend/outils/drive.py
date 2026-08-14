@@ -92,6 +92,33 @@ async def _service():
     return service
 
 
+async def _racines(service) -> list[str]:
+    """Les dossiers de tête à explorer quand tout le Drive est ouvert.
+
+    « root » NE DÉSIGNE QUE « MON DRIVE ». Un Drive PARTAGÉ — celui d'une
+    entreprise, justement — a sa propre racine, dont l'identifiant est celui du
+    Drive lui-même. Partir de « root » sur une organisation qui travaille en
+    Drive partagé rend un dossier personnel vide, et l'assistant conclut que le
+    Drive est vide. C'est le même piège que `corpora` côté ingestion : les
+    réglages « autorisent » les Drive partagés sans jamais décider d'y chercher.
+
+    On rend donc « root » ET la racine de chaque Drive partagé accessible.
+    """
+    racines = ["root"]
+    try:
+        def _appel():
+            return service.drives().list(pageSize=100, fields="drives(id,name)").execute()
+        partages = (await asyncio.to_thread(_appel)).get("drives", [])
+        racines += [d["id"] for d in partages if d.get("id")]
+        if partages:
+            logger.info("Drive : %d Drive(s) partagé(s) trouvé(s)", len(partages))
+    except Exception as e:  # noqa: BLE001
+        # Le compte n'a peut-être aucun Drive partagé, ou pas le droit de les
+        # lister. Ce n'est pas une panne : on continue avec « Mon Drive ».
+        logger.info("Drive : liste des Drive partagés indisponible (%s)", e)
+    return racines
+
+
 def _tout_le_drive(perimetres: list) -> bool:
     """Le périmètre couvre-t-il le Drive ENTIER ?
 
@@ -150,10 +177,9 @@ async def apercu(dossier: Optional[str] = None,
                 "Aucun dossier du Drive n'est ouvert à l'assistant pour ce rôle. "
                 "Un administrateur doit renseigner GOOGLE_DRIVE_PERIMETRES. Ce "
                 "n'est PAS un Drive vide : dis-le tel quel.")
-        # Périmètre ouvert sur tout le Drive : on part de sa RACINE. « root » est
-        # l'alias que l'API reconnaît pour le dossier de tête.
-        cibles = [d for d, _ in perimetres if d] or (
-            ["root"] if _tout_le_drive(perimetres) else [])
+        cibles = [d for d, _ in perimetres if d]
+        if not cibles and _tout_le_drive(perimetres):
+            cibles = await _racines(await _service())
         if not cibles:
             raise DriveRefuse(
                 "Aucun dossier du Drive n'est ouvert à l'assistant pour ce rôle.")
