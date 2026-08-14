@@ -24,7 +24,7 @@ def scaffold(name: str, requis: list[str], resultat: list[str]) -> str:
     resultat_lines = "\n".join(f'            {k!r}: "[À COMPLÉTER]",' for k in resultat)
     return (
         "def run(data: dict) -> dict:\n"
-        f'    """Skill Symbiose « {name} » — squelette générique.\n'
+        f'    """Skill Symbiose « {name} » : squelette générique.\n'
         f"    Entrées attendues : {requis}.\n"
         '    Règle: ne JAMAIS inventer. Toute donnée absente => "[À COMPLÉTER]".\n'
         '    La logique métier réelle est décrite dans prompt_template."""\n'
@@ -37,7 +37,7 @@ def scaffold(name: str, requis: list[str], resultat: list[str]) -> str:
         "        \"resultat\": {\n"
         f"{resultat_lines}\n"
         "        },\n"
-        '        "note": "Squelette générique — implémenter la logique métier (voir prompt_template).",\n'
+        '        "note": "Squelette générique : implémenter la logique métier (voir prompt_template).",\n'
         "    }\n"
     )
 
@@ -127,7 +127,7 @@ CATALOGUE = [
      "Recherche transverse dans la mémoire d'entreprise (tous types de documents).",
      ["requete"], ["resultats", "sources"],
      "Recherche sémantique RAG globale. Restitue les extraits pertinents avec leur source. "
-     "Si rien n'est trouvé, le dire clairement — ne jamais inventer."),
+     "Si rien n'est trouvé, le dire clairement et ne jamais inventer."),
 
     # ===================== AGENT 2 — Conception / Visuels / Production =====================
     ("analyse_plan_pdf", "agent2", "conception",
@@ -161,7 +161,7 @@ CATALOGUE = [
     ("generation_visuel_paysager", "agent2", "visuels",
      "Génère un visuel paysager via Higgsfield à partir d'un brief ou d'une photo.",
      ["brief"], ["url_visuel", "parametres", "variantes"],
-     "Prépare l'appel Higgsfield (brief, style, contraintes). ⚠ Coût API à l'usage — validation avant génération."),
+     "Prépare l'appel Higgsfield (brief, style, contraintes). ⚠ Coût API à l'usage : validation avant génération."),
 
     ("simulation_avant_apres", "agent2", "visuels",
      "Produit un rendu avant/après à partir d'une photo terrain et d'un projet.",
@@ -186,7 +186,7 @@ CATALOGUE = [
      "Ordonne les tâches en séquence logique avec prérequis. Prévisionnel indicatif."),
 
     ("base_prechiffrage", "agent2", "production",
-     "Prépare une base de PRÉ-DEVIS (jamais un chiffrage final — validation humaine obligatoire).",
+     "Prépare une base de PRÉ-DEVIS (jamais un chiffrage final, validation humaine obligatoire).",
      ["postes"], ["lignes_prechiffrage", "hypotheses", "a_valider"],
      "Assemble une base de pré-chiffrage à partir des postes + méthodes internes + prix de référence. "
      "⚠⚠ NE VALIDE JAMAIS un chiffrage : la décision finale et les montants restent 100% humains."),

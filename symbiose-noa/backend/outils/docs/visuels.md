@@ -1,6 +1,6 @@
 # Visuels paysagers (rendus d'aménagement)
 
-Mode d'emploi complet. Les deux actions sont volontairement SÉPARÉES — ce n'est
+Mode d'emploi complet. Les deux actions sont volontairement SÉPARÉES : ce n'est
 pas une chaîne à composer, et c'est la seule paire du catalogue dans ce cas.
 
 ## Pourquoi deux temps
@@ -19,7 +19,7 @@ Les réunir en une fonction reviendrait à payer un tirage à chaque reformulati
 
 Une **illustration d'ambiance**, pas une simulation du terrain réel : les
 proportions, les végétaux et les matériaux sont plausibles, pas mesurés. Elle
-sert à faire ressentir une intention d'aménagement à un client — jamais à
+sert à faire ressentir une intention d'aménagement à un client, jamais à
 remplacer un plan, un métré ou une vue d'implantation.
 
 ## Les formats
@@ -32,4 +32,4 @@ demande que pour l'impression.
 
 La génération est un service externe (Higgsfield) : une clé absente ou expirée
 rend une erreur d'authentification, un délai dépassé signifie que le service
-est surchargé — réessayer plus tard, le brief n'est pas perdu.
+est surchargé : réessayer plus tard, le brief n'est pas perdu.

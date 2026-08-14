@@ -29,7 +29,7 @@ VISION_PROMPT = (
     "clôtures…), surfaces ou cotes LISIBLES, contraintes (dénivelé, accès, réseaux, mitoyenneté), "
     "et opportunités d'aménagement. Ne devine jamais une mesure non lisible : dis « non lisible ». "
     "Réponds en français, structuré. "
-    "Typographie : n'utilise JAMAIS de tiret cadratin (—) ni de tiret demi-cadratin (–) ; emploie une virgule, un deux-points, une parenthèse ou un tiret simple « - »."
+    "Typographie : n'utilise JAMAIS de tiret cadratin ni de tiret demi-cadratin ; emploie plutôt une virgule, un deux-points, une parenthèse ou un point."
 )
 
 # Taille max d'image envoyée au modèle vision (coût / limites API).
@@ -162,7 +162,7 @@ async def browser_node(state: AgentState) -> dict:
     existing = list(state.get("raw_chunks") or [])
     if result["success"]:
         existing.append(
-            "[SOURCE WEB — prix / données externes, à mentionner et à valider]\n" + result["content"]
+            "[SOURCE WEB : prix / données externes, à mentionner et à valider]\n" + result["content"]
         )
     return {
         "raw_chunks": existing,

@@ -128,11 +128,11 @@ def _build_service():
     if not os.path.exists(settings.google_credentials_file):
         raise NotImplementedError(
             "Google Drive non configuré. Deux voies : "
-            "1. RECOMMANDÉ pour un Drive d'entreprise — déposer la clé d'un compte "
+            "1. RECOMMANDÉ pour un Drive d'entreprise, déposer la clé d'un compte "
             f"de service dans {settings.google_service_account_file} : personne "
             "n'a alors à se connecter à Google. "
             f"2. Client OAuth dans {settings.google_credentials_file}, avec un "
-            "consentement interactif (scripts/google_consentement.py) — ou son "
+            "consentement interactif (scripts/google_consentement.py), ou son "
             "résultat collé dans GOOGLE_TOKEN_JSON, sans aucun fichier à copier.")
 
     creds = None

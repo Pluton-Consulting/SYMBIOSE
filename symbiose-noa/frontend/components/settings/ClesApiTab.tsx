@@ -16,16 +16,16 @@ interface Cle {
 }
 
 const LIBELLES: Record<string, { nom: string; role: string }> = {
-  longcat_api_key: { nom: "LongCat", role: "Modèle principal — rédaction courante" },
+  longcat_api_key: { nom: "LongCat", role: "Modèle principal pour la rédaction courante" },
   deepseek_api_key: { nom: "DeepSeek", role: "Flash pour l'orientation, Pro pour l'analyse" },
   openrouter_api_key: { nom: "OpenRouter", role: "Passerelle : mêmes modèles, second chemin" },
-  groq_api_key: { nom: "Groq", role: "Gratuit et rapide — repli" },
+  groq_api_key: { nom: "Groq", role: "Repli gratuit et rapide" },
   anthropic_api_key: { nom: "Anthropic", role: "Vision et raisonnement (optionnel)" },
   google_api_key: { nom: "Google AI", role: "Embeddings de la mémoire d'entreprise" },
   // Higgsfield exige DEUX valeurs. Une seule renseignée ne marche pas : le
   // service refuse l'authentification, sans dire laquelle manque.
-  higgsfield_api_key: { nom: "Higgsfield — clé", role: "Visuels paysagers — facturé à l'usage" },
-  higgsfield_api_secret: { nom: "Higgsfield — secret", role: "Second identifiant, exigé avec la clé" },
+  higgsfield_api_key: { nom: "Higgsfield (clé)", role: "Visuels paysagers, facturé à l'usage" },
+  higgsfield_api_secret: { nom: "Higgsfield (secret)", role: "Second identifiant, exigé avec la clé" },
 }
 
 export default function ClesApiTab({ apiUrl, backendToken }: { apiUrl: string; backendToken: string }) {

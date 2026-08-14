@@ -762,7 +762,7 @@ async def arborescence(dossier: Optional[str] = None, profondeur: int = 0,
         if complet and not fichiers_partiels:
             sortie["note"] = (
                 "ARBORESCENCE COMPLÈTE : tous les dossiers y sont, comptes "
-                "exacts. Recopie le `schema` TEL QUEL dans un bloc ``` — ne "
+                "exacts. Recopie le `schema` TEL QUEL dans un bloc ```. Ne "
                 "relance PAS l'exploration, il n'y a rien de plus à trouver.")
         else:
             morceaux = []
@@ -775,7 +775,7 @@ async def arborescence(dossier: Optional[str] = None, profondeur: int = 0,
                     f"plus de {MAX_PAGES_FICHIERS * 1000} fichiers : les comptes "
                     "de fichiers sont partiels")
             sortie["note"] = ("Arborescence rendue, mais " + " ; ".join(morceaux)
-                              + ". Dis-le tel quel — ne présente pas ces "
+                              + ". Dis-le tel quel : ne présente pas ces "
                                 "nombres comme exhaustifs.")
         return sortie
 
@@ -836,7 +836,7 @@ async def arborescence(dossier: Optional[str] = None, profondeur: int = 0,
     }
     sortie["note"] = (
         "ARBORESCENCE COMPLÈTE du périmètre autorisé. Recopie le `schema` TEL "
-        "QUEL dans un bloc ``` — ne relance pas l'exploration."
+        "QUEL dans un bloc ```. Ne relance pas l'exploration."
         if not partiel else
         f"Arbre partiel (plafond de {MAX_DOSSIERS_ARBRE} dossiers ou de "
         "profondeur atteint) : précise un sous-dossier pour le détail. Ne le "

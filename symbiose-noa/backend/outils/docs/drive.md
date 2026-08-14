@@ -1,4 +1,4 @@
-# Google Drive — mode d'emploi
+# Google Drive : mode d'emploi
 
 Ce texte n'est **pas** injecté dans le prompt : il se charge par l'action
 `mode_emploi` avec `outil: "drive"`. C'est ce qui permet d'y écrire tout ce qui
@@ -15,7 +15,7 @@ entier. Quand quelqu'un demande « ce qu'il y a sur le Drive », c'est `drive_ap
 
 La **mémoire d'entreprise** contient le *contenu* des documents du Drive, ingéré
 par la synchronisation : on y cherche une phrase, un montant, une clause. Le
-Drive lui-même répond à des questions de *structure* — combien de dossiers, que
+Drive lui-même répond à des questions de *structure* : combien de dossiers, que
 contient celui-ci, ouvre-moi tel fichier.
 
 Une recherche documentaire infructueuse ne prouve donc pas qu'un fichier est
@@ -39,7 +39,7 @@ et seulement ceux dont le niveau d'accès est visible par le rôle qui demande.
 
 Un dossier en `direction_only` **n'existe pas** pour un commercial : ni son
 contenu, ni son nom, ni le fait qu'il existe. Le filtrage se fait avant le
-listage, pas à l'affichage — masquer après coup laisserait fuiter les noms, et
+listage, pas à l'affichage : masquer après coup laisserait fuiter les noms, et
 un dossier nommé « Rupture conventionnelle Untel » en dit déjà trop.
 
 Quand aucun dossier n'est ouvert, l'outil lève un refus explicite. **Ce n'est pas
@@ -51,7 +51,7 @@ en bouche.
 - **200 entrées** lues par dossier. Au-delà, le résultat porte `tronque: true`
   et une note : un compte partiel ne doit jamais être présenté comme exact.
 - **3 niveaux** de profondeur au maximum, **40 dossiers** parcourus au total.
-  Un dossier atteint à la limite est marqué `explore: false` — son contenu est
+  Un dossier atteint à la limite est marqué `explore: false` : son contenu est
   *inconnu*, pas vide.
 - **5 fichiers** par lecture en lot. Le résultat indique combien de fichiers
   correspondaient réellement : « j'ai lu 5 fichiers » sur 40 correspondances
@@ -65,23 +65,23 @@ texte, `.txt`, `.md`, `.csv`.
 
 Ne se lit pas : `.docx`, `.xlsx` propriétaires, images, PDF scannés sans OCR.
 Le fichier est alors rendu avec une note disant qu'il existe mais que son
-contenu n'a pas pu être extrait — ce qui n'est pas la même chose qu'un fichier
+contenu n'a pas pu être extrait, ce qui n'est pas la même chose qu'un fichier
 introuvable.
 
 ## Pannes connues
 
-**« Aucun fichier nommé X »** — la recherche porte sur le nom, dans les dossiers
+**« Aucun fichier nommé X »** : la recherche porte sur le nom, dans les dossiers
 ouverts, sans descendre dans les sous-dossiers. Un fichier rangé deux niveaux
 plus bas ne sera pas trouvé : passer par `drive_arborescence` pour situer le
 dossier, puis rouvrir avec le bon `dossier`.
 
-**Un compte qui semble faux** — vérifier `tronque`. Le Drive pagine, et un
+**Un compte qui semble faux** : vérifier `tronque`. Le Drive pagine, et un
 dossier de plusieurs milliers d'entrées ne rend que les premières.
 
-**Un fichier visible dans le navigateur mais introuvable ici** — il est
+**Un fichier visible dans le navigateur mais introuvable ici** : il est
 probablement hors des périmètres déclarés, ou dans un Drive partagé auquel le
 compte de synchronisation n'a pas été ajouté comme membre.
 
-**Rien ne répond** — le jeton OAuth a peut-être expiré. Si l'écran de
+**Rien ne répond** : le jeton OAuth a peut-être expiré. Si l'écran de
 consentement Google est resté « en test », le jeton meurt tous les 7 jours ;
 il faut le repasser en « interne » ou « en production ».
