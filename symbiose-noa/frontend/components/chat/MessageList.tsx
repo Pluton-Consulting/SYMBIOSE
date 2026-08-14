@@ -54,7 +54,7 @@ export default function MessageList({ messages, onAction, apiUrl, backendToken }
     }}>
       {messages.length === 0 && (
         <div className="sym-in" style={{ textAlign: "center", marginTop: 80 }}>
-          <p style={{ margin: 0, fontSize: 17, fontWeight: 500, color: "var(--color-text-body)" }}>Posez votre question pour démarrer.</p>
+          <p style={{ margin: 0, fontSize: 17, fontWeight: 500, color: "var(--marque-text-body)" }}>Posez votre question pour démarrer.</p>
         </div>
       )}
       <style>{`
@@ -64,17 +64,17 @@ export default function MessageList({ messages, onAction, apiUrl, backendToken }
            pour que la conversation en cours reste au premier plan. */
         .sym-attente{ opacity:.62; box-shadow:none!important; transition:opacity .3s ease; }
         .sym-attente:hover{ opacity:.85; }
-        .sym-attente-moi{ background:var(--color-surface)!important;
-          color:var(--color-primary)!important;
-          border:1.5px dashed var(--color-primary)!important; }
-        .sym-attente-ia{ border:1.5px dashed var(--color-border);
-          border-radius:var(--radius-card-sm); padding:12px 16px;
-          color:var(--color-text-muted); font-size:13.5px; font-style:italic;
+        .sym-attente-moi{ background:var(--marque-surface)!important;
+          color:var(--marque-primary)!important;
+          border:1.5px dashed var(--marque-primary)!important; }
+        .sym-attente-ia{ border:1.5px dashed var(--marque-border);
+          border-radius:var(--marque-radius-card-sm); padding:12px 16px;
+          color:var(--marque-text-muted); font-size:13.5px; font-style:italic;
           display:flex; align-items:center; gap:9px; }
         @keyframes symPointille { to { background-position: 22px 0 } }
         .sym-attente-fil{ flex:1; height:2px; border-radius:1px;
           background:repeating-linear-gradient(90deg,
-            var(--color-border) 0 6px, transparent 6px 11px);
+            var(--marque-border) 0 6px, transparent 6px 11px);
           background-size:22px 2px; animation:symPointille 1.1s linear infinite; }
         @media (prefers-reduced-motion: reduce){ .sym-attente-fil{ animation:none } }
       `}</style>
@@ -88,11 +88,11 @@ export default function MessageList({ messages, onAction, apiUrl, backendToken }
             style={{
               alignSelf: "flex-end",
               maxWidth: "70%",
-              background: "linear-gradient(180deg, var(--color-primary), var(--color-primary-hover))",
-              color: "var(--color-text-on-dark)",
+              background: "linear-gradient(180deg, var(--marque-primary), var(--marque-primary-hover))",
+              color: "var(--marque-text-on-dark)",
               padding: "12px 16px",
-              borderRadius: "var(--radius-card-sm)",
-              boxShadow: "var(--shadow-card)",
+              borderRadius: "var(--marque-radius-card-sm)",
+              boxShadow: "var(--marque-shadow-card)",
               border: "none",
               fontSize: 14,
               lineHeight: 1.5,

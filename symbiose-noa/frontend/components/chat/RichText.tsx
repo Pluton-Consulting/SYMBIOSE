@@ -22,7 +22,7 @@ function enrichir(ligne: string, cle: string): ReactNode[] {
   return ligne.split(INLINE).filter(Boolean).map((bout, i) => {
     const k = `${cle}-${i}`
     if (/^\*\*.+\*\*$/.test(bout) || /^__.+__$/.test(bout)) {
-      return <strong key={k} style={{ fontWeight: 700, color: "var(--color-text-primary)" }}>{bout.slice(2, -2)}</strong>
+      return <strong key={k} style={{ fontWeight: 700, color: "var(--marque-text-primary)" }}>{bout.slice(2, -2)}</strong>
     }
     if (/^\*[^*]+\*$/.test(bout)) {
       return <em key={k}>{bout.slice(1, -1)}</em>
@@ -31,7 +31,7 @@ function enrichir(ligne: string, cle: string): ReactNode[] {
       return (
         <code key={k} style={{
           fontFamily: "ui-monospace, Consolas, monospace", fontSize: "0.92em",
-          background: "var(--color-canvas)", border: "1px solid var(--color-border)",
+          background: "var(--marque-canvas)", border: "1px solid var(--marque-border)",
           borderRadius: 5, padding: "1px 5px",
         }}>{bout.slice(1, -1)}</code>
       )
@@ -78,7 +78,7 @@ export function RichText({ texte }: { texte: string }) {
       blocs.push(
         <div key={`h-${index}`} style={{
           fontWeight: 700, marginTop: blocs.length ? 10 : 0, marginBottom: 2,
-          fontSize: niveau <= 2 ? 15.5 : 14.5, color: "var(--color-text-primary)",
+          fontSize: niveau <= 2 ? 15.5 : 14.5, color: "var(--marque-text-primary)",
         }}>{enrichir(titre[2], `ht-${index}`)}</div>
       )
       return

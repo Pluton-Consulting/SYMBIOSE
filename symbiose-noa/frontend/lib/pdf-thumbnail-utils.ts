@@ -1,7 +1,20 @@
 import type { PdfDocumentObject, PdfEngine } from "@embedpdf/models"
 
-const PDFIUM_VERSION = "2.14.4"
-const PDFIUM_WASM_URL = `https://cdn.jsdelivr.net/npm/@embedpdf/pdfium@${PDFIUM_VERSION}/dist/pdfium.wasm`
+// LE MOTEUR PDF EST SERVI PAR NOUS, PAS PAR UN CDN.
+//
+// Le composant d'origine chargeait ce binaire depuis cdn.jsdelivr.net. Cette
+// application tourne en HTTP sur un VPN Headscale fermé : rien ne garantit
+// qu'un poste puisse joindre un CDN public, et l'aperçu d'un PDF échouerait
+// alors sans que la cause soit visible à l'écran.
+//
+// Le fichier vient du paquet `@embedpdf/pdfium` déjà installé, copié dans
+// `public/pdfium/`. Il pèse 4,5 Mo, mais il n'est téléchargé qu'à la PREMIÈRE
+// ouverture d'un PDF (l'import est dynamique), puis mis en cache par le
+// navigateur : aucun coût pour les tours qui n'affichent pas de document.
+//
+// À la mise à jour du paquet, recopier le binaire :
+//   cp node_modules/@embedpdf/pdfium/dist/pdfium.wasm public/pdfium/
+const PDFIUM_WASM_URL = "/pdfium/pdfium.wasm"
 
 let sharedEnginePromise: Promise<PdfEngine> | null = null
 const pdfDocumentCache = new Map<string, Promise<PdfDocumentObject>>()

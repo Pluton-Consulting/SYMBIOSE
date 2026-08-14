@@ -2,7 +2,7 @@
 
 import { cn } from "@/lib/utils";
 import type { MotionProps } from "motion/react";
-import { motion } from "motion/react";
+import { motion, useReducedMotion } from "motion/react";
 import type { CSSProperties, ElementType, JSX } from "react";
 import { memo, useMemo } from "react";
 
@@ -42,6 +42,19 @@ const ShimmerComponent = ({
     Component as keyof JSX.IntrinsicElements
   );
 
+  // LE MOUVEMENT SE COUPE QUAND L'UTILISATEUR L'A DEMANDÉ.
+  //
+  // Ce composant anime en JavaScript, pas en CSS : la règle
+  // `prefers-reduced-motion` de la feuille globale — qui protège tout le
+  // reste de l'application — n'a aucune prise sur lui. Sans cette garde, un
+  // utilisateur sensible au mouvement verrait un texte défiler en boucle
+  // sans fin pendant chaque attente, précisément ce qu'il a désactivé
+  // partout ailleurs.
+  //
+  // On garde le dégradé (l'indice visuel « ça travaille ») mais on arrête
+  // la boucle : le texte reste lisible, il ne bouge plus.
+  const mouvementReduit = useReducedMotion();
+
   const dynamicSpread = useMemo(
     () => (children?.length ?? 0) * spread,
     [children, spread]
@@ -63,11 +76,15 @@ const ShimmerComponent = ({
             "var(--bg), linear-gradient(var(--color-muted-foreground), var(--color-muted-foreground))",
         } as CSSProperties
       }
-      transition={{
-        duration,
-        ease: "linear",
-        repeat: Number.POSITIVE_INFINITY,
-      }}
+      transition={
+        mouvementReduit
+          ? { duration: 0 }
+          : {
+              duration,
+              ease: "linear",
+              repeat: Number.POSITIVE_INFINITY,
+            }
+      }
     >
       {children}
     </MotionComponent>

@@ -846,12 +846,12 @@ export default function ChatWindow({ threadId: initialThreadId = null, token: to
           @keyframes symStepIn { from{opacity:0;transform:translateY(4px)} to{opacity:1;transform:translateY(0)} }
           .sym-think{display:flex;gap:12px;align-items:center;padding:10px 32px}
           .sym-orb{width:12px;height:12px;border-radius:50%;flex-shrink:0;
-            background:radial-gradient(circle at 35% 35%, var(--color-primary-mid), var(--color-primary));
-            box-shadow:0 0 0 4px var(--color-primary-subtle);animation:symOrb 1.3s ease-in-out infinite}
+            background:radial-gradient(circle at 35% 35%, var(--marque-primary-mid), var(--marque-primary));
+            box-shadow:0 0 0 4px var(--marque-primary-subtle);animation:symOrb 1.3s ease-in-out infinite}
           .sym-step{display:flex;align-items:center;gap:8px;font-size:14px;font-weight:600;
-            color:var(--color-text-primary);animation:symStepIn .35s ease}
+            color:var(--marque-text-primary);animation:symStepIn .35s ease}
           .sym-dots{display:inline-flex;gap:3px}
-          .sym-dots i{width:4px;height:4px;border-radius:50%;background:var(--color-primary-mid);animation:symDot 1.2s infinite}
+          .sym-dots i{width:4px;height:4px;border-radius:50%;background:var(--marque-primary-mid);animation:symDot 1.2s infinite}
           .sym-dots i:nth-child(2){animation-delay:.18s}
           .sym-dots i:nth-child(3){animation-delay:.36s}
           @media (prefers-reduced-motion: reduce){ .sym-orb,.sym-dots i,.sym-step{animation:none} }

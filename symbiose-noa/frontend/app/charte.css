@@ -4,62 +4,73 @@
 
    Tout ce qui distingue visuellement un client d'un autre est ICI, et
    nulle part ailleurs. Dupliquer l'application pour une nouvelle
-   entreprise se réduit donc à réécrire les valeurs de ce fichier : ni
-   composant à retoucher, ni classe à chercher dans le code.
+   entreprise se réduit donc à réécrire les valeurs de ce fichier.
 
-   CE FICHIER NE CONTIENT QUE DES VALEURS. La traduction vers le
-   vocabulaire de Tailwind et de shadcn vit dans `theme.css`, qui lui est
-   IDENTIQUE d'un projet à l'autre. Cette séparation est ce qui rend la
-   promesse tenable : si les deux étaient mêlés, copier reviendrait à
-   trier à la main ce qui relève de la marque et ce qui relève du socle.
+   POURQUOI LE PRÉFIXE « --marque- ».
+   Tailwind 4 s'approprie l'espace de noms `--color-*` : tout token de ce
+   nom déclaré dans `@theme` sert à fabriquer des classes utilitaires
+   (`bg-primary`, `border-border`). Nommer AUSSI les couleurs de marque
+   `--color-primary` ou `--color-border` les faisait exister DEUX fois,
+   avec un cycle (`--border` → `--color-border` → `--border`) et une
+   auto-référence sur `--color-error-bg`. Cela ne tenait que par l'ordre
+   de la cascade : une mise en couche, un import déplacé, et `bg-primary`
+   comme `border-border` devenaient invalides d'un coup, sur TOUS les
+   composants à la fois.
+
+   Un préfixe distinct rend la collision impossible par construction.
+   `theme.css` traduit ensuite ces valeurs vers les deux vocabulaires
+   attendus — celui de shadcn et celui de Tailwind — et ré-expose les
+   anciens noms `--color-*` pour les composants déjà écrits.
 
    Charte Symbiose Paysage — vert forêt.
    ═══════════════════════════════════════════════════════════════════════ */
 
 :root {
   /* ── Identité ─────────────────────────────────────────────────────── */
-  --color-primary:        #182B16;
-  --color-primary-hover:  #2D5A27;
-  --color-primary-mid:    #3F7A36;
-  --color-primary-light:  #C8E6C0;
-  --color-primary-subtle: #EDF4EC;
-  --color-leaf:           #3F7A36;
+  --marque-primary:        #182B16;
+  --marque-primary-hover:  #2D5A27;
+  --marque-primary-mid:    #3F7A36;
+  --marque-primary-light:  #C8E6C0;
+  --marque-primary-subtle: #EDF4EC;
+  --marque-leaf:           #3F7A36;
 
   /* ── Fonds et bordures ────────────────────────────────────────────── */
-  --color-canvas:         #F5F6F5;
-  --color-surface:        #FFFFFF;
-  --color-border:         #E8EBE8;
+  --marque-canvas:         #F5F6F5;
+  --marque-surface:        #FFFFFF;
+  --marque-border:         #E8EBE8;
 
   /* ── Textes ───────────────────────────────────────────────────────── */
-  --color-text-primary:   #111A10;
-  --color-text-body:      #3D4D3C;
-  --color-text-muted:     #8FA08E;
-  --color-text-on-dark:   #FFFFFF;
-  --color-on-dark-accent: #A8D4A0;
+  --marque-text-primary:   #111A10;
+  --marque-text-body:      #3D4D3C;
+  --marque-text-muted:     #8FA08E;
+  --marque-text-on-dark:   #FFFFFF;
+  --marque-on-dark-accent: #A8D4A0;
 
   /* ── États métier ─────────────────────────────────────────────────── */
-  --color-paid-bg:        #E6F4E3;
-  --color-paid-text:      #2D6B26;
-  --color-pending-bg:     #FDF3E3;
-  --color-pending-text:   #9A6520;
-  --color-progress-bg:    #E8F0FE;
-  --color-progress-text:  #3557A0;
-  --color-error-bg:       #FEE2E2;
-  --color-error-text:     #DC2626;
-  --color-error:          #DC2626;
+  --marque-paid-bg:        #E6F4E3;
+  --marque-paid-text:      #2D6B26;
+  --marque-pending-bg:     #FDF3E3;
+  --marque-pending-text:   #9A6520;
+  --marque-progress-bg:    #E8F0FE;
+  --marque-progress-text:  #3557A0;
+  --marque-error-bg:       #FEE2E2;
+  --marque-error-text:     #DC2626;
+  /* « En retard » : le débrief d'apprentissage lisait déjà ces deux noms,
+     qui n'avaient jamais été définis — l'étiquette sortait donc sans fond
+     et dans la couleur héritée. Teinte ambrée soutenue : plus alarmante
+     qu'un simple « en attente », moins qu'une erreur. */
+  --marque-late-bg:        #FDECD8;
+  --marque-late-text:      #B45309;
 
   /* ── Formes ───────────────────────────────────────────────────────── */
-  --radius-card:          20px;
-  --radius-card-sm:       14px;
-  --radius-pill:          9999px;
-  --radius-icon:          10px;
-  --shadow-card:          0 2px 12px rgba(24, 43, 22, 0.06);
-  --shadow-hover:         0 4px 20px rgba(24, 43, 22, 0.10);
-  --shadow-card-hover:    0 4px 20px rgba(24, 43, 22, 0.10);
+  --marque-radius-card:    20px;
+  --marque-radius-card-sm: 14px;
+  --marque-radius-pill:    9999px;
+  --marque-radius-icon:    10px;
+  --marque-shadow-card:    0 2px 12px rgba(24, 43, 22, 0.06);
+  --marque-shadow-hover:   0 4px 20px rgba(24, 43, 22, 0.10);
 
   /* ── Typographie ──────────────────────────────────────────────────
-     La police fait partie de l'identité au même titre que les couleurs :
-     elle se change ici, pas dans les composants. */
-  --font:        'Plus Jakarta Sans', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-  --font-family: 'Plus Jakarta Sans', 'Inter', sans-serif;
+     La police fait partie de l'identité au même titre que les couleurs. */
+  --marque-font: 'Plus Jakarta Sans', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
 }

@@ -117,13 +117,13 @@ export default function InputBar({ onSend, disabled, modeFile, enCours, onStop }
       }}
       style={{
         padding: "16px 32px",
-        background: survol ? "var(--color-primary-subtle)" : "var(--color-surface)",
-        borderTop: `1px solid ${survol ? "var(--color-primary)" : "var(--color-border)"}`,
+        background: survol ? "var(--marque-primary-subtle)" : "var(--marque-surface)",
+        borderTop: `1px solid ${survol ? "var(--marque-primary)" : "var(--marque-border)"}`,
         transition: "background .15s ease, border-color .15s ease",
       }}
     >
       {survol && (
-        <div style={{ fontSize: 13, fontWeight: 600, color: "var(--color-primary)", marginBottom: 10 }}>
+        <div style={{ fontSize: 13, fontWeight: 600, color: "var(--marque-primary)", marginBottom: 10 }}>
           Déposez le fichier pour le joindre
         </div>
       )}
@@ -131,21 +131,21 @@ export default function InputBar({ onSend, disabled, modeFile, enCours, onStop }
       {piece && (
         <div style={{
           display: "inline-flex", alignItems: "center", gap: 10, marginBottom: 10,
-          background: "var(--color-primary-subtle)", border: "1px solid var(--color-primary-light)",
-          borderRadius: "var(--radius-pill)", padding: "6px 8px 6px 14px", maxWidth: "100%",
+          background: "var(--marque-primary-subtle)", border: "1px solid var(--marque-primary-light)",
+          borderRadius: "var(--marque-radius-pill)", padding: "6px 8px 6px 14px", maxWidth: "100%",
         }}>
-          <span style={{ fontSize: 13, fontWeight: 600, color: "var(--color-primary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+          <span style={{ fontSize: 13, fontWeight: 600, color: "var(--marque-primary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
             {piece.name}
           </span>
           <button onClick={() => setPiece(null)} aria-label="Retirer le fichier" style={{
-            border: "none", background: "transparent", cursor: "pointer", color: "var(--color-primary)",
+            border: "none", background: "transparent", cursor: "pointer", color: "var(--marque-primary)",
             fontSize: 17, lineHeight: 1, padding: "0 4px", fontWeight: 700,
           }}>×</button>
         </div>
       )}
 
       {erreur && (
-        <div style={{ fontSize: 13, color: "var(--color-error)", marginBottom: 10 }}>{erreur}</div>
+        <div style={{ fontSize: 13, color: "var(--marque-error-text)", marginBottom: 10 }}>{erreur}</div>
       )}
 
       <div style={{ display: "flex", gap: 10, alignItems: "flex-end" }}>
@@ -159,10 +159,10 @@ export default function InputBar({ onSend, disabled, modeFile, enCours, onStop }
           title="Joindre un fichier (Excel, Word, PDF, image, texte…)"
           aria-label="Joindre un fichier"
           style={{
-            background: "transparent", border: "1px solid var(--color-border)",
-            borderRadius: "var(--radius-pill)", width: 40, height: 40, flexShrink: 0,
+            background: "transparent", border: "1px solid var(--marque-border)",
+            borderRadius: "var(--marque-radius-pill)", width: 40, height: 40, flexShrink: 0,
             cursor: disabled ? "not-allowed" : "pointer", opacity: disabled ? 0.5 : 1,
-            color: "var(--color-text-muted)", fontSize: 17, display: "flex",
+            color: "var(--marque-text-muted)", fontSize: 17, display: "flex",
             alignItems: "center", justifyContent: "center",
           }}
         >
@@ -180,9 +180,9 @@ export default function InputBar({ onSend, disabled, modeFile, enCours, onStop }
           disabled={disabled}
           rows={1}
           style={{
-            flex: 1, resize: "none", border: "1px solid var(--color-border)",
-            borderRadius: "var(--radius-pill)", padding: "10px 16px", fontSize: 14,
-            fontFamily: "var(--font)", color: "var(--color-text-body)", outline: "none",
+            flex: 1, resize: "none", border: "1px solid var(--marque-border)",
+            borderRadius: "var(--marque-radius-pill)", padding: "10px 16px", fontSize: 14,
+            fontFamily: "var(--marque-font)", color: "var(--marque-text-body)", outline: "none",
             transition: "border-color .2s ease, box-shadow .2s ease",
           }}
         />
@@ -198,10 +198,10 @@ export default function InputBar({ onSend, disabled, modeFile, enCours, onStop }
             title="Arrêter le traitement en cours"
             aria-label="Arrêter le traitement en cours"
             style={{
-              background: "var(--color-surface)",
-              border: "1px solid var(--color-error)",
-              color: "var(--color-error)",
-              borderRadius: "var(--radius-pill)", padding: "10px 16px",
+              background: "var(--marque-surface)",
+              border: "1px solid var(--marque-error-text)",
+              color: "var(--marque-error-text)",
+              borderRadius: "var(--marque-radius-pill)", padding: "10px 16px",
               fontSize: 14, fontWeight: 600, cursor: "pointer",
               whiteSpace: "nowrap", flexShrink: 0,
               display: "flex", alignItems: "center", gap: 8,
@@ -219,11 +219,11 @@ export default function InputBar({ onSend, disabled, modeFile, enCours, onStop }
           title={modeFile ? "Mettre en file d'attente" : "Envoyer"}
           aria-label={modeFile ? "Mettre en file d'attente" : "Envoyer"}
           style={{
-            background: "linear-gradient(180deg, var(--color-primary-hover), var(--color-primary))",
-            color: "var(--color-text-on-dark)", border: "none",
-            borderRadius: "var(--radius-pill)", padding: "10px 20px", fontSize: 14,
+            background: "linear-gradient(180deg, var(--marque-primary-hover), var(--marque-primary))",
+            color: "var(--marque-text-on-dark)", border: "none",
+            borderRadius: "var(--marque-radius-pill)", padding: "10px 20px", fontSize: 14,
             fontWeight: 500, cursor: peutEnvoyer ? "pointer" : "not-allowed",
-            opacity: peutEnvoyer ? 1 : 0.6, whiteSpace: "nowrap", boxShadow: "var(--shadow-card)",
+            opacity: peutEnvoyer ? 1 : 0.6, whiteSpace: "nowrap", boxShadow: "var(--marque-shadow-card)",
             display: "flex", alignItems: "center", gap: 8,
           }}
         >
