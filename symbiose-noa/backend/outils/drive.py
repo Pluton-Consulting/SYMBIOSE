@@ -145,6 +145,19 @@ def _echappe(v: str) -> str:
     return v.replace("\\", "\\\\").replace("'", "\\'")
 
 
+# LA CASCADE PRODUIT PARFOIS DU FRANÇAIS SANS ACCENT — c'est déjà documenté
+# dans `agents/annonce.py`, et un Drive nommé « Symbiose Extérieur Concept »
+# ne se retrouverait jamais si le modèle écrit « Exterieur ». On compare donc
+# des noms dépouillés, des deux côtés.
+_ACCENTS = str.maketrans("àâäéèêëîïôöùûüçÀÂÄÉÈÊËÎÏÔÖÙÛÜÇ",
+                         "aaaeeeeiioouuucAAAEEEEIIOOUUUC")
+
+
+def _nu(v: str) -> str:
+    """Un nom réduit à ce qui compte pour le reconnaître."""
+    return " ".join((v or "").translate(_ACCENTS).lower().split())
+
+
 def _est_identifiant(v: str) -> bool:
     """Un identifiant Drive, ou un nom écrit par un humain ?
 
@@ -232,13 +245,27 @@ async def _resoudre(service, chemin: str, racines: list[str],
     racine_nommee = False
     drives = await _drives_nommes(service)
     if segments and drives:
-        cherche = segments[0].lower()
-        exact = [d for d in drives if (d.get("name") or "").lower() == cherche]
-        partiel = [d for d in drives if cherche in (d.get("name") or "").lower()]
-        choisi = (exact or partiel)
+        cherche = _nu(segments[0])
         # Restreint aux Drive RÉELLEMENT ouverts à ce rôle : sans ce filtre, un
         # périmètre déclaré serait contourné en nommant le Drive entier.
-        choisi = [d for d in choisi if d["id"] in racines]
+        ouverts = [d for d in drives if d["id"] in racines]
+        exact = [d for d in ouverts if _nu(d.get("name")) == cherche]
+        partiel = [d for d in ouverts if cherche in _nu(d.get("name"))]
+        choisi = exact or partiel
+        # UN NOM AMBIGU NE SE TRANCHE PAS AU HASARD.
+        #
+        # Les Drive de l'entreprise s'appellent « Holding Symbiose Paysage »,
+        # « Symbiose Extérieur Concept » et « Symbiose Paysage » : le mot
+        # « Symbiose » les désigne tous les trois, et « Symbiose Paysage » est
+        # contenu dans le premier. Prendre le premier venu, c'est-à-dire
+        # l'ordre de l'API, enverrait silencieusement vers le Drive d'une autre
+        # entité — et ces Drive porteront les droits d'accès. Un doute se dit
+        # et se fait lever ; il ne se devine pas.
+        if not exact and len(partiel) > 1:
+            noms = ", ".join(sorted(d.get("name") or "" for d in partiel))
+            raise DriveRefuse(
+                f"« {segments[0]} » désigne plusieurs Drive partagés : {noms}. "
+                "Reprends le nom COMPLET de celui que tu veux.")
         if choisi:
             parents = [choisi[0]["id"]]
             parcourus.append(choisi[0]["name"])
@@ -258,6 +285,17 @@ async def _resoudre(service, chemin: str, racines: list[str],
 
     for rang, segment in enumerate(segments):
         trouves = await _dossiers_sous(service, parents, segment)
+        tous: list[dict] | None = None
+        if not trouves:
+            # LE FILTRE DE L'API EST SENSIBLE AUX ACCENTS. « name contains
+            # 'COMPTABILITE' » ne retourne pas « COMPTABILITÉ » : le tri se
+            # fait chez Google, avant que notre comparaison dépouillée ait son
+            # mot à dire. On rabat donc sur un listage complet du niveau, où
+            # c'est nous qui comparons — le filtre serveur n'est qu'un
+            # raccourci, jamais l'autorité.
+            tous = await _dossiers_sous(service, parents)
+            cible = _nu(segment)
+            trouves = [d for d in tous if cible in _nu(d.get("name"))]
         # LE PREMIER SEGMENT SE CHERCHE PARTOUT — mais SEULEMENT si tout le
         # Drive est déjà ouvert. « le dossier communication » ne veut pas dire
         # « à la racine » : les gens nomment le dossier qu'ils ont en tête sans
@@ -274,7 +312,9 @@ async def _resoudre(service, chemin: str, racines: list[str],
         if not trouves and rang == 0 and partout and not racine_nommee:
             trouves = await _dossiers_partout(service, segment)
         if not trouves:
-            dispo = [d["name"] for d in await _dossiers_sous(service, parents)]
+            if tous is None:
+                tous = await _dossiers_sous(service, parents)
+            dispo = [d["name"] for d in tous]
             ou = "/".join(parcourus) if parcourus else "la racine du Drive"
             # LES DRIVE PARTAGÉS SE NOMMENT AUSSI. Le refus ne listait que des
             # DOSSIERS : quand le nom cherché était celui d'un Drive, la liste
@@ -292,10 +332,20 @@ async def _resoudre(service, chemin: str, racines: list[str],
                    if dispo else "Ce niveau ne contient aucun sous-dossier.")
                 + autres
                 + " Reprends le nom EXACT dans l'une de ces listes.")
-        # Une correspondance exacte (à la casse près) l'emporte sur un simple
-        # « contient » : « Communication » et « Communication interne » sortent
-        # tous deux, et c'est le premier qu'on veut.
-        exact = [d for d in trouves if d["name"].lower() == segment.lower()]
+        # Une correspondance exacte (accents et casse mis de côté) l'emporte
+        # sur un simple « contient » : « Communication » et « Communication
+        # interne » sortent tous deux, et c'est le premier qu'on veut.
+        exact = [d for d in trouves if _nu(d["name"]) == _nu(segment)]
+        # MÊME RÈGLE QUE POUR LES DRIVE : un nom qui désigne plusieurs dossiers
+        # frères ne se tranche pas au hasard. « COMPTABILITÉ » et
+        # « COMPTABILITE 2026 » côte à côte enverraient vers l'un ou l'autre
+        # selon l'ordre de l'API, sans que personne ne puisse le prévoir.
+        if not exact and len(trouves) > 1:
+            noms = ", ".join(sorted(d["name"] for d in trouves)[:15])
+            ou = "/".join(parcourus) if parcourus else "la racine du Drive"
+            raise DriveRefuse(
+                f"« {segment} » désigne plusieurs dossiers dans {ou} : {noms}. "
+                "Reprends le nom COMPLET de celui que tu veux.")
         choisi = (exact or trouves)[0]
         parcourus.append(choisi["name"])
         parents = [choisi["id"]]
