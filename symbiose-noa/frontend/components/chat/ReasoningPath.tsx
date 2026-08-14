@@ -2,6 +2,26 @@
 
 // Colonne latérale : le "chemin de réflexion" de Symbiose, façon timeline verticale.
 // Les étapes s'allument au fur et à mesure que l'agent progresse (événements WS nœud-par-nœud).
+//
+// POURQUOI CETTE COLONNE N'EST PAS PASSÉE SUR `ChainOfThought` (AI Elements).
+//
+// Ce n'est pas un oubli : `ChainOfThoughtStep` ne connaît que trois états
+// (terminé, en cours, à venir) là où cette frise en distingue cinq. Les deux
+// manquants sont précisément ceux qui portent une information :
+//
+//   « sauté »  — l'agent est passé PAR-DESSUS cette étape (pas de recherche
+//                web, pas de validation humaine). Le trait pointillé le dit.
+//                Le rabattre sur « à venir » ferait croire qu'elle va encore
+//                arriver, et l'utilisateur l'attendrait pour rien.
+//   « inerte » — rien ne tourne. Distinct de « à venir », qui suppose un
+//                traitement en cours.
+//
+// La mise en page non plus n'a pas d'équivalent : la colonne se partage en
+// deux zones (frise en haut, cartes en bas plafonnées à 52 %) pour que CE QUI
+// ATTEND UNE DÉCISION reste visible sans défiler, et disparaît sous 900 px.
+//
+// Une frise qui ment sur l'état d'une étape coûte plus cher que la cohérence
+// de bibliothèque qu'on gagnerait à l'échanger.
 
 const STAGES: { label: string; desc: string; nodes: string[] }[] = [
   { label: "Analyse", desc: "Nature de la demande", nodes: ["classify", "check_schedule"] },

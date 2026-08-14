@@ -3,6 +3,22 @@
 // en attente. C'est ce qui permet de lancer plusieurs demandes de front, de
 // fermer l'onglet, et de valider une action plusieurs jours apres — tout ce
 // qui s'affiche ici vit en base, rien ne depend de la page ouverte.
+//
+// POURQUOI CES CARTES NE SONT PAS PASSÉES SUR `Tool` OU `Task` (AI Elements).
+//
+// `Tool` affiche l'état par un libellé figé, écrit en dur dans le composant,
+// en anglais, et non surchargeable : « Completed » pour tout ce qui se
+// termine. Or ici le texte d'une tâche achevée vient du BACKEND, et une
+// action refusée revient avec « refusée — rien n'a été fait ». La remplacer
+// par « Completed » ferait passer un refus pour un succès — sur l'écran même
+// où l'on valide des actions engageantes. C'est le seul endroit de
+// l'application où un libellé approximatif a une conséquence réelle.
+//
+// `Task`, lui, n'a aucun état : ni prop `status`, ni `state`. C'est un
+// dépliant décoratif. Il ne peut pas porter les cinq états d'une tâche
+// (en cours, attente d'accord, terminée, échec, interrompue).
+//
+// Les boutons viennent en revanche du même jeu de primitives que le reste.
 
 import { Callout, KeyValueTable, PrimaryButton, GhostButton } from "@/components/blocks"
 

@@ -1,5 +1,6 @@
 import type { Metadata } from "next"
 import { SessionProvider } from "next-auth/react"
+import { TooltipProvider } from "@/components/ui/tooltip"
 
 // LE STYLE VIT DANS DES FICHIERS CSS, PLUS DANS CE COMPOSANT.
 //
@@ -35,7 +36,18 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         {/* refetch coupé : évite le repolling en boucle de /api/auth/session (jusqu'à 6 s
             quand le process compile) qui bloquait la navigation. La session reste valide via le JWT. */}
         <SessionProvider refetchOnWindowFocus={false} refetchInterval={0}>
-          {children}
+          {/* SANS CE FOURNISSEUR, UNE INFO-BULLE FAIT PLANTER LA PAGE.
+              Notre `Tooltip` est la primitive Radix nue : elle exige un
+              ancêtre `TooltipProvider`, sinon elle lève une erreur au
+              montage. Or la plupart des composants AI Elements en posent une
+              (les actions d'un artefact, la navigation d'un aperçu web, tout
+              `PromptInputButton` avec `tooltip`). Le poser ici une fois rend
+              la bibliothèque entière utilisable sans piège : le jour où on
+              câble un de ces composants, il marche, au lieu de casser
+              l'écran à sa première apparition. */}
+          <TooltipProvider delayDuration={300}>
+            {children}
+          </TooltipProvider>
         </SessionProvider>
       </body>
     </html>
