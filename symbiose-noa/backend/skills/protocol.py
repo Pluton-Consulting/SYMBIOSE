@@ -205,6 +205,10 @@ CATALOGUE_AGENT1: dict[str, tuple[str, list[str], list[str]]] = {
         "FERME le document et rend le lien. Tant qu'il n'est pas appele, "
         "AUCUN fichier n'existe",
         ["document_id"], []),
+    "abandonner_document": (
+        "JETTE un document ouvert : contenu perdu, aucun fichier. Pour faire "
+        "le menage quand des documents ouverts trainent ou pour repartir de zero",
+        ["document_id"], []),
     # Les visuels (propres a Symbiose) se declarent dans skills/visuels.py
     # (dictionnaire SKILLS, lu par le registre) : le socle ne bouge pas quand
     # on duplique le projet.
