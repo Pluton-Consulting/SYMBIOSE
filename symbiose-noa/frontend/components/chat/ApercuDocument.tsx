@@ -26,10 +26,34 @@
  */
 
 import * as React from "react"
-import { DocxViewerPreview } from "@/components/extend/docx-viewer"
-import { XlsxViewerPreview } from "@/components/extend/xlsx-viewer"
-import { CsvViewer } from "@/components/extend/csv-viewer"
-import { PDFViewer } from "@/components/extend/pdf-viewer"
+import dynamic from "next/dynamic"
+
+// LES VISIONNEUSES SE TÉLÉCHARGENT QUAND ON REGARDE UN DOCUMENT, PAS AVANT.
+//
+// Importées normalement, elles entrent dans le paquet de la page de chat :
+// mesuré, l'écran passait de 124 ko à 1,64 Mo, payés à CHAQUE ouverture du
+// chat — y compris par les conversations qui ne montrent aucun document.
+// Sur un VPN, c'est plusieurs secondes d'attente avant le premier message.
+//
+// Ces quatre-là ne savent de toute façon travailler que dans un navigateur
+// (canevas, worker, WebAssembly), d'où `ssr: false` : les rendre côté
+// serveur ne produirait rien et coûterait un aller-retour.
+const chargement = () => (
+  <div className="sym-skeleton" style={{ height: "100%", width: "100%" }}
+       aria-label="Chargement de la visionneuse" />
+)
+const DocxViewerPreview = dynamic(
+  () => import("@/components/extend/docx-viewer").then((m) => m.DocxViewerPreview),
+  { ssr: false, loading: chargement })
+const XlsxViewerPreview = dynamic(
+  () => import("@/components/extend/xlsx-viewer").then((m) => m.XlsxViewerPreview),
+  { ssr: false, loading: chargement })
+const CsvViewer = dynamic(
+  () => import("@/components/extend/csv-viewer").then((m) => m.CsvViewer),
+  { ssr: false, loading: chargement })
+const PDFViewer = dynamic(
+  () => import("@/components/extend/pdf-viewer").then((m) => m.PDFViewer),
+  { ssr: false, loading: chargement })
 
 /** Formats que l'on sait afficher, et rien d'autre. */
 export type FormatApercu = "docx" | "xlsx" | "csv" | "pdf"
