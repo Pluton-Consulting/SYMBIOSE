@@ -101,6 +101,28 @@ async def _service():
     return service
 
 
+async def _drives_nommes(service) -> list[dict]:
+    """Les Drive partagés, AVEC leur nom — pas seulement leur identifiant.
+
+    `_racines` ne gardait que les identifiants. Or les gens désignent un Drive
+    partagé par son nom (« dans le Drive partagé Holding Symbiose Paysage »),
+    et un Drive n'est PAS un dossier : aucune recherche `files().list` ne peut
+    le retrouver, quel que soit le motif. Son nom n'existe que dans cette
+    liste-ci ; le jeter rendait la formulation la plus naturelle impossible à
+    résoudre.
+    """
+    def _appel():
+        return service.drives().list(pageSize=100, fields="drives(id,name)").execute()
+    try:
+        return [d for d in (await asyncio.to_thread(_appel)).get("drives", [])
+                if d.get("id")]
+    except Exception as e:  # noqa: BLE001
+        # Le compte n'a peut-être aucun Drive partagé, ou pas le droit de les
+        # lister. Ce n'est pas une panne : on continue avec « Mon Drive ».
+        logger.info("Drive : liste des Drive partagés indisponible (%s)", e)
+        return []
+
+
 async def _racines(service) -> list[str]:
     """Les dossiers de tête à explorer quand tout le Drive est ouvert.
 
@@ -113,19 +135,10 @@ async def _racines(service) -> list[str]:
 
     On rend donc « root » ET la racine de chaque Drive partagé accessible.
     """
-    racines = ["root"]
-    try:
-        def _appel():
-            return service.drives().list(pageSize=100, fields="drives(id,name)").execute()
-        partages = (await asyncio.to_thread(_appel)).get("drives", [])
-        racines += [d["id"] for d in partages if d.get("id")]
-        if partages:
-            logger.info("Drive : %d Drive(s) partagé(s) trouvé(s)", len(partages))
-    except Exception as e:  # noqa: BLE001
-        # Le compte n'a peut-être aucun Drive partagé, ou pas le droit de les
-        # lister. Ce n'est pas une panne : on continue avec « Mon Drive ».
-        logger.info("Drive : liste des Drive partagés indisponible (%s)", e)
-    return racines
+    partages = await _drives_nommes(service)
+    if partages:
+        logger.info("Drive : %d Drive(s) partagé(s) trouvé(s)", len(partages))
+    return ["root"] + [d["id"] for d in partages]
 
 
 def _echappe(v: str) -> str:
@@ -202,6 +215,47 @@ async def _resoudre(service, chemin: str, racines: list[str],
     parents = list(racines)
     parcourus: list[str] = []
     segments = [s.strip() for s in valeur.split("/") if s.strip()]
+
+    # LE PREMIER SEGMENT PEUT ÊTRE UN DRIVE PARTAGÉ LUI-MÊME.
+    #
+    # Relevé en production : « dans le Drive partagé Holding Symbiose Paysage,
+    # dossier Communication » → refus, avec en prime la liste ASSURANCES,
+    # BANQUE, COMMUNICATION… c'est-à-dire le CONTENU de ce Drive. La résolution
+    # y était donc bien arrivée, mais elle ne reconnaissait pas son nom : un
+    # Drive n'est pas un dossier, aucune requête `files().list` ne le retourne,
+    # et son nom ne vit que dans `drives().list`.
+    #
+    # On le reconnaît avant tout le reste, et « Mon Drive » avec lui. Le
+    # segment consommé, la descente continue normalement dans ses dossiers.
+    # Une racine NOMMÉE ferme la recherche globale : « dans tel Drive, dossier
+    # Communication » désigne LE Communication de ce Drive, pas n'importe lequel.
+    racine_nommee = False
+    drives = await _drives_nommes(service)
+    if segments and drives:
+        cherche = segments[0].lower()
+        exact = [d for d in drives if (d.get("name") or "").lower() == cherche]
+        partiel = [d for d in drives if cherche in (d.get("name") or "").lower()]
+        choisi = (exact or partiel)
+        # Restreint aux Drive RÉELLEMENT ouverts à ce rôle : sans ce filtre, un
+        # périmètre déclaré serait contourné en nommant le Drive entier.
+        choisi = [d for d in choisi if d["id"] in racines]
+        if choisi:
+            parents = [choisi[0]["id"]]
+            parcourus.append(choisi[0]["name"])
+            segments = segments[1:]
+            racine_nommee = True
+            if not segments:
+                return parents[0]
+
+    if segments and segments[0].lower() in ("mon drive", "my drive") \
+            and "root" in racines:
+        parents = ["root"]
+        parcourus.append("Mon Drive")
+        segments = segments[1:]
+        racine_nommee = True
+        if not segments:
+            return "root"
+
     for rang, segment in enumerate(segments):
         trouves = await _dossiers_sous(service, parents, segment)
         # LE PREMIER SEGMENT SE CHERCHE PARTOUT — mais SEULEMENT si tout le
@@ -217,16 +271,27 @@ async def _resoudre(service, chemin: str, racines: list[str],
         #
         # Les segments SUIVANTS restent contraints à leur parent : c'est tout
         # le sens d'un chemin.
-        if not trouves and rang == 0 and partout:
+        if not trouves and rang == 0 and partout and not racine_nommee:
             trouves = await _dossiers_partout(service, segment)
         if not trouves:
             dispo = [d["name"] for d in await _dossiers_sous(service, parents)]
             ou = "/".join(parcourus) if parcourus else "la racine du Drive"
+            # LES DRIVE PARTAGÉS SE NOMMENT AUSSI. Le refus ne listait que des
+            # DOSSIERS : quand le nom cherché était celui d'un Drive, la liste
+            # proposée ne pouvait donc pas contenir la réponse, et le modèle
+            # repartait en devinettes sur des noms voisins.
+            autres = ""
+            if not parcourus and drives:
+                noms = sorted(d.get("name") or "" for d in drives if d["id"] in racines)
+                if noms:
+                    autres = (" Drive(s) partagé(s) disponibles, utilisables comme "
+                              f"premier élément du chemin : {', '.join(noms[:15])}.")
             raise DriveRefuse(
                 f"Aucun dossier « {segment} » dans {ou}. "
                 + (f"Dossiers présents : {', '.join(sorted(dispo)[:25])}."
                    if dispo else "Ce niveau ne contient aucun sous-dossier.")
-                + " Reprends le nom EXACT dans cette liste.")
+                + autres
+                + " Reprends le nom EXACT dans l'une de ces listes.")
         # Une correspondance exacte (à la casse près) l'emporte sur un simple
         # « contient » : « Communication » et « Communication interne » sortent
         # tous deux, et c'est le premier qu'on veut.

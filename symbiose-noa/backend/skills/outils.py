@@ -147,7 +147,8 @@ SKILLS = {
             "fichiers, de quels types. LE DRIVE, LE CLOUD, GOOGLE et LE PARTAGE "
             "designent la meme chose. A utiliser des qu'on demande un NOMBRE ou "
             "« ce qu'il y a sur le Drive ». `dossier` accepte le NOM ou le "
-            "CHEMIN (ex. « Holding/Communication »), pas besoin d'identifiant"),
+            "CHEMIN, sans identifiant. Le nom d'un DRIVE PARTAGE est un debut "
+            "de chemin valide (ex. « Holding Symbiose Paysage/Communication »)"),
         optionnels=["dossier"],
         effet="lecture",
         libelle="je regarde ce que contient le dossier"),
