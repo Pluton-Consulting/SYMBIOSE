@@ -147,14 +147,15 @@ SKILLS = {
             "COMPTE et resume un dossier du DRIVE : combien de dossiers, de "
             "fichiers, de quels types. LE DRIVE, LE CLOUD, GOOGLE et LE PARTAGE "
             "designent la meme chose. A utiliser des qu'on demande un NOMBRE ou "
-            "« ce qu'il y a sur le Drive » : la memoire d'entreprise contient le "
-            "CONTENU des documents, pas la structure des dossiers"),
+            "« ce qu'il y a sur le Drive ». `dossier` accepte le NOM ou le "
+            "CHEMIN (ex. « Holding/Communication »), pas besoin d'identifiant"),
         optionnels=["dossier"],
         effet="lecture",
         libelle="je regarde ce que contient le dossier"),
     "drive_arborescence": Declaration(
         fonction=drive_arborescence,
-        description="ARBRE d'un dossier du Drive sur plusieurs niveaux, en une fois",
+        description=("ARBRE d'un dossier du Drive sur plusieurs niveaux, en une "
+                     "fois. `dossier` accepte le NOM ou le CHEMIN"),
         requis=["dossier"], optionnels=["profondeur"],
         effet="lecture",
         libelle="je parcours les dossiers du Drive"),

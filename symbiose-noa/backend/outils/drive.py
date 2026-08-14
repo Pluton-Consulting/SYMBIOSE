@@ -119,6 +119,115 @@ async def _racines(service) -> list[str]:
     return racines
 
 
+def _echappe(v: str) -> str:
+    return v.replace("\\", "\\\\").replace("'", "\\'")
+
+
+def _est_identifiant(v: str) -> bool:
+    """Un identifiant Drive, ou un nom écrit par un humain ?
+
+    Les identifiants font une trentaine de caractères sans espace ni barre
+    oblique ; un nom de dossier d'entreprise en a presque toujours.
+    """
+    return len(v) >= 20 and " " not in v and "/" not in v
+
+
+async def _dossiers_sous(service, parents: list[str], nom: Optional[str] = None,
+                         limite: int = 100) -> list[dict]:
+    """Les sous-dossiers d'un ou plusieurs parents, filtrés par nom si demandé."""
+    ou = " or ".join(f"'{_echappe(p)}' in parents" for p in parents)
+    q = (f"({ou}) and mimeType = '{_MIME_DOSSIER}' and trashed = false"
+         + (f" and name contains '{_echappe(nom)}'" if nom else ""))
+
+    def _appel():
+        return service.files().list(
+            q=q, spaces="drive", fields="files(id,name)",
+            corpora="allDrives", includeItemsFromAllDrives=True,
+            supportsAllDrives=True, pageSize=limite,
+        ).execute()
+
+    return (await asyncio.to_thread(_appel)).get("files", [])
+
+
+async def _dossiers_partout(service, nom: str, limite: int = 20) -> list[dict]:
+    """Les dossiers portant ce nom, à n'importe quelle profondeur du Drive."""
+    def _appel():
+        return service.files().list(
+            q=(f"mimeType = '{_MIME_DOSSIER}' and trashed = false "
+               f"and name contains '{_echappe(nom)}'"),
+            spaces="drive", fields="files(id,name)",
+            corpora="allDrives", includeItemsFromAllDrives=True,
+            supportsAllDrives=True, pageSize=limite,
+        ).execute()
+
+    return (await asyncio.to_thread(_appel)).get("files", [])
+
+
+async def _resoudre(service, chemin: str, racines: list[str],
+                    partout: bool = False) -> str:
+    """Un NOM ou un CHEMIN de dossier vers son identifiant Drive.
+
+    POURQUOI C'EST INDISPENSABLE. Ces outils n'acceptaient qu'un IDENTIFIANT.
+    Personne n'en connaît par cœur, et le modèle encore moins : à « dans le
+    Drive partagé, dossier communication, il y a combien de dossiers ? », il
+    passait le NOM en guise d'identifiant, recevait un 404, essayait un autre
+    nom, puis un autre — jusqu'à épuiser son budget d'actions sans jamais rien
+    répondre. Le geste le plus naturel était le seul impossible.
+
+    QUAND ÇA ÉCHOUE, ON DIT CE QUI EXISTE. Un « dossier introuvable » sec
+    relance le modèle dans des devinettes coûteuses. Lui rendre les noms
+    présents à ce niveau lui permet de se corriger en UN coup — c'est la
+    différence entre une erreur et une piste.
+    """
+    valeur = (chemin or "").strip().strip("/")
+    if not valeur:
+        raise DriveRefuse("Donne le nom ou le chemin du dossier.")
+    # UN IDENTIFIANT DE PÉRIMÈTRE FAIT AUTORITÉ. Il vient de la configuration,
+    # pas du modèle : le chercher par nom serait absurde, et l'heuristique de
+    # forme ci-dessous se tromperait sur un identifiant court.
+    if valeur in racines:
+        return valeur
+    if _est_identifiant(valeur):
+        return valeur
+
+    parents = list(racines)
+    parcourus: list[str] = []
+    segments = [s.strip() for s in valeur.split("/") if s.strip()]
+    for rang, segment in enumerate(segments):
+        trouves = await _dossiers_sous(service, parents, segment)
+        # LE PREMIER SEGMENT SE CHERCHE PARTOUT — mais SEULEMENT si tout le
+        # Drive est déjà ouvert. « le dossier communication » ne veut pas dire
+        # « à la racine » : les gens nomment le dossier qu'ils ont en tête sans
+        # savoir où il est rangé, et ne chercher qu'au premier niveau faisait
+        # échouer la formulation la plus naturelle.
+        #
+        # DÈS QUE DES PÉRIMÈTRES SONT DÉCLARÉS, on ne sort pas : une recherche
+        # globale trouverait un dossier hors périmètre, et le refus qui suivrait
+        # confirmerait son EXISTENCE. Pour un dossier nommé « Licenciement
+        # Untel », l'existence est déjà l'information.
+        #
+        # Les segments SUIVANTS restent contraints à leur parent : c'est tout
+        # le sens d'un chemin.
+        if not trouves and rang == 0 and partout:
+            trouves = await _dossiers_partout(service, segment)
+        if not trouves:
+            dispo = [d["name"] for d in await _dossiers_sous(service, parents)]
+            ou = "/".join(parcourus) if parcourus else "la racine du Drive"
+            raise DriveRefuse(
+                f"Aucun dossier « {segment} » dans {ou}. "
+                + (f"Dossiers présents : {', '.join(sorted(dispo)[:25])}."
+                   if dispo else "Ce niveau ne contient aucun sous-dossier.")
+                + " Reprends le nom EXACT dans cette liste.")
+        # Une correspondance exacte (à la casse près) l'emporte sur un simple
+        # « contient » : « Communication » et « Communication interne » sortent
+        # tous deux, et c'est le premier qu'on veut.
+        exact = [d for d in trouves if d["name"].lower() == segment.lower()]
+        choisi = (exact or trouves)[0]
+        parcourus.append(choisi["name"])
+        parents = [choisi["id"]]
+    return parents[0]
+
+
 def _tout_le_drive(perimetres: list) -> bool:
     """Le périmètre couvre-t-il le Drive ENTIER ?
 
@@ -184,6 +293,13 @@ async def apercu(dossier: Optional[str] = None,
             raise DriveRefuse(
                 "Aucun dossier du Drive n'est ouvert à l'assistant pour ce rôle.")
     else:
+        # Le dossier arrive presque toujours sous forme de NOM ou de CHEMIN :
+        # c'est ce qu'un humain dit, et donc ce que le modèle répète.
+        service = await _service()
+        racines = ([d for d, _ in perimetres if d]
+                   or (await _racines(service) if _tout_le_drive(perimetres) else []))
+        dossier = await _resoudre(service, dossier, racines,
+                                partout=_tout_le_drive(perimetres))
         _garde_perimetre(dossier, perimetres)
         cibles = [dossier]
 
@@ -237,10 +353,14 @@ async def arborescence(dossier: str, profondeur: int = 2,
     allers-retours de modèle. Bornée en profondeur ET en nombre de dossiers :
     un Drive d'entreprise peut en contenir des milliers.
     """
-    _garde_perimetre(dossier, perimetres or [])
-    profondeur = max(1, min(int(profondeur or 2), MAX_PROFONDEUR))
-
+    perimetres = perimetres or []
     service = await _service()
+    racines = ([d for d, _ in perimetres if d]
+               or (await _racines(service) if _tout_le_drive(perimetres) else []))
+    dossier = await _resoudre(service, dossier, racines,
+                                partout=_tout_le_drive(perimetres))
+    _garde_perimetre(dossier, perimetres)
+    profondeur = max(1, min(int(profondeur or 2), MAX_PROFONDEUR))
     vus = 0
     racine: dict = {"dossier": dossier, "enfants": []}
     file_attente = [(dossier, racine, 0)]
@@ -372,7 +492,12 @@ async def lire_lot(motif: str, dossier: Optional[str] = None,
     perimetres = perimetres or []
     limite = max(1, min(int(limite or MAX_LOT), MAX_LOT))
     partout = _tout_le_drive(perimetres) and not dossier
+    service = await _service()
     if dossier:
+        racines = ([d for d, _ in perimetres if d]
+                   or (await _racines(service) if _tout_le_drive(perimetres) else []))
+        dossier = await _resoudre(service, dossier, racines,
+                                partout=_tout_le_drive(perimetres))
         _garde_perimetre(dossier, perimetres)
         cibles = [(dossier, None)]
     else:
@@ -381,7 +506,6 @@ async def lire_lot(motif: str, dossier: Optional[str] = None,
         raise DriveRefuse(
             "Aucun dossier du Drive n'est ouvert à l'assistant pour ce rôle.")
 
-    service = await _service()
     echappe = motif.replace("\\", "\\\\").replace("'", "\\'")
     candidats = []
     # Même raison que pour `ouvrir` : tout le Drive ouvert veut dire à toutes
