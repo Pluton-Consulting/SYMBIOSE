@@ -104,6 +104,43 @@ def _objet_equilibre(texte: str, debut: int) -> str | None:
     return None
 
 
+# ── Le JSON du modèle, réparé sur place plutôt que redemandé ─────────────
+#
+# Un bloc d'action mal formé coûtait un ALLER-RETOUR COMPLET au modèle : on lui
+# renvoyait « réécris un JSON valide », il refaisait sa passe, et le tour
+# consommait deux appels au lieu d'un. Sur une cascade où un appel dépasse la
+# minute, c'est la panne la plus chère du protocole.
+#
+# Or les défauts observés sont TOUJOURS syntaxiques, jamais sémantiques : une
+# accolade oubliée, une virgule finale, des guillemets simples, un commentaire
+# glissé dans l'objet, un guillemet non échappé. `json_repair` les corrige
+# localement, sans appel réseau et sans modèle.
+#
+# CE QUE ÇA NE PEUT PAS CASSER. La réparation ne touche qu'à la FORME. Tout ce
+# qui suit reste inchangé : le skill doit exister au catalogue du rôle, les
+# paramètres obligatoires doivent être présents, l'effet doit être déclaré. Une
+# réparation qui produirait un objet absurde est donc rejetée juste après, comme
+# l'aurait été l'original.
+def _charger_json(brut: str):
+    """`json.loads`, puis réparation si la forme est fautive. Lève si rien n'y fait."""
+    try:
+        return json.loads(brut)
+    except json.JSONDecodeError:
+        pass
+    try:
+        from json_repair import loads as _reparer
+    except ImportError:
+        # La dépendance manque : on se comporte exactement comme avant.
+        raise
+    repare = _reparer(brut)
+    if repare in ({}, [], "", None):
+        # Rien d'exploitable : on relance l'erreur d'origine, pour que le
+        # message rendu au modèle reste celui du vrai problème.
+        raise json.JSONDecodeError("illisible même après réparation", brut, 0)
+    logger.info("Bloc JSON réparé localement (aucun appel au modèle épargné)")
+    return repare
+
+
 def _action_json_nu(texte: str, role: str | None = None):
     """Reconnaît un appel d'outil rendu en JSON nu, sans aucune balise."""
     for amorce in _DEBUT_JSON_NU_RE.finditer(texte or ""):
@@ -111,7 +148,7 @@ def _action_json_nu(texte: str, role: str | None = None):
         if not brut:
             continue
         try:
-            data = json.loads(brut)
+            data = _charger_json(brut)
         except json.JSONDecodeError:
             continue
         if not isinstance(data, dict):
@@ -122,7 +159,7 @@ def _action_json_nu(texte: str, role: str | None = None):
         args = data.get("args") or data.get("arguments") or data.get("parameters") or {}
         if isinstance(args, str):
             try:
-                args = json.loads(args)
+                args = _charger_json(args)
             except json.JSONDecodeError:
                 continue
         if not isinstance(args, dict):
@@ -491,7 +528,7 @@ def extraire_action(texte: str, role: str | None = None) -> tuple[Optional[dict]
     reste = ((texte[:trouve.start()] + texte[trouve.end():]) or "").strip()
 
     try:
-        data = json.loads(trouve.group(1).strip())
+        data = _charger_json(trouve.group(1).strip())
     except json.JSONDecodeError as e:
         return None, reste, f"bloc action illisible ({e}) : réécris un JSON valide"
 
