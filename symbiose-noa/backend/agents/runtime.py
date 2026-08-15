@@ -501,7 +501,22 @@ def _safe(update: Any) -> dict:
         return {}
     out = {}
     for k in ("target_agent", "llm_tier", "requires_validation", "out_of_scope",
-              "final_response", "llm_response", "model_used", "tool_iterations"):
+              "final_response", "llm_response", "model_used", "tool_iterations",
+              # CE QUE LE SERVEUR SAVAIT ET GARDAIT POUR LUI.
+              #
+              # Cette liste est une AUTORISATION, pas une dépense : elle ne
+              # déclenche aucun calcul et n'ajoute rien au prompt. Chacune de
+              # ces valeurs était déjà produite, puis jetée à la porte.
+              #
+              # `sources_memoire` : les documents d'où vient la réponse. Sans
+              #   eux, l'assistant affirme et il faut le croire.
+              # `browser_sources` : les pages réellement consultées sur le web.
+              # `browser_was_filtered` : une adresse a été écartée par le garde
+              #   de sécurité, ce qui explique une réponse incomplète.
+              # `tokens_in` / `tokens_out` : le coût réel du tour, jusqu'ici
+              #   invisible alors qu'il est mesuré à chaque appel.
+              "sources_memoire", "browser_sources", "browser_was_filtered",
+              "tokens_in", "tokens_out"):
         if k in update and update[k] is not None:
             out[k] = update[k]
     return out
