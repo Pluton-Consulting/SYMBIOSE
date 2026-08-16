@@ -230,7 +230,15 @@ class Settings(BaseSettings):
     ms_client_secret: Optional[str] = None
     ms_mailbox: Optional[str] = None    # boîte partagée historique (ex. contact@symbiose-paysage.fr)
     ms_extra_mailboxes: Optional[str] = None  # boîtes partagées en plus, séparées par des virgules
-    ms_domain: Optional[str] = None     # ex. symbiose-paysage.fr — refuse toute boîte hors domaine
+    # LE GARDE-FOU DE DOMAINE. Il refuse toute boîte hors du domaine de
+    # l'entreprise. Les permissions Microsoft accordées à l'application portent
+    # sur TOUT le tenant : ce filtre est ce qui empêche d'ouvrir une boîte qu'on
+    # n'a pas à lire, y compris par une simple erreur de saisie.
+    #
+    # Il est lu par `mail/lecture.py` et `ingestion/connectors/outlook.py`. Non
+    # déclaré, il ne rend pas None : il lève une AttributeError au premier accès,
+    # loin de la configuration, et l'erreur ne désigne pas sa cause.
+    ms_domain: Optional[str] = None     # ex. mon-entreprise.fr
     # Demander à Graph la liste des boîtes du tenant, au lieu de se limiter aux
     # comptes de l'application. Exige la permission `User.Read.All`. Activé par
     # défaut : sans cela, une personne sans compte applicatif a une boîte

@@ -8,8 +8,10 @@ Deux voies réalistes :
   2. Via EXTRABAT — Deytime y remonte automatiquement les temps ; les récupérer par
      l'API Extrabat (connecteur extrabat.py) est la voie pérenne si Extrabat est utilisé.
 
-Contact éditeur (petit éditeur français, arrangement possible) : benjamin.durou@deytime.fr.
-Voir SETUP_CONNECTEURS.md.
+Contact éditeur (petit éditeur français, arrangement possible) : voir
+SETUP_CONNECTEURS.md, qui porte le nom et l'adresse. Une adresse nominative
+n'a pas sa place dans un fichier source : elle voyage avec le code, survit aux
+copies, et personne ne pense à la mettre à jour quand l'interlocuteur change.
 """
 import logging
 
