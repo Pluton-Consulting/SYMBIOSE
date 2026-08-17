@@ -39,6 +39,25 @@
   --marque-surface:        #FFFFFF;
   --marque-border:         #E8EBE8;
 
+  /* ── Le chat, et lui seul ─────────────────────────────────────────────
+     Trois surfaces se superposaient dans un mouchoir de poche : le fil à
+     #F5F6F5, la barre de saisie à #FFFFFF, le champ à #FFFFFF. Quatre pour
+     cent d'écart entre les deux premières, zéro entre les deux dernières :
+     rien ne se détachait, et l'écran paraissait plat sans qu'on sache dire
+     pourquoi. Ces jetons creusent l'écart là où il porte du sens, sans
+     toucher à l'identité — le vert de la marque reste exactement le même
+     partout ailleurs.
+
+     La bulle de l'utilisateur, elle, descendait de #182B16 : un vert si
+     sombre qu'il se lisait noir, et qui posait un bloc lourd à chaque
+     question. Elle passe au vert VIVANT de la charte, celui des feuilles.
+     Le blanc dessus garde un contraste très au-dessus du seuil AA. */
+  --marque-chat-fond:      #EEF1ED;   /* le fil : plus profond que les cartes */
+  --marque-chat-barre:     #FFFFFF;   /* la barre de saisie, qui s'en détache */
+  --marque-chat-champ:     #F4F7F3;   /* le champ, creusé dans la barre */
+  --marque-bulle-moi:      #35682E;   /* ma question : vert vivant, pas noir */
+  --marque-bulle-moi-fin:  #2A5424;
+
   /* ── Textes ───────────────────────────────────────────────────────── */
   --marque-text-primary:   #111A10;
   --marque-text-body:      #3D4D3C;
