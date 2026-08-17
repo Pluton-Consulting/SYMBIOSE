@@ -16,14 +16,14 @@ logger = logging.getLogger("symbiose.agents.agent1")
 SYSTEM_PROMPT = """Tu es l'assistant IA interne de Symbiose Paysage, cabinet d'architecture paysagère et d'aménagements extérieurs.
 Tu aides les équipes (commerciaux, bureau d'études, conducteurs de travaux, administratif, terrain) dans leur travail quotidien.
 Tu disposes d'une mémoire d'entreprise (devis, chantiers, clients, catalogues, méthodes internes, plannings, mails, documents importés).
-RÈGLE DE RECHERCHE : la mémoire a DÉJÀ été consultée pour toi quand la demande le justifiait. Si des documents te sont fournis, réponds à partir d'eux. Si aucun ne l'est, c'est que la demande n'en nécessitait pas, ou que la mémoire ne contient rien : ne relance l'action `rechercher_documents` que si la réponse dépend manifestement d'une donnée interne qui te manque, avec des termes DIFFÉRENTS. Pour une salutation, un remerciement ou une question générale, réponds directement, SANS aucune action et SANS parler de la mémoire d'entreprise. Cette dispense ne concerne QUE la recherche documentaire. Elle ne vaut JAMAIS pour les actions qui PRODUISENT ou qui AGISSENT : creer_document, ajouter_document, terminer_document, la lecture ou le dépôt sur le serveur de fichiers, la lecture de mails, la génération de visuels. Dès qu'on te demande de FABRIQUER un fichier ou de TOUCHER à un système, il FAUT émettre les actions correspondantes : aucune rédaction directe ne produit un document téléchargeable.
+RÈGLE DE RECHERCHE : la mémoire a DÉJÀ été consultée pour toi quand la demande le justifiait. Si des documents te sont fournis, réponds à partir d'eux. Si aucun ne l'est, c'est que la demande n'en nécessitait pas, ou que la mémoire ne contient rien : ne relance l'action `rechercher_documents` que si la réponse dépend manifestement d'une donnée interne qui te manque, avec des termes DIFFÉRENTS. Pour une salutation, un remerciement ou une question générale, réponds directement, SANS aucune action et SANS parler de la mémoire d'entreprise. Cette dispense ne concerne QUE la recherche documentaire. Elle ne vaut JAMAIS pour les actions qui PRODUISENT ou qui AGISSENT : creer_document, ajouter_document, terminer_document, la lecture des documents du DRIVE (drive_arborescence, drive_lire_lot, drive_ouvrir, drive_apercu), la lecture de mails, la génération de visuels. Dès qu'on te demande de FABRIQUER un fichier ou de TOUCHER à un système, il FAUT émettre les actions correspondantes : aucune rédaction directe ne produit un document téléchargeable.
 Ne liste JAMAIS de contenu imaginaire et ne prétends pas avoir des devis ou des chantiers que la recherche ne t'a pas rendus. En revanche, pour une salutation, un remerciement ou une conversation courante, réponds simplement et naturellement : ne parle NI de la mémoire d'entreprise, NI de l'absence de documents.
 Réponds toujours en français. Sois précis, professionnel et concis.
 Certaines valeurs des documents peuvent apparaître masquées sous forme de balises [PER_1], [MONTANT_2], etc. Conserve-les telles quelles. IMPORTANT : ne CRÉE jamais toi-même de balise entre crochets (ex. [NB_DEVIS_1]) ; elles proviennent UNIQUEMENT des documents fournis.
 Salutation : commence par « Bonjour » UNIQUEMENT si le message de l'utilisateur est lui-même une salutation (bonjour, salut, bonsoir...) ; sinon, pour une question de travail, réponds DIRECTEMENT, sans « Bonjour » ni formule d'accueil, et sans jamais répéter une salutation déjà faite dans la conversation. Ne dis JAMAIS « je suis Symbiose » ni « je m'appelle Symbiose » (Symbiose est le nom de l'entreprise, pas ton identité à énoncer) et ne te présente pas. Pour une question de travail, réponds directement.
 N'invente JAMAIS de donnée : ni montant, ni nom, ni date, ni NOMBRE (par ex. un nombre de devis). Tout chiffre que tu avances doit provenir d'un document que la recherche t'a rendu, ou de ce que l'utilisateur vient de te dire.
 QUI EST DE L'ENTREPRISE : une adresse n'est un collègue que si elle appartient au domaine de l'entreprise. Les résultats de lecture de mails portent `expediteur_interne` : quand il vaut false, la personne est EXTERNE (client, fournisseur, prestataire) et tu ne dois jamais la présenter comme appartenant à l'entreprise. `expediteur_automatique` signale un envoi sans auteur humain (bulletin, notification) : n'en tire aucune conclusion sur les gens ni sur les métiers.
-UN ÉCHANTILLON N'EST PAS UN INVENTAIRE : lire quelques messages d'une boîte ne dit rien des activités, des process ni de l'histoire de l'entreprise. Ne généralise jamais de dix mails reçus vers une description de la société. Si l'on te demande d'analyser LE COURRIER DE L'ENTREPRISE pour en tirer des process, des activités ou des compétences, c'est `lancer_enrichissement` qu'il faut, et rien d'autre.
+UN ÉCHANTILLON N'EST PAS UN INVENTAIRE : lire quelques messages d'une boîte ne dit rien des activités, des process ni de l'histoire de l'entreprise. Ne généralise jamais de dix mails reçus vers une description de la société. Si l'on te demande d'analyser LE COURRIER DE L'ENTREPRISE pour en tirer des process, des activités ou des compétences, c'est `lancer_enrichissement` qu'il faut : elle ne lit que les mails, jamais le Drive. Pour une demande qui porte sur les DOCUMENTS (Drive, cloud, partage), ne renvoie pas vers elle : commence par regarder, avec `drive_arborescence` puis `drive_lire_lot` — ces gestes sont à ta disposition sans condition.
 CONSULTER UNE BOÎTE MAIL : utilise l'action `lire_mails`, qui va chercher les messages RÉELS dans la boîte. La recherche documentaire ne sert pas à cela : elle ne voit que ce qui a été ingéré auparavant. Dès qu'on te demande de lire, voir, relever ou faire le point sur des mails, c'est `lire_mails`.
 NE CONCLUS JAMAIS que la mémoire d'entreprise est vide à partir d'une recherche infructueuse. Une recherche qui ne rend rien signifie « rien ne correspond à CES termes », jamais « il n'y a rien ». Dis ce que tu as cherché, dis que tu n'as rien trouvé là-dessus, et propose des termes plus concrets. Affirmer que la mémoire ne contient aucun mail ou aucun document est une affirmation sur l'état du système : tu ne peux la faire que si un inventaire te l'a explicitement indiqué.
 DONNÉE MANQUANTE : quand on te demande de remplir une fiche, un tableau, un récapitulatif ou un modèle et qu'une information ne figure nulle part, écris exactement [À COMPLÉTER] à sa place. Ne l'omets pas en silence, ne la devine pas, ne la remplace pas par une valeur plausible. Cette règle vaut pour chaque champ pris séparément : une fiche à moitié renseignée est utile, une fiche à moitié inventée est dangereuse.
@@ -118,7 +118,8 @@ PLAFOND_RESULTAT_GENEREUX = 12000
 # du tour. Une seule relance, avec une consigne explicite — au-delà on
 # insisterait sur un modèle qui ne veut pas, et la note de sortie explique alors
 # honnêtement pourquoi rien n'a été fait.
-from agents.annonce import est_une_annonce, cloture_attendue, promesse_sans_suite
+from agents.annonce import (est_une_annonce, cloture_attendue, promesse_sans_suite,
+                            options_proposees)
 
 
 # ── Nœuds ────────────────────────────────────────────────────────────
@@ -172,6 +173,27 @@ async def anonymize_node(state: AgentState) -> dict:
     }
 
 
+def _echange_precedent(state: AgentState) -> str:
+    """Le dernier tour, court, pour que le routeur ne juge pas à l'aveugle.
+
+    Quatre cents caractères par message suffisent à reconnaître une suite de
+    conversation : on paie quelques dizaines de jetons sur le palier LIGHT,
+    jamais davantage.
+    """
+    recents = [m for m in (state.get("messages") or [])
+               if getattr(m, "type", None) in ("human", "ai")][-2:]
+    lignes = []
+    for m in recents:
+        qui = "Utilisateur" if getattr(m, "type", None) == "human" else "Assistant"
+        texte = " ".join(str(getattr(m, "content", "") or "").split())
+        if texte:
+            lignes.append(qui + " : " + texte[:400])
+    if not lignes:
+        return ""
+    saut = chr(10)
+    return "Échange précédent :" + saut + saut.join(lignes) + saut + saut
+
+
 async def routeur_node(state: AgentState) -> dict:
     """Décide de la suite : répondre directement, ou consulter la mémoire.
 
@@ -213,7 +235,15 @@ async def routeur_node(state: AgentState) -> dict:
         "expliquer un raisonnement, tirer des conclusions d'un ensemble de données.\n"
         'Réponds par un objet JSON seul : {"memoire": true|false, "requete": '
         '"<mots-clés de recherche si true, sinon vide>", "effort": "simple|analyse"}\n\n'
-        f"Demande : {question}"
+        # LE ROUTEUR JUGEAIT À L'AVEUGLE. Sa grille ci-dessus contient la
+        # catégorie « suite directe de la conversation » — impossible à
+        # reconnaître sans savoir ce qui précède. Sur un « 1 » ou un « oui »,
+        # il tranchait au hasard ; et s'il concluait à une recherche,
+        # `recherche_node` interrogeait la mémoire avec « 1 » pour requête et
+        # injectait des extraits sans rapport en tête du message. L'ambiguïté
+        # du message court était aggravée au lieu d'être levée.
+        + _echange_precedent(state)
+        + f"Demande : {question}"
     )
 
     try:
@@ -359,6 +389,21 @@ async def llm_node(state: AgentState, config=None) -> dict:
     # Historique de conversation (déjà ANONYMISÉ : on ne stocke que du texte masqué),
     # borné en nombre de messages ET en caractères, recalé sur une frontière de paire.
     history = compact_messages(state.get("messages") or [])
+    # L'AMNÉSIE DOIT SE VOIR DANS LES JOURNAUX.
+    #
+    # Quand le modèle répond « je ne comprends pas » à un « oui » ou à un « 1 »,
+    # rien ne permettait de distinguer un historique ABSENT d'un modèle qui n'a
+    # pas su faire le lien. Ces deux causes appellent des correctifs opposés,
+    # et on ne peut pas les départager après coup : la trace ne conservait pas
+    # la taille de la fenêtre réellement envoyée. Une ligne suffit.
+    _brut = len([m for m in (state.get("messages") or [])
+                 if getattr(m, "type", None) != "system"])
+    if _brut and not history:
+        logger.warning("Historique VIDE alors que le fil porte %d messages", _brut)
+    else:
+        logger.info("Historique : %d messages sur %d, %d caractères",
+                    len(history), _brut,
+                    sum(len(str(getattr(m, "content", "") or "")) for m in history))
 
     # La clé de cache DOIT inclure le fil et l'historique : sinon, reposer une question
     # déjà posée renverrait la réponse figée du 1er tour (mémoire perdue par
@@ -1024,6 +1069,33 @@ async def rehydrate_node(state: AgentState) -> dict:
         entity_map = {k: v for k, v in entity_map.items() if k in allowed}
 
     sortie = {"final_response": anonymizer.rehydrate(text, entity_map)}
+
+    # DES OPTIONS EN PROSE DEVIENNENT DES BOUTONS.
+    #
+    # Relevé en production : l'assistant termine par « Souhaitez-vous que je
+    # commence par : 1. … 2. … 3. … ? », l'utilisateur répond « 1 », et le tour
+    # suivant reçoit un message d'un caractère qui ne veut rien dire hors
+    # contexte. Réponse obtenue : « Je ne comprends pas bien ce que signifie
+    # ce « 1 » ».
+    #
+    # ON NE CORRIGE PAS ÇA PAR UNE CONSIGNE DE PLUS. Le dépôt a déjà payé deux
+    # fois pour apprendre qu'une règle répétée au modèle ne tient pas quand le
+    # prompt en porte trente autres. Ici la correction est mécanique : un
+    # bouton renvoie le LIBELLÉ ENTIER comme message utilisateur, et il n'y a
+    # plus aucune anaphore à résoudre. Le défaut devient impossible, au lieu de
+    # devenir moins probable.
+    #
+    # On COMPLÈTE la réponse, on ne la réécrit pas : la prose du modèle reste
+    # intacte, les boutons s'ajoutent dessous. Et rien n'est ajouté à
+    # l'historique (`sortie["messages"]` plus bas) : il ne porte que du texte
+    # masqué, et ces libellés sont déjà réhydratés.
+    import json as _json_ui
+    _options = options_proposees(sortie["final_response"])
+    if _options:
+        logger.info("Options en prose converties en suggestions : %d", len(_options))
+        bloc = _json_ui.dumps({"type": "quick_replies", "options": _options},
+                              ensure_ascii=False)
+        sortie["final_response"] += "\n\n```ui\n" + bloc + "\n```"
 
     # UN TOUR SANS EFFET NE S'ÉCRIT PAS DANS L'HISTORIQUE.
     #

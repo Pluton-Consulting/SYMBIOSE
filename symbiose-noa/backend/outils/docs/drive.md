@@ -50,10 +50,13 @@ en bouche.
 
 - **200 entrées** lues par dossier. Au-delà, le résultat porte `tronque: true`
   et une note : un compte partiel ne doit jamais être présenté comme exact.
-- **3 niveaux** de profondeur au maximum, **40 dossiers** parcourus au total.
-  Un dossier atteint à la limite est marqué `explore: false` : son contenu est
-  *inconnu*, pas vide.
-- **5 fichiers** par lecture en lot. Le résultat indique combien de fichiers
+- **20 niveaux** de profondeur, **3 000 dossiers** dans l'arbre. Sans argument,
+  `drive_arborescence` rend l'arbre COMPLET en une seule action. Au-delà de la
+  borne, la sortie porte `complet: false` : ce qui manque est *inconnu*, pas
+  vide.
+- **5 fichiers** par lecture en lot. Rappelle `drive_lire_lot` autant de fois
+  qu'il le faut, en changeant de `motif` ou de `dossier` : la borne porte sur un
+  appel, pas sur le tour. Le résultat indique combien de fichiers
   correspondaient réellement : « j'ai lu 5 fichiers » sur 40 correspondances
   n'est pas une réponse à « lis les factures de juillet ».
 - **20 000 caractères** par fichier ouvert, 6 000 en lecture de lot.
@@ -85,3 +88,20 @@ compte de synchronisation n'a pas été ajouté comme membre.
 **Rien ne répond** : le jeton OAuth a peut-être expiré. Si l'écran de
 consentement Google est resté « en test », le jeton meurt tous les 7 jours ;
 il faut le repasser en « interne » ou « en production ».
+
+## Ce que le Drive ne fait PAS
+
+**Lire un fichier ne l'enregistre pas.** Les gestes `drive_*` rapportent le
+contenu POUR LE TOUR EN COURS, et rien n'en subsiste : la mémoire d'entreprise
+n'en garde aucune trace, la recherche documentaire ne les retrouvera pas.
+
+Pour faire ENTRER des documents dans la mémoire, il n'existe qu'un geste :
+`lancer_ingestion_documents` (administration système). C'est lui qu'il faut dès
+qu'on demande d'enrichir, d'alimenter ou de nourrir la base de connaissance à
+partir du Drive. Proposer de lire à la place ne répond pas à la demande.
+
+`lancer_enrichissement` est son pendant pour le COURRIER : elle ne lit que les
+boîtes mail, jamais les documents du Drive.
+
+**Il n'y a pas de dépôt.** Aucune action n'écrit sur le Drive. Un document
+produit par l'atelier reste téléchargeable depuis le chat pendant 24 heures.
