@@ -198,6 +198,25 @@ async def _dossiers_partout(service, nom: str, limite: int = 20) -> list[dict]:
     return (await asyncio.to_thread(_appel)).get("files", [])
 
 
+async def _dossiers_partages(service, nom: Optional[str] = None,
+                             limite: int = 100) -> list[dict]:
+    """Les dossiers « partagés avec moi », filtrés par nom si demandé.
+
+    Ils n'ont aucun parent visible : aucune requête `in parents` ne les
+    retourne, seul le corpus utilisateur avec `sharedWithMe` les connaît.
+    """
+    q = (f"sharedWithMe and mimeType = '{_MIME_DOSSIER}' and trashed = false"
+         + (f" and name contains '{_echappe(nom)}'" if nom else ""))
+
+    def _appel():
+        return service.files().list(
+            q=q, spaces="drive", fields="files(id,name)",
+            supportsAllDrives=True, pageSize=limite,
+        ).execute()
+
+    return (await asyncio.to_thread(_appel)).get("files", [])
+
+
 async def _resoudre(service, chemin: str, racines: list[str],
                     partout: bool = False) -> str:
     """Un NOM ou un CHEMIN de dossier vers son identifiant Drive.
@@ -282,6 +301,57 @@ async def _resoudre(service, chemin: str, racines: list[str],
         racine_nommee = True
         if not segments:
             return "root"
+
+    # « PARTAGÉS AVEC MOI » : LE NOM QUE L'ARBORESCENCE AFFICHE DOIT MARCHER.
+    #
+    # Le schéma regroupe les dossiers sans parent sous une pseudo-racine
+    # « Partagés avec moi (hors racines) » — mais elle n'existait que dans
+    # l'AFFICHAGE. Relevé en production : le modèle recopie ce libellé tel
+    # quel dans un chemin, et reçoit « aucun dossier de ce nom », avec en
+    # prime une liste qui ne contient pas ce qu'il voit à l'écran. Un écran
+    # qui enseigne des noms que la navigation refuse fabrique des impasses.
+    #
+    # Réservé au Drive entièrement ouvert (`partout`), comme la recherche
+    # globale : ces dossiers vivent hors de tout périmètre déclaré.
+    if segments and partout and not racine_nommee             and "partages avec moi" in _nu(segments[0]):
+        parcourus.append("Partagés avec moi")
+        segments = segments[1:]
+        racine_nommee = True
+        if not segments:
+            raise DriveRefuse(
+                "« Partagés avec moi » regroupe des dossiers sans parent : "
+                "ajoute le nom du dossier voulu, par exemple "
+                "« Partagés avec moi/NOM DU DOSSIER ».")
+        nom = segments[0]
+        trouves = await _dossiers_partages(service, nom)
+        tous_p: list[dict] | None = None
+        if not trouves:
+            # Même précaution que plus bas : le filtre de l'API est sensible
+            # aux accents, on rabat sur un listage où c'est nous qui comparons.
+            tous_p = await _dossiers_partages(service)
+            cible = _nu(nom)
+            trouves = [d for d in tous_p if cible in _nu(d.get("name"))]
+        if not trouves:
+            if tous_p is None:
+                tous_p = await _dossiers_partages(service)
+            dispo = sorted({d["name"] for d in tous_p})[:25]
+            raise DriveRefuse(
+                f"Aucun dossier « {nom} » parmi les partagés avec moi."
+                + (f" Dossiers présents : {', '.join(dispo)}." if dispo
+                   else " Aucun dossier partagé visible.")
+                + " Reprends le nom EXACT dans cette liste.")
+        exact = [d for d in trouves if _nu(d["name"]) == _nu(nom)]
+        retenu = exact or trouves
+        if len({d["id"] for d in retenu}) > 1 and not exact:
+            noms = ", ".join(sorted({d.get("name") or "" for d in retenu})[:10])
+            raise DriveRefuse(
+                f"« {nom} » désigne plusieurs dossiers partagés : {noms}. "
+                "Reprends le nom COMPLET de celui que tu veux.")
+        parents = [retenu[0]["id"]]
+        parcourus.append(retenu[0]["name"])
+        segments = segments[1:]
+        if not segments:
+            return parents[0]
 
     for rang, segment in enumerate(segments):
         trouves = await _dossiers_sous(service, parents, segment)
