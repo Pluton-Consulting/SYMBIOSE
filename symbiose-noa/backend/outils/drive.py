@@ -85,6 +85,40 @@ def perimetres_visibles(role: Optional[str]) -> list[tuple[Optional[str], str]]:
 _CLIENT: dict = {"service": None, "expire": 0.0}
 _DUREE_CLIENT_S = 1800
 
+# UN VIVIER DE CLIENTS, PARCE QUE `Resource` N'EST PAS SÛR ENTRE THREADS.
+#
+# `google-api-python-client` fait reposer chaque `Resource` sur un objet
+# `httplib2.Http` unique et partagé. Deux téléchargements menés de front sur le
+# MÊME client se marchent dessus sur cette connexion : la bibliothèque le
+# documente, et le symptôme serait une réponse mélangée à une autre — donc un
+# document dont le contenu vient d'un autre fichier. Pire qu'une lenteur.
+#
+# On paie donc quelques constructions supplémentaires, une fois, et chaque
+# lecture menée en parallèle reçoit SON client. Le vivier a la même durée de
+# vie que le client unique, et se reconstruit avec lui.
+_POOL: dict = {"services": [], "expire": 0.0}
+_POOL_TAILLE = 5
+
+
+async def _services(n: int) -> list:
+    """`n` clients Drive DISTINCTS, pour des lectures menées de front.
+
+    Construits en parallèle : chaque construction fait un rafraîchissement OAuth
+    synchrone, et les enchaîner rendrait la mise en place aussi lente que les
+    lectures séquentielles qu'on cherche à supprimer.
+    """
+    import time
+    n = max(1, min(n, _POOL_TAILLE))
+    if time.monotonic() >= _POOL["expire"]:
+        _POOL["services"] = []
+    if len(_POOL["services"]) < n:
+        from ingestion.connectors.google_drive import _build_service
+        a_creer = n - len(_POOL["services"])
+        _POOL["services"].extend(await asyncio.gather(
+            *[asyncio.to_thread(_build_service) for _ in range(a_creer)]))
+        _POOL["expire"] = time.monotonic() + _DUREE_CLIENT_S
+    return _POOL["services"][:n]
+
 
 async def _service():
     """Le client Drive, construit HORS de la boucle d'événements, et gardé.
@@ -1039,13 +1073,34 @@ async def lire_lot(motif: str, dossier: Optional[str] = None,
 
     candidats = [f for f in candidats if f.get("mimeType") != _MIME_DOSSIER]
     from ingestion.connectors.google_drive import _download_text
+
+    # LES CINQ FICHIERS SE LISENT DE FRONT, PLUS L'UN APRÈS L'AUTRE.
+    #
+    # Mesuré dans la trace du 17/08 : 59,5 secondes pour UN appel de ce geste.
+    # Chaque fichier demande un téléchargement puis une extraction de texte, dix
+    # secondes environ, et ils s'enchaînaient. Menés ensemble, l'appel dure le
+    # temps du plus lent au lieu de leur somme.
+    #
+    # `return_exceptions` : un fichier illisible ne doit pas emporter les quatre
+    # autres. Il rejoint la liste des ignorés, comme avant, et l'échec est
+    # journalisé plutôt qu'avalé — c'est en le lisant qu'on saura si un format
+    # résiste.
+    cibles = candidats[:limite]
     lus, ignores = [], []
-    for f in candidats[:limite]:
-        texte = await asyncio.to_thread(_download_text, service, f)
-        if texte:
-            lus.append({"nom": f.get("name"), "contenu": texte[:6000]})
-        else:
-            ignores.append(f.get("name"))
+    if cibles:
+        clients = await _services(len(cibles))
+        textes = await asyncio.gather(*[
+            asyncio.to_thread(_download_text, clients[i % len(clients)], f)
+            for i, f in enumerate(cibles)
+        ], return_exceptions=True)
+        for f, r in zip(cibles, textes):
+            if isinstance(r, BaseException):
+                logger.warning("Drive : lecture de « %s » échouée : %s", f.get("name"), r)
+                ignores.append(f.get("name"))
+            elif r:
+                lus.append({"nom": f.get("name"), "contenu": r[:6000]})
+            else:
+                ignores.append(f.get("name"))
     return {
         "motif": motif, "lus": lus, "nombre_lu": len(lus),
         "illisibles": ignores or None,
