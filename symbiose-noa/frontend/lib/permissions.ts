@@ -36,6 +36,9 @@ export interface TabDef {
   label: string
   href: string
   roles: string[]
+  /** RÉSERVÉ À QUI DÉVELOPPE. L'onglet se dessine dans la couleur à part
+   *  (`--marque-dev`) : de la mécanique, pas du travail de l'entreprise. */
+  dev?: boolean
 }
 
 const ALL_ROLES: string[] = [
@@ -50,36 +53,59 @@ const ALL_ROLES: string[] = [
 
 const MANAGERS: string[] = ["super_admin", "direction"]
 
+// LES ONGLETS DISENT CE QU'ON Y FAIT, PAS CE QU'IL Y A DEDANS.
+//
+// Les intitulés d'origine nommaient l'architecture : « Auto-Évolution »,
+// « Skills », « Navigateur », « Commercial / Admin ». Aucun ne dit à une
+// assistante ou à un conducteur de travaux ce qu'il trouvera derrière, et deux
+// d'entre eux ne sont même pas du français. Un menu se lit en une seconde,
+// sans mode d'emploi : il doit être écrit dans les mots du métier.
+//
+// Les CLÉS et les ADRESSES ne bougent pas — ce sont elles que le contrôle
+// d'accès et les liens existants utilisent. Seul change ce qui est lu.
 export const TABS: TabDef[] = [
-  { key: "accueil",     label: "Accueil",            href: "/accueil",     roles: ALL_ROLES },
-  { key: "commercial",  label: "Commercial / Admin",  href: "/commercial",  roles: ALL_ROLES },
+  { key: "accueil",     label: "Accueil",         href: "/accueil",     roles: ALL_ROLES },
+  // « Commercial / Admin » décrivait deux services ; le nom dit maintenant le
+  // travail qu'on y suit, et il parle aussi bien au commercial qu'à l'atelier.
+  { key: "commercial",  label: "Devis & clients", href: "/commercial",  roles: ALL_ROLES },
   {
     key: "conception",
-    label: "Conception / Visuels",
+    // « Visuels » restait vague. On y dépose un plan ou une photo, on en
+    // ressort une lecture et un pré-chiffrage.
+    label: "Plans & visuels",
     href: "/conception",
     roles: ["super_admin", "direction", "bureau_etudes", "conducteur"],
   },
   {
     key: "auto-evolution",
-    label: "Auto-Évolution",
+    // « Auto-Évolution » ne veut rien dire hors du code. Ce qui s'y passe :
+    // l'assistant retient ce qu'on lui a appris, après relecture d'un humain.
+    label: "Apprentissage",
     href: "/auto-evolution",
     roles: ["super_admin", "direction"],
   },
   {
     key: "skills",
-    label: "Skills",
+    // « Skills » n'est pas français, et « compétences » évoque les personnes.
+    // Un savoir-faire, c'est ce que la maison sait faire — et c'est bien de
+    // cela qu'il s'agit.
+    label: "Savoir-faire",
     href: "/skills",
     roles: MANAGERS,
   },
   {
     key: "gestion",
-    label: "Gestion",
+    // « Gestion » pouvait désigner la gestion des chantiers. Ici on regarde
+    // comment l'assistant est utilisé et ce qu'il coûte.
+    label: "Pilotage",
     href: "/gestion",
     roles: ["super_admin", "direction"],
   },
   {
     key: "navigateur",
-    label: "Navigateur",
+    // « Navigateur » évoquait Chrome ou Edge. C'est l'assistant qui va lire
+    // des pages à votre place.
+    label: "Recherche web",
     href: "/navigateur",
     roles: MANAGERS,
   },
@@ -89,12 +115,15 @@ export const TABS: TabDef[] = [
     href: "/parametres",
     roles: MANAGERS,
   },
-  // Console développeur — logs bruts en direct, super_admin uniquement.
+  // Console développeur — journaux bruts en direct, super_admin uniquement.
+  // Marquée `dev` : elle se dessine dans la couleur à part, pour qu'on ne la
+  // confonde jamais avec un écran de travail.
   {
     key: "superviseur",
     label: "Développeur",
     href: "/superviseur",
     roles: ["super_admin"],
+    dev: true,
   },
 ]
 

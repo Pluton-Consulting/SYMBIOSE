@@ -39,6 +39,20 @@
   --marque-surface:        #FFFFFF;
   --marque-border:         #E8EBE8;
 
+  /* ── Ce qui n'est PAS pour tout le monde ──────────────────────────────
+     Une couleur À PART, franchement hors charte, pour tout ce qui ne sert
+     qu'à qui développe : la console technique, les compteurs de jetons, les
+     écrans encore alimentés par des données de démonstration.
+
+     Hors charte À DESSEIN. Prise dans le vert de la maison, la distinction
+     serait une nuance — donc invisible pour qui ne la connaît pas, et
+     surtout indiscernable d'un élément ordinaire. Ce violet ne ressemble à
+     rien d'autre dans l'application : c'est ce qui en fait un signal. Il
+     veut dire « ceci est de la mécanique, pas de votre travail ». */
+  --marque-dev:            #6D3FBF;
+  --marque-dev-bg:         #F1EBFB;
+  --marque-dev-border:     #DDCEF6;
+
   /* ── Le chat, et lui seul ─────────────────────────────────────────────
      Trois surfaces se superposaient dans un mouchoir de poche : le fil à
      #F5F6F5, la barre de saisie à #FFFFFF, le champ à #FFFFFF. Quatre pour

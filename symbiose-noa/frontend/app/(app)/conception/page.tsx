@@ -11,10 +11,10 @@ export default async function ConceptionPage() {
     <div className="sym-page" style={{ padding: 32, maxWidth: 1300, margin: "0 auto" }}>
       <div className="sym-in" style={{ marginBottom: 28 }}>
         <h1 style={{ margin: 0, fontSize: 26, fontWeight: 800, color: "var(--marque-text-primary)", letterSpacing: "-0.5px" }}>
-          Conception / Visuels
+          Plans & visuels
         </h1>
         <p style={{ margin: "4px 0 0", fontSize: 14, color: "var(--marque-text-muted)" }}>
-          Agent 2 : vision multimodale, extraction de plans, pré-chiffrage automatique
+          Déposez un plan ou une photo : l'assistant les lit, en tire les surfaces et les postes, et prépare un premier chiffrage.
         </p>
       </div>
 

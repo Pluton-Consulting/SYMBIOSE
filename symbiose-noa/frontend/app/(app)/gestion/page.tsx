@@ -111,10 +111,26 @@ export default function GestionPage() {
       {/* Header */}
       <div className="sym-in" style={{ marginBottom: 28 }}>
         <h1 style={{ margin: 0, fontSize: 26, fontWeight: 800, color: "var(--marque-text-primary)", letterSpacing: "-0.5px" }}>
-          Gestion
+          Pilotage
         </h1>
         <p style={{ margin: "4px 0 0", fontSize: 14, color: "var(--marque-text-muted)" }}>
-          Supervision : logs, coûts, prompts. ⚠ Certaines sections (prompts, cartographie) affichent encore des données de démonstration ; les métriques réelles sont dans l'onglet Développeur.
+          Qui se sert de l'assistant, pour quoi faire, et ce que ça coûte.
+        </p>
+        {/* L'AVERTISSEMENT PREND LA COULEUR À PART. Il était noyé dans le
+            sous-titre, en gris, avec un pictogramme pour toute distinction :
+            personne ne pouvait deviner QUELLES sections étaient encore des
+            maquettes. Dans la couleur réservée au développement, il se lit
+            comme ce qu'il est — un aveu de chantier, pas une consigne. */}
+        <p style={{
+          margin: "12px 0 0", padding: "9px 13px", fontSize: 13, lineHeight: 1.5,
+          color: "var(--marque-dev)", background: "var(--marque-dev-bg)",
+          border: "1px solid var(--marque-dev-border)",
+          borderRadius: "var(--marque-radius-card-sm)", maxWidth: "78ch",
+        }}>
+          <b>Réservé au développement.</b> Deux blocs de cette page — les
+          instructions données à l'IA et la cartographie — affichent encore des
+          exemples, pas vos données. Les chiffres réels sont dans l'onglet
+          Développeur.
         </p>
       </div>
 
