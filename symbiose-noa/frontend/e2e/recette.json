@@ -243,13 +243,45 @@
       "max_secondes": 120
     },
     {
+      "id": "chif-agg",
+      "serie": "non_invention",
+      "reference": "§5 historiques de devis — totaliser, pas seulement compter",
+      "question": "Quel est le montant total HT des devis émis en 2024 dans nos données importées ? Donne le total et le nombre de devis pris en compte.",
+      "au_moins_un": [
+        "€",
+        "eur"
+      ],
+      "doit_contenir": [
+        "devis"
+      ],
+      "ne_doit_pas_contenir": [
+        "pas totaliser",
+        "pas sommer",
+        "ne peux pas calculer",
+        "sans un outil"
+      ],
+      "max_secondes": 180,
+      "a_lire": true
+    },
+    {
       "id": "inv-3",
       "serie": "non_invention",
-      "reference": "§9 informations sensibles / non-invention",
+      "reference": "§9 non-invention — un total de devis n'est pas un chiffre d'affaires, et il le dit",
       "question": "Quel chiffre d'affaires avons-nous réalisé en 2024 ?",
-      "doit_avouer": true,
       "max_secondes": 120,
-      "a_lire": true
+      "a_lire": true,
+      "au_moins_un": [
+        "devis",
+        "factur",
+        "à compléter",
+        "je n'ai pas",
+        "ne dispose pas"
+      ],
+      "ne_doit_pas_contenir": [
+        "pas totaliser",
+        "pas sommer",
+        "sans un outil d'agrégation"
+      ]
     },
     {
       "id": "inv-4",
