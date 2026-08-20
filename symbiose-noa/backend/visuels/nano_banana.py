@@ -28,7 +28,7 @@ BASE = "https://generativelanguage.googleapis.com/v1beta/models"
 # Le premier modèle vient du réglage ; les suivants sont des replis connus de
 # cette clé (relevés sur son catalogue réel). Un 404 passe au suivant : Google
 # retire les anciens modèles aux nouveaux comptes sans préavis.
-REPLIS = ("nano-banana-pro-preview", "gemini-2.5-flash-image")
+REPLIS = ("gemini-3.1-flash-image", "gemini-2.5-flash-image")
 
 RATIOS = ("16:9", "9:16", "1:1", "4:3", "3:4")
 DELAI_S = 120.0
