@@ -82,10 +82,15 @@ export default function Scene({ vueInitiale, tableau, chat }: Props) {
   const vueRef = useRef(vue)
   vueRef.current = vue
 
+  // Un conteneur ne bloque le geste que s'il peut RÉELLEMENT défiler
+  // horizontalement (plus de 16 px de débord). Le premier garde rejetait dès
+  // que `overflow-x` valait `auto` — or la zone de défilement principale est
+  // `overflow: auto`, et un pixel de débord suffisait : le swipe ne marchait
+  // presque nulle part, et seul le clic changeait de vue. Relevé à l'usage.
   const surUnDefilementHorizontal = (depart: EventTarget | null): boolean => {
     let e = depart as HTMLElement | null
     while (e && !e.classList?.contains("v2-scene")) {
-      if (e.scrollWidth > e.clientWidth + 2) {
+      if (!e.classList?.contains("v2-vue-defile") && e.scrollWidth > e.clientWidth + 16) {
         const s = getComputedStyle(e)
         if (s.overflowX === "auto" || s.overflowX === "scroll") return true
       }
@@ -98,10 +103,11 @@ export default function Scene({ vueInitiale, tableau, chat }: Props) {
     if (Math.abs(e.deltaX) < Math.abs(e.deltaY) * 2) return
     if (surUnDefilementHorizontal(e.target)) return
     if (reposRef.current) clearTimeout(reposRef.current)
-    reposRef.current = setTimeout(() => { cumulRef.current = 0; armeRef.current = true }, 220)
+    reposRef.current = setTimeout(() => { cumulRef.current = 0; armeRef.current = true }, 320)
     if (!armeRef.current) return
-    cumulRef.current += e.deltaX
-    const SEUIL = 90
+    // deltaMode 1 = « lignes » (vieilles souris) : on ramène en pixels.
+    cumulRef.current += e.deltaMode === 1 ? e.deltaX * 16 : e.deltaX
+    const SEUIL = 60
     if (cumulRef.current > SEUIL && vueRef.current === "tableau") {
       armeRef.current = false; aller("chat")
     } else if (cumulRef.current < -SEUIL && vueRef.current === "chat") {
