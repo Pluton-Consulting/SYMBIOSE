@@ -136,6 +136,13 @@ app.include_router(navigateur_interne.router, prefix="/api/interne/navigateur",
 app.include_router(hooks_router.router, prefix="/api/hooks", tags=["hooks"])
 app.include_router(file_attente.router, prefix="/api/file", tags=["file"])
 app.include_router(tableau.router, prefix="/api/dashboard", tags=["tableau"])
+# Offre visuelle (propre au client) : la route ne se monte que la ou le module
+# existe — l'import optionnel garde ce fichier IDENTIQUE chez tous les clients.
+try:
+    from routers import visuels as visuels_router
+    app.include_router(visuels_router.router, prefix="/api/visuels", tags=["visuels"])
+except ImportError:
+    pass
 
 
 @app.get("/api/health")
