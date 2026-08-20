@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import base64
 import logging
+import time
 from typing import Optional
 
 import httpx
@@ -32,6 +33,15 @@ REPLIS = ("gemini-3.1-flash-image", "gemini-2.5-flash-image")
 
 RATIOS = ("16:9", "9:16", "1:1", "4:3", "3:4")
 DELAI_S = 120.0
+
+# APRES UN 429, ON SE TAIT DEUX MINUTES. Releve en production : le modele a
+# rappele `tester_visuel` une quarantaine de fois dans le MEME tour en variant
+# le brief, esperant que le quota revienne — il ne revient pas a cette
+# echelle. Le refroidissement rend la meme reponse sans toucher l'API, et le
+# message porte la consigne d'arreter.
+_REFROIDISSEMENT_S = 120.0
+_bloque_jusqua = 0.0
+_dernier_message = ""
 
 
 class NanoBananaIndisponible(RuntimeError):
@@ -55,9 +65,43 @@ def _modeles() -> list[str]:
     return ([prefere] if prefere else []) + suite
 
 
+def _marquer_blocage(message: str) -> str:
+    """Retient le refus deux minutes : les appels suivants rendent la même
+    réponse sans toucher l'API."""
+    global _bloque_jusqua, _dernier_message
+    _bloque_jusqua = time.monotonic() + _REFROIDISSEMENT_S
+    _dernier_message = message
+    return message
+
+
+def _diagnostic_429(rep) -> str:
+    """Le 429 traduit en cause actionnable, à partir des violations de quota."""
+    try:
+        details = rep.json().get("error", {}).get("details", [])
+    except Exception:  # noqa: BLE001
+        details = []
+    ids = " ".join(v.get("quotaId", "")
+                   for d in details if "QuotaFailure" in str(d.get("@type", ""))
+                   for v in d.get("violations", []))
+    if "FreeTier" in ids:
+        return ("La clé Google utilisée est sur un projet SANS facturation "
+                "(palier gratuit), où Nano Banana Pro est quasi inaccessible. "
+                "Recharger des crédits ailleurs n'y change rien : il faut "
+                "activer la facturation sur LE projet de cette clé "
+                "(console.cloud.google.com > Facturation), ou créer une clé "
+                "dans un projet facturé et la coller dans Paramètres > Clés "
+                "API. En attendant : `generer_visuel` (Higgsfield).")
+    return ("Le quota d'images de la clé Google est épuisé. Réessayez plus "
+            "tard, ou utilisez directement `generer_visuel` (Higgsfield).")
+
+
 async def generer(prompt: str, *, ratio: Optional[str] = None) -> dict:
     """Génère une image et rend ses octets. Lève NanoBananaIndisponible sinon."""
     cle = _cle()
+    if time.monotonic() < _bloque_jusqua:
+        # Refroidissement : même réponse, zéro appel réseau.
+        raise NanoBananaIndisponible(_dernier_message or
+                                     "Le quota d'images vient d'être refusé : réessayez dans quelques minutes.")
     corps: dict = {
         "contents": [{"parts": [{"text": prompt}]}],
         "generationConfig": {"responseModalities": ["TEXT", "IMAGE"]},
@@ -76,13 +120,13 @@ async def generer(prompt: str, *, ratio: Optional[str] = None) -> dict:
                 derniere = f"{modele} injoignable ({type(e).__name__})"
                 continue
             if rep.status_code == 429:
-                # Le quota est un état d'exploitation, pas une panne : le dire
-                # permet de décider (attendre demain, ou activer la facturation).
-                raise NanoBananaIndisponible(
-                    "Le quota d'images de la clé Google est épuisé pour "
-                    "aujourd'hui (ou la facturation n'est pas activée sur "
-                    "Google AI Studio). Réessayez plus tard, ou utilisez "
-                    "directement `generer_visuel` (Higgsfield).")
+                # Le quota est un état d'exploitation, pas une panne — et le
+                # DÉTAIL du refus dit lequel : des violations « FreeTier »
+                # signifient que la clé vit sur un projet SANS facturation,
+                # où Nano Banana Pro est quasi inaccessible. Le dire ainsi
+                # évite de « recharger des crédits » au mauvais endroit —
+                # relevé en production, mot pour mot.
+                raise NanoBananaIndisponible(_marquer_blocage(_diagnostic_429(rep)))
             if rep.status_code == 404:
                 derniere = f"{modele} inconnu de cette clé"
                 continue

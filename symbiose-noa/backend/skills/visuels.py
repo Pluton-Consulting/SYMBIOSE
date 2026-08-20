@@ -260,7 +260,15 @@ async def tester_visuel(data: dict, user) -> dict:
         resultat = await generer(brief[:MAX_BRIEF], ratio=data.get("format"))
     except NanoBananaIndisponible as e:
         logger.info("Essai de visuel impossible : %s", e)
-        return {"genere": False, "message": str(e)}
+        return {"genere": False, "message": str(e),
+                # La consigne d'ARRÊT, pour le modèle : sans elle, il a rappelé
+                # ce skill quarante fois dans un même tour en variant le brief.
+                "a_savoir": ("NE RAPPELLE PLUS `tester_visuel` dans ce tour : le "
+                             "quota ne reviendra pas dans la minute, et changer "
+                             "le brief n'y change rien. Explique la situation à "
+                             "l'utilisateur avec le message ci-dessus, propose "
+                             "`generer_visuel` (Higgsfield) ou d'attendre, et "
+                             "ARRÊTE-TOI là.")}
 
     from visuels.depot import deposer_octets
     cles = [c for octets, mime in resultat["images"]
