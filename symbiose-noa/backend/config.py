@@ -137,6 +137,10 @@ class Settings(BaseSettings):
     roi_minutes_mail: float = 4.0          # un mail trié, résumé ou répondu
     roi_minutes_analyse: float = 30.0      # un plan ou une photo analysés
     roi_minutes_recherche: float = 6.0     # une recherche (mémoire, données, web)
+
+    # Nano Banana : les modèles image de Gemini, banc d'essai des visuels
+    # (voir visuels/nano_banana.py). Le tirage final reste Higgsfield.
+    model_nano_banana: str = "gemini-3.1-flash-image"
     optim_cache_enabled: bool = True        # cache exact des réponses (query+contexte identiques)
     optim_cache_ttl_s: int = 900            # durée de vie d'une entrée de cache (s)
     optim_cache_max: int = 500              # nb max d'entrées en cache (LRU)

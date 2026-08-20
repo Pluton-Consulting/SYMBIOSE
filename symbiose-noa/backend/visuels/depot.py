@@ -73,3 +73,23 @@ def lire(cle: str) -> tuple[bytes, str] | None:
     if not p:
         return None
     return p.read_bytes(), _MIMES.get(p.suffix, "image/jpeg")
+
+
+def deposer_octets(octets: bytes, mime: str = "image/png") -> str | None:
+    """Range une image reçue en OCTETS (Nano Banana rend l'image dans la
+    réponse, pas une adresse). Clé = condensé du contenu : même image, même
+    clé, pas de doublon."""
+    if not octets or len(octets) > MAX_OCTETS:
+        return None
+    cle = hashlib.sha256(octets).hexdigest()[:24]
+    if _chemin(cle):
+        return cle
+    ext = _EXT_PAR_MIME.get((mime or "").split(";")[0].strip(), ".png")
+    try:
+        DOSSIER.mkdir(parents=True, exist_ok=True)
+        (DOSSIER / f"{cle}{ext}").write_bytes(octets)
+        logger.info("Visuel déposé (octets) : %s (%d Ko)", cle, len(octets) // 1024)
+        return cle
+    except Exception as e:  # noqa: BLE001
+        logger.warning("Dépôt du visuel impossible (%s)", type(e).__name__)
+        return None

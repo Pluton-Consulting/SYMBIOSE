@@ -155,9 +155,11 @@ async def preparer_visuel(data: dict, user) -> dict:
         "service_configure": await disponible(),
         "note": ("Ce brief n'a RIEN généré et n'a rien coûté. Résume à "
                  "l'utilisateur EN FRANÇAIS ce que l'image montrera (pas le "
-                 "brief anglais brut), demande son accord, puis appelle "
-                 "`generer_visuel` avec ce brief EXACT. La génération est "
-                 "facturée et demandera une validation."),
+                 "brief anglais brut), puis ESSAIE d'abord avec "
+                 "`tester_visuel` (rapide, inclus) : montre l'essai, ajuste "
+                 "le brief s'il le faut, et ne lance `generer_visuel` "
+                 "(Higgsfield, facturé, validé) que pour le tirage final "
+                 "retenu."),
     }
 
 
@@ -237,6 +239,57 @@ async def generer_visuel(data: dict, user) -> dict:
     return sortie
 
 
+async def tester_visuel(data: dict, user) -> dict:
+    """ESSAIE le visuel via Nano Banana (Gemini image). Rapide, inclus dans la
+    clé Google — c'est le banc d'essai : on itère ici, et seul le rendu retenu
+    part chez Higgsfield pour le tirage final."""
+    from visuels.nano_banana import generer, NanoBananaIndisponible
+
+    brief = (data.get("brief") or data.get("demande") or "").strip()
+    if not brief:
+        from skills.erreurs import SkillError
+        raise SkillError("Aucun brief fourni. Prépare-le d'abord avec "
+                         "`preparer_visuel`, c'est gratuit.")
+    if "photorealistic textures" not in brief:
+        brief = (brief + ". Ultra realistic professional landscape photograph, "
+                 "photorealistic textures, golden hour light, believable human "
+                 "scale, magazine quality, no text, no watermark, no logo, "
+                 "no people in the foreground")[:MAX_BRIEF]
+
+    try:
+        resultat = await generer(brief[:MAX_BRIEF], ratio=data.get("format"))
+    except NanoBananaIndisponible as e:
+        logger.info("Essai de visuel impossible : %s", e)
+        return {"genere": False, "message": str(e)}
+
+    from visuels.depot import deposer_octets
+    cles = [c for octets, mime in resultat["images"]
+            if (c := deposer_octets(octets, mime))]
+    if not cles:
+        return {"genere": False,
+                "message": "L'image a été rendue mais son dépôt a échoué : réessayez."}
+
+    import json as _json
+    bloc = {"type": "visuel",
+            "titre": (data.get("titre") or "Essai de visuel")[:80],
+            "images": [{"cle": c} for c in cles]}
+    return {
+        "genere": True,
+        "essai": True,
+        "modele": resultat["modele"],
+        "note": ("ESSAI rapide (Nano Banana), pour régler le brief. Le tirage "
+                 "final, plus abouti, se fait avec `generer_visuel` (Higgsfield, "
+                 "facturé, validé)."),
+        "a_faire": ("AFFICHE l'essai : insère dans ta réponse un bloc ```ui "
+                    "contenant EXACTEMENT ceci : " + _json.dumps(bloc, ensure_ascii=False)
+                    + " — puis propose d'ajuster le brief ou de lancer le tirage "
+                    "final Higgsfield."),
+        "message_final": "Voici l'essai de visuel — dites-moi ce qu'on ajuste, "
+                         "ou si on lance le tirage final.",
+        "bloc_ui": bloc,
+    }
+
+
 # ── Déclarations : tout ce que le système doit savoir, ICI ───────────
 from skills.registre import Declaration
 
@@ -257,14 +310,30 @@ SKILLS = {
                                "format", "resolution", "demande"],
         effet="lecture",
         libelle="je prépare le brief du visuel"),
+    "tester_visuel": Declaration(
+        fonction=tester_visuel,
+        description=(
+            "ESSAIE le visuel en quelques secondes via Nano Banana (Gemini "
+            "image, inclus dans la cle Google, quota journalier) a partir du "
+            "brief de `preparer_visuel`. C'est le BANC D'ESSAI : itere ici "
+            "autant qu'il faut, montre chaque essai, ajuste le brief avec "
+            "l'utilisateur, et ne passe a `generer_visuel` (Higgsfield, "
+            "facture) que pour le tirage final retenu. Le resultat donne un "
+            "bloc ```ui a inserer TEL QUEL pour AFFICHER l'essai"),
+        requis=["brief"], optionnels=["format", "titre"],
+        # Inclus dans la cle deja en place, pas de facture a l'acte : l'essai
+        # s'itere librement, seul le tirage final passe par la validation.
+        effet="lecture",
+        libelle="j'essaie le visuel (Nano Banana)"),
     "generer_visuel": Declaration(
         fonction=generer_visuel,
         description=(
-            "GENERE reellement le visuel a partir du brief de `preparer_visuel`. "
-            "FACTURE, validation humaine obligatoire : jamais de ta propre "
-            "initiative, jamais pour iterer sur la formulation. Le resultat "
-            "donne un bloc ```ui a inserer TEL QUEL pour AFFICHER le rendu dans "
-            "le chat. `titre` : nom court du projet pour la legende"),
+            "GENERE le TIRAGE FINAL du visuel via Higgsfield a partir du brief "
+            "de `preparer_visuel`. FACTURE, validation humaine obligatoire : "
+            "jamais de ta propre initiative, jamais pour iterer — c'est le "
+            "role de `tester_visuel`. Le resultat donne un bloc ```ui a "
+            "inserer TEL QUEL pour AFFICHER le rendu dans le chat. `titre` : "
+            "nom court du projet pour la legende"),
         requis=["brief"], optionnels=["format", "resolution", "titre"],
         # FACTURE et hors du systeme : effet externe, validation humaine.
         effet="externe",
