@@ -217,10 +217,23 @@ async def generer_visuel(data: dict, user) -> dict:
                              "```ui contenant EXACTEMENT ceci : " + bloc +
                              " — l'écran montre les images. Ne colle pas d'adresse "
                              "d'image en texte.")
+        # Le chemin POST-VALIDATION est mécanique : aucun modèle n'y repasse
+        # pour lire `a_faire`. Ces deux champs sont le contrat que
+        # `execute_action_node` restitue tel quel — c'est ce qui fait que le
+        # rendu S'AFFICHE aussi quand la génération a attendu un accord.
+        sortie["message_final"] = (
+            f"Voici le rendu ({len(cles)} image{'s' if len(cles) > 1 else ''}) — "
+            "une illustration d'intention d'aménagement, pas une simulation du "
+            "terrain réel.")
+        sortie["bloc_ui"] = _json.loads(bloc)
     else:
         sortie["a_faire"] = ("Le dépôt local a échoué : donne les adresses "
                              "`url_externe` telles quelles, en prévenant qu'elles "
                              "expirent sous quelques heures.")
+        liens = "\n".join(f"- {i['url_externe']}" for i in images if i.get("url_externe"))
+        sortie["message_final"] = (
+            "Le visuel est généré, mais son dépôt local a échoué. Voici les "
+            "adresses directes (elles expirent sous quelques heures) :\n" + liens)
     return sortie
 
 

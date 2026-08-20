@@ -195,13 +195,13 @@ async def execute_action_node(state: AgentState, config=None) -> dict:
                                   "à l'action demandée."}
 
     try:
-        await execute_skill(
+        resultat = await execute_skill(
             action["skill"], action.get("args") or {}, user=utilisateur,
             approbation={"payload_hash": approuve,
                          "validated_by": state.get("validated_by")},
             trigger={"type": "resume", "id": state.get("thread_id")},
         )
-        message = f"Action « {action['skill']} » exécutée après validation."
+        message = _message_apres_action(action["skill"], resultat)
     except SkillError as e:
         message = f"Action non exécutée : {e}"
     except Exception as e:  # noqa: BLE001
@@ -211,6 +211,32 @@ async def execute_action_node(state: AgentState, config=None) -> dict:
     return {"pending_action": None,
             "final_response": ((state.get("final_response") or "").rstrip()
                                + f"\n\n{message}").strip()}
+
+
+def _message_apres_action(skill: str, resultat: dict) -> str:
+    """Ce que l'utilisateur LIT après une action validée.
+
+    Le nœud disait « Action exécutée après validation » et JETAIT la sortie du
+    skill : un visuel généré — et facturé — n'atteignait jamais l'écran, la
+    seule trace en était une phrase administrative. Relevé en production sur
+    `generer_visuel`, au premier tirage réel.
+
+    Aucun modèle ne repasse ici (la reprise rend la main telle quelle) : le
+    contrat est donc MÉCANIQUE. Un skill qui veut parler à l'utilisateur rend
+    `message_final` (du texte) et, s'il a quelque chose à MONTRER, `bloc_ui`
+    (l'objet d'un bloc ```ui) : le nœud les restitue tels quels, et l'écran
+    fait le reste. Sans eux, la phrase générique demeure.
+    """
+    import json as _json
+    sortie = (resultat or {}).get("output") or {}
+    if not isinstance(sortie, dict):
+        return f"Action « {skill} » exécutée après validation."
+    message = str(sortie.get("message_final") or "").strip() \
+        or f"Action « {skill} » exécutée après validation."
+    bloc = sortie.get("bloc_ui")
+    if isinstance(bloc, dict) and bloc.get("type"):
+        message += "\n\n```ui\n" + _json.dumps(bloc, ensure_ascii=False) + "\n```"
+    return message
 
 
 def route_apres_gate(state: AgentState) -> str:
