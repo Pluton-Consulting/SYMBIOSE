@@ -231,7 +231,13 @@ def _message_apres_action(skill: str, resultat: dict) -> str:
     sortie = (resultat or {}).get("output") or {}
     if not isinstance(sortie, dict):
         return f"Action « {skill} » exécutée après validation."
+    # `message_final` d'abord (le skill parle à l'utilisateur), puis `message`
+    # (un échec expliqué : quota, crédit, service coupé) : sans ce repli, une
+    # génération qui échouait APRÈS validation affichait « exécutée après
+    # validation » — un mensonge par omission, relevé en production quand
+    # Higgsfield n'avait plus de crédit.
     message = str(sortie.get("message_final") or "").strip() \
+        or str(sortie.get("message") or "").strip() \
         or f"Action « {skill} » exécutée après validation."
     bloc = sortie.get("bloc_ui")
     if isinstance(bloc, dict) and bloc.get("type"):
