@@ -263,12 +263,14 @@ async def tester_visuel(data: dict, user) -> dict:
         return {"genere": False, "message": str(e),
                 # La consigne d'ARRÊT, pour le modèle : sans elle, il a rappelé
                 # ce skill quarante fois dans un même tour en variant le brief.
-                "a_savoir": ("NE RAPPELLE PLUS `tester_visuel` dans ce tour : le "
+                "a_savoir": ("NE RAPPELLE PLUS `tester_visuel` dans CE tour-ci : le "
                              "quota ne reviendra pas dans la minute, et changer "
                              "le brief n'y change rien. Explique la situation à "
                              "l'utilisateur avec le message ci-dessus, propose "
                              "`generer_visuel` (Higgsfield) ou d'attendre, et "
-                             "ARRÊTE-TOI là.")}
+                             "ARRÊTE-TOI là. Ce refus ne vaut QUE pour ce tour : "
+                             "si l'utilisateur redemande plus tard, réessaie — "
+                             "la facturation peut avoir été activée entre-temps.")}
 
     from visuels.depot import deposer_octets
     cles = [c for octets, mime in resultat["images"]
@@ -327,7 +329,11 @@ SKILLS = {
             "autant qu'il faut, montre chaque essai, ajuste le brief avec "
             "l'utilisateur, et ne passe a `generer_visuel` (Higgsfield, "
             "facture) que pour le tirage final retenu. Le resultat donne un "
-            "bloc ```ui a inserer TEL QUEL pour AFFICHER l'essai"),
+            "bloc ```ui a inserer TEL QUEL pour AFFICHER l'essai. Un echec "
+            "de quota d'un tour PRECEDENT ne vaut plus rien : quand "
+            "l'utilisateur redemande un essai, APPELLE ce skill au lieu de "
+            "repondre de memoire — c'est lui qui sait si le quota est revenu, "
+            "pas l'historique de la conversation"),
         requis=["brief"], optionnels=["format", "titre"],
         # Inclus dans la cle deja en place, pas de facture a l'acte : l'essai
         # s'itere librement, seul le tirage final passe par la validation.
