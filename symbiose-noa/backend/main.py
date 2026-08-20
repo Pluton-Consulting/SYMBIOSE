@@ -41,6 +41,16 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logging.getLogger("symbiose").error("start_validation_cleanup a échoué : %s", e)
     try:
+        # Les clés saisies dans Paramètres priment sur le `.env` — encore
+        # faut-il les CHARGER : sans ce rafraîchissement de démarrage, le
+        # cache restait vide jusqu'à l'ouverture de la page Paramètres, et
+        # chaque redéploiement faisait retomber l'application sur les clés
+        # du fichier.
+        from llm.cles import rafraichir as rafraichir_cles
+        await rafraichir_cles(force=True)
+    except Exception as e:
+        logging.getLogger("symbiose").error("rafraichir_cles a échoué : %s", e)
+    try:
         # Les tâches de la file tuées par l'arrêt précédent : leur asyncio.Task
         # n'existe plus, les laisser « en cours » afficherait une progression
         # figée pour toujours. On dit la vérité : interrompues.
