@@ -48,6 +48,11 @@ async def lifespan(app: FastAPI):
         # du fichier.
         from llm.cles import rafraichir as rafraichir_cles
         await rafraichir_cles(force=True)
+        # Même raison, même piège : un réglage saisi dans Paramètres serait
+        # ignoré après chaque redéploiement si son cache n'était rempli qu'à
+        # l'ouverture de la page.
+        from llm.reglages import rafraichir as rafraichir_reglages
+        await rafraichir_reglages(force=True)
     except Exception as e:
         logging.getLogger("symbiose").error("rafraichir_cles a échoué : %s", e)
     try:
