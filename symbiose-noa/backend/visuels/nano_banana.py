@@ -111,7 +111,7 @@ def _diagnostic_429(rep) -> str:
                    for v in d.get("violations", []))
     if "FreeTier" in ids:
         return ("La clé Google utilisée est sur un projet SANS facturation "
-                "(palier gratuit), où Nano Banana Pro est quasi inaccessible. "
+                "(palier gratuit), où la génération d'images est quasi inaccessible. "
                 "Recharger des crédits ailleurs n'y change rien : il faut "
                 "activer la facturation sur LE projet de cette clé "
                 "(console.cloud.google.com > Facturation), ou créer une clé "
@@ -201,7 +201,7 @@ async def generer(prompt: str, *,
 
     if qualite == "finale":
         raise NanoBananaIndisponible(
-            f"Le tirage final exige Nano Banana Pro, qui n'a pas répondu ({derniere}). "
+            f"Le tirage final exige le meilleur moteur d'images, qui n'a pas répondu ({derniere}). "
             "Aucun repli n'est tenté à dessein : un rendu montré au client ne doit pas "
             "sortir d'un modèle plus faible sans que personne ne le sache. "
             "Réessayez, ou repassez par `tester_visuel` en attendant.")

@@ -256,19 +256,24 @@ def _rendu(resultat: dict, titre: str, *, essai: bool) -> dict:
     bloc = {"type": "visuel",
             "titre": (titre or ("Essai de visuel" if essai else "Visuel d'aménagement"))[:80],
             "images": [{"cle": c} for c in cles]}
+    # LE NOM DU MODÈLE NE SORT PAS. Il était rendu ici, donc visible du modèle
+    # de conversation, qui l'a recopié dans ses textes (« via nano-banana-pro… »).
+    # C'est un détail d'infrastructure : il va dans le journal, pas à l'écran.
+    logger.info("Visuel rendu par %s (%s)", resultat.get("modele"), "essai" if essai else "final")
     return {
         "genere": True,
         "essai": essai,
-        "modele": resultat.get("modele"),
         "cles": cles,
         # La clé est DITE au modèle pour qu'il puisse la repasser à
         # `modifier_visuel` : « celle-là, mais avec un olivier » est la
         # demande suivante une fois sur deux, et sans la clé elle repartirait
         # d'une génération neuve — donc d'un autre jardin.
-        "a_savoir": ("Référence" + ("s" if len(cles) > 1 else "") + " de cette image : "
-                     + ", ".join(cles) + ". Pour la RETOUCHER (changer un détail en "
-                     "gardant tout le reste identique), appelle `modifier_visuel` avec "
-                     "cette référence, jamais une nouvelle génération."),
+        # En minuscules et sans mot-titre : « Référence de cette image » s'est
+        # fait masquer en « [LOC_21] de cette image » par l'anonymiseur (relevé
+        # dans les traces) — la clé, elle, est passée. On écrit court et plat.
+        "a_savoir": ("cle_image=" + ", ".join(cles) + " — pour la retoucher (changer un "
+                     "detail en gardant tout le reste identique), appelle `modifier_visuel` "
+                     "avec `image` = cette cle, jamais une nouvelle generation."),
         "bloc_ui": bloc,
         "a_faire": ("AFFICHE le rendu : insère dans ta réponse un bloc ```ui contenant "
                     "EXACTEMENT ceci : " + _json.dumps(bloc, ensure_ascii=False)
@@ -454,9 +459,8 @@ SKILLS = {
     "tester_visuel": Declaration(
         fonction=tester_visuel,
         description=(
-            "ESSAIE le visuel en quelques secondes via Nano Banana (Gemini "
-            "image, inclus dans la cle Google, quota journalier) a partir du "
-            "brief de `preparer_visuel`. C'est le BANC D'ESSAI : itere ici "
+            "ESSAIE le visuel en quelques secondes a partir du brief de "
+            "`preparer_visuel`. C'est le BANC D'ESSAI : itere ici "
             "autant qu'il faut, montre chaque essai, ajuste le brief avec "
             "l'utilisateur, et ne passe a `generer_visuel` (tirage final, "
             "valide) que pour le rendu retenu. Le resultat donne un "
@@ -468,7 +472,7 @@ SKILLS = {
         requis=["brief"], optionnels=["format", "titre"],
         # L'essai s'itere librement ; seul le tirage final passe par un accord.
         effet="lecture",
-        libelle="j'essaie le visuel (Nano Banana)"),
+        libelle="j'essaie le visuel"),
     "modifier_visuel": Declaration(
         fonction=modifier_visuel,
         description=(
@@ -493,7 +497,7 @@ SKILLS = {
         fonction=generer_visuel,
         description=(
             "GENERE le TIRAGE FINAL du visuel a partir du brief de "
-            "`preparer_visuel` : Nano Banana Pro exige, sans repli, avec les "
+            "`preparer_visuel` : le meilleur moteur exige, sans repli, avec les "
             "consignes de finition. Validation humaine obligatoire : jamais de "
             "ta propre initiative, jamais pour iterer — c'est le role de "
             "`tester_visuel`. Pour retoucher une image EXISTANTE, ce n'est pas "
