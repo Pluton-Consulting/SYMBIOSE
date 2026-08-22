@@ -1,7 +1,12 @@
 """
 Skill natif : produire un visuel paysager (§6) — le SAVOIR-FAIRE complet.
 
-TROIS TEMPS, ET C'EST VOLONTAIRE.
+UN SEUL MOTEUR DEPUIS LE 22/08/2026 : Nano Banana (API Google directe).
+Higgsfield a été retiré — deux fournisseurs pour une même chose, c'était deux
+jeux d'identifiants, deux formats de réponse, deux pannes possibles, et un
+tirage final qu'on n'a jamais réussi à payer.
+
+QUATRE GESTES.
 
   0. LES QUESTIONS. Un beau rendu ne sort pas d'une phrase vague. Quand il
      manque l'essentiel, `preparer_visuel` rend les questions COURTES à poser
@@ -10,26 +15,32 @@ TROIS TEMPS, ET C'EST VOLONTAIRE.
      économisent trois tirages ratés.
 
   1. `preparer_visuel` — n'appelle RIEN. Il assemble le GABARIT photoréaliste
-     (voir plus bas) à partir des réponses : la description varie, le métier
-     de l'image — lumière, optique, matière, échelle — est écrit une fois et
-     ne se négocie pas. Gratuit, donc rejouable autant de fois qu'il faut.
+     à partir des réponses : la description varie, le métier de l'image —
+     lumière, optique, matière, échelle — est écrit une fois et ne se négocie
+     pas. Gratuit, donc rejouable autant de fois qu'il faut.
 
-  2. `generer_visuel` — appelle Higgsfield, et cet appel est FACTURÉ. Effet
-     EXTERNE : validation humaine avant de partir (§9). Après génération, les
-     images sont TÉLÉCHARGÉES dans le dépôt local (les adresses du CDN
-     expirent, un tirage payé ne se perd pas) et le résultat donne le bloc
-     ```ui prêt à insérer : le rendu S'AFFICHE dans le chat, il ne se raconte
-     pas.
+  2. `tester_visuel` — l'ESSAI. Modèle rapide, replis autorisés : on itère,
+     on montre, on ajuste. Effet lecture.
+
+  3. `generer_visuel` — le TIRAGE FINAL. Nano Banana Pro EXIGÉ, sans repli, et
+     le brief reçoit en plus les consignes de finition. Effet externe : un
+     rendu qu'on montrera au client passe par un accord humain.
+
+  4. `modifier_visuel` — LA RETOUCHE, et c'est le geste qui manquait. On donne
+     une PHOTO EXISTANTE (celle du terrain, ou un rendu déjà produit) et la
+     liste de ce qu'on veut changer : le modèle reçoit l'image elle-même dans
+     la requête, pas une description d'elle. C'est la seule façon de retrouver
+     LA MÊME maison. Le PRÉRÉGLAGE DE FIDÉLITÉ (plus bas) fait le reste : tout
+     ce qui n'est pas explicitement demandé doit rester identique.
+
+CE QUE ÇA NE FAIT TOUJOURS PAS : une image reste une ILLUSTRATION d'intention.
+Même en partant d'une photo du terrain, ce n'est ni un plan, ni une simulation
+d'exécution — et le texte rendu au chat le dit à chaque fois.
 
 LE GABARIT EST EN ANGLAIS, LES RÉPONSES AUSSI. Les modèles d'image comprennent
 nettement mieux l'anglais ; le catalogue demande au modèle de conversation de
 traduire les éléments en anglais simple au moment de remplir. L'utilisateur,
 lui, parle français : c'est le modèle qui fait le pont.
-
-CE QUE ÇA NE FAIT PAS. Partir d'une PHOTO du terrain (simulation avant/après
-sur l'existant) n'est pas disponible : la documentation publique de l'éditeur
-ne décrit pas d'image d'entrée. Le dire, plutôt que faire passer une
-illustration pour une simulation du chantier réel.
 """
 from __future__ import annotations
 
@@ -38,6 +49,9 @@ import logging
 logger = logging.getLogger("symbiose.skills.visuels")
 
 MAX_BRIEF = 1600
+# Ce que l'utilisateur demande de changer, plafonné SEUL : les consignes fixes
+# qui l'entourent ne sont jamais rognées (voir PRESET_FIDELITE).
+MAX_CHANGEMENTS = 700
 
 # ── LE GABARIT PHOTORÉALISTE ────────────────────────────────────────────────
 #
@@ -65,6 +79,65 @@ GABARIT = (
     "Magazine quality, no text, no watermark, no logo, no people in the foreground, "
     "no oversaturated colors, no fantasy elements"
 )
+
+# ── LE PRÉRÉGLAGE DE FIDÉLITÉ — pour RETOUCHER une photo existante ──────────
+#
+# Le piège d'une retouche par IA, c'est qu'elle REFAIT l'image au lieu de la
+# modifier : même sujet, mais une autre maison, un autre angle, une autre
+# lumière. Le client ne reconnaît plus son terrain, et le rendu ne prouve plus
+# rien. Tout ce préréglage sert donc à UNE chose : nommer explicitement, une
+# par une, les choses qui NE DOIVENT PAS bouger.
+#
+# Pourquoi les énumérer plutôt qu'écrire « garde tout le reste identique » :
+# une consigne générale se dilue, une liste tient. Géométrie du bâti, ligne de
+# toiture, position des ouvertures, matériaux et teintes de façade, bâtiments
+# voisins, ligne d'horizon, position et focale de la caméra, heure, direction
+# et dureté des ombres, météo — chacune a été vue dériver au moins une fois.
+#
+# L'ordre importe aussi : l'identité D'ABORD, les changements ENSUITE, la
+# qualité en dernier. Ce qui vient en tête d'une consigne pèse plus lourd, et
+# ce qu'on veut ici c'est la même maison avant d'être une belle image.
+PRESET_FIDELITE = (
+    "Photorealistic architectural edit of the SUPPLIED photograph. "
+
+    "ABSOLUTE PRIORITY — PRESERVE THE IDENTITY OF THE SOURCE IMAGE: keep the exact same "
+    "building, the same architectural geometry and proportions, the same roofline and roof "
+    "material, the same position, size and shape of every window, door and shutter, the same "
+    "facade materials, textures and colours, the same neighbouring buildings and boundaries, "
+    "the same terrain relief and horizon line, the same existing trees unless listed below. "
+    "Keep the exact same camera position, focal length, perspective and vanishing points, the "
+    "same framing and crop, the same time of day, the same light direction, the same shadow "
+    "length and softness, the same weather and sky. "
+
+    "CHANGE ONLY WHAT IS LISTED HERE: {changements}. "
+
+    "Everything not listed must remain faithful to the source photograph, pixel for pixel where "
+    "possible. Do not re-imagine the scene, do not re-frame it, do not re-light it, do not "
+    "restyle the building, do not tidy up or remove clutter, do not add people, vehicles, "
+    "furniture, signage or decorative elements that were not requested. "
+
+    "INTEGRATION: the new elements must be physically plausible in this exact scene — correct "
+    "ground contact, correct scale against the building and any visible door or window, cast "
+    "shadows consistent with the existing light direction and length, coherent reflections, "
+    "materials that age and weather like the real thing, planting that suits a temperate French "
+    "climate and the season visible in the photograph. "
+
+    "QUALITY: professional landscape architecture photography, ultra realistic, sharp focus, "
+    "natural white balance, high dynamic range, photorealistic textures on every material, "
+    "magazine quality. "
+
+    "FORBIDDEN: text, watermark, logo, borders, collage, before/after split, oversaturated "
+    "colours, cartoon or CGI look, fantasy elements"
+)
+
+# Ce qui s'ajoute au brief du TIRAGE FINAL seulement. L'essai n'en a pas
+# besoin : on y règle la composition, pas la finition.
+FINITION = (
+    ". Final client-facing render: maximum detail, {resolution} level of detail, immaculate "
+    "material rendering, refined composition, perfectly natural light, no artefacts, no "
+    "duplicated or malformed elements, no distorted straight lines on architecture"
+)
+
 
 # Les valeurs par défaut de chaque trou : un gabarit qui exige tout n'est
 # jamais rempli. Ce qui est demandé à l'utilisateur : la scène et les
@@ -102,7 +175,7 @@ def _champ(data: dict, *noms: str) -> str:
 
 async def preparer_visuel(data: dict, user) -> dict:
     """Assemble le gabarit, ou rend les questions à poser. Gratuit."""
-    from visuels.higgsfield import RATIOS, RESOLUTIONS, disponible
+    from visuels.nano_banana import RATIOS, RESOLUTIONS, disponible
 
     scene = _champ(data, "scene", "demande", "description")
     elements = _champ(data, "elements", "amenagements")
@@ -156,16 +229,67 @@ async def preparer_visuel(data: dict, user) -> dict:
         "note": ("Ce brief n'a RIEN généré et n'a rien coûté. Résume à "
                  "l'utilisateur EN FRANÇAIS ce que l'image montrera (pas le "
                  "brief anglais brut), puis ESSAIE d'abord avec "
-                 "`tester_visuel` (rapide, inclus) : montre l'essai, ajuste "
-                 "le brief s'il le faut, et ne lance `generer_visuel` "
-                 "(Higgsfield, facturé, validé) que pour le tirage final "
-                 "retenu."),
+                 "`tester_visuel` : montre l'essai, ajuste le brief s'il le "
+                 "faut, et ne lance `generer_visuel` (tirage final, validé) "
+                 "que pour le rendu retenu. Si l'utilisateur veut partir "
+                 "d'une PHOTO existante plutôt que d'une description, ce "
+                 "n'est pas ce skill : c'est `modifier_visuel`."),
     }
 
 
+def _rendu(resultat: dict, titre: str, *, essai: bool) -> dict:
+    """Dépose les images et fabrique le bloc ```ui. Commun aux trois gestes.
+
+    Le dépôt local n'est pas une commodité : l'image ne vit QUE dans la
+    réponse de l'API, en base64. Si on ne la range pas ici, elle n'existe plus
+    après le tour — et une retouche ultérieure n'aurait plus de source.
+    """
+    import json as _json
+    from visuels.depot import deposer_octets
+
+    cles = [c for octets, mime in resultat["images"]
+            if (c := deposer_octets(octets, mime))]
+    if not cles:
+        return {"genere": False,
+                "message": "L'image a été rendue mais son dépôt a échoué : réessayez."}
+
+    bloc = {"type": "visuel",
+            "titre": (titre or ("Essai de visuel" if essai else "Visuel d'aménagement"))[:80],
+            "images": [{"cle": c} for c in cles]}
+    return {
+        "genere": True,
+        "essai": essai,
+        "modele": resultat.get("modele"),
+        "cles": cles,
+        # La clé est DITE au modèle pour qu'il puisse la repasser à
+        # `modifier_visuel` : « celle-là, mais avec un olivier » est la
+        # demande suivante une fois sur deux, et sans la clé elle repartirait
+        # d'une génération neuve — donc d'un autre jardin.
+        "a_savoir": ("Référence" + ("s" if len(cles) > 1 else "") + " de cette image : "
+                     + ", ".join(cles) + ". Pour la RETOUCHER (changer un détail en "
+                     "gardant tout le reste identique), appelle `modifier_visuel` avec "
+                     "cette référence, jamais une nouvelle génération."),
+        "bloc_ui": bloc,
+        "a_faire": ("AFFICHE le rendu : insère dans ta réponse un bloc ```ui contenant "
+                    "EXACTEMENT ceci : " + _json.dumps(bloc, ensure_ascii=False)
+                    + " — l'écran montre les images. Ne colle pas d'adresse d'image en texte."),
+    }
+
+
+def _avec_metier(brief: str) -> str:
+    """Réapplique le métier de l'image si le brief a été réécrit à la main sans
+    lui : mieux vaut un doublon de consigne qu'un rendu de jeu vidéo."""
+    if "photorealistic textures" in brief:
+        return brief[:MAX_BRIEF]
+    return (brief + ". Ultra realistic professional landscape photograph, "
+            "photorealistic textures, golden hour light, believable human "
+            "scale, magazine quality, no text, no watermark, no logo, "
+            "no people in the foreground")[:MAX_BRIEF]
+
+
 async def generer_visuel(data: dict, user) -> dict:
-    """Génère le visuel. FACTURÉ — passe par la validation (effet externe)."""
-    from visuels.higgsfield import generer, HiggsfieldIndisponible
+    """TIRAGE FINAL — Nano Banana Pro exigé. Effet externe : accord humain."""
+    from visuels.nano_banana import generer, NanoBananaIndisponible, RESOLUTIONS
 
     brief = (data.get("brief") or data.get("demande") or "").strip()
     if not brief:
@@ -173,76 +297,106 @@ async def generer_visuel(data: dict, user) -> dict:
         raise SkillError("Aucun brief fourni. Prépare-le d'abord avec "
                          "`preparer_visuel`, c'est gratuit.")
 
-    # Le métier de l'image est réappliqué si le brief a été réécrit à la main
-    # sans lui : mieux vaut un doublon de consigne qu'un rendu de jeu vidéo.
-    if "photorealistic textures" not in brief:
-        brief = (brief + ". Ultra realistic professional landscape photograph, "
-                 "photorealistic textures, golden hour light, believable human "
-                 "scale, magazine quality, no text, no watermark, no logo, "
-                 "no people in the foreground")[:MAX_BRIEF]
+    resolution = (data.get("resolution") or "4k").strip().lower()
+    if resolution not in RESOLUTIONS:
+        resolution = "4k"
+    # `_avec_metier` plafonne déjà le brief ; la finition s'ajoute APRÈS, pour
+    # ne pas être la première chose que la troncature emporte.
+    brief = _avec_metier(brief) + FINITION.format(resolution=resolution)
 
     try:
-        resultat = await generer(brief[:MAX_BRIEF],
-                                 ratio=data.get("format"),
-                                 resolution=data.get("resolution"))
-    except HiggsfieldIndisponible as e:
-        logger.info("Génération de visuel impossible : %s", e)
-        return {"genere": False, "message": str(e)}
+        resultat = await generer(brief, ratio=data.get("format"), qualite="finale")
+    except NanoBananaIndisponible as e:
+        logger.info("Tirage final impossible : %s", e)
+        return {"genere": False, "message": str(e),
+                "a_savoir": ("Explique la situation et ARRÊTE-TOI : ne relance pas ce "
+                             "skill dans ce tour. Ce refus ne vaut QUE pour ce tour — "
+                             "si l'utilisateur redemande plus tard, réessaie.")}
 
-    if not resultat.get("termine"):
-        return {"genere": False, **resultat}
+    sortie = _rendu(resultat, data.get("titre") or "Visuel d'aménagement", essai=False)
+    if not sortie.get("genere"):
+        return sortie
+    sortie["note"] = ("Visuel d'ILLUSTRATION, produit à partir d'une description — ni un "
+                      "plan, ni une simulation du terrain réel : présente-le comme une "
+                      "intention d'aménagement.")
+    # Le chemin POST-VALIDATION est mécanique : aucun modèle n'y repasse pour
+    # lire `a_faire`. `message_final` et `bloc_ui` sont le contrat que
+    # `execute_action_node` restitue tel quel — c'est ce qui fait que le rendu
+    # S'AFFICHE aussi quand la génération a attendu un accord.
+    n = len(sortie["cles"])
+    sortie["message_final"] = (
+        f"Voici le rendu final ({n} image{'s' if n > 1 else ''}) — une illustration "
+        "d'intention d'aménagement, pas une simulation du terrain réel.")
+    return sortie
 
-    # LES IMAGES SONT RAPATRIÉES : les adresses du CDN expirent, le dépôt non.
-    from visuels.depot import deposer_depuis_url
-    images = []
-    for url in resultat["images"]:
-        cle = await deposer_depuis_url(url)
-        images.append({"cle": cle, "url_externe": None if cle else url})
 
-    cles = [i["cle"] for i in images if i["cle"]]
-    import json as _json
-    bloc = _json.dumps({"type": "visuel",
-                        "titre": (data.get("titre") or "Visuel d'aménagement")[:80],
-                        "images": [{"cle": c} for c in cles]}, ensure_ascii=False)
+async def modifier_visuel(data: dict, user) -> dict:
+    """RETOUCHE une image existante : la même scène, quelques détails changés.
 
-    sortie = {
-        "genere": True,
-        "images": images,
-        "request_id": resultat["request_id"],
-        "format": resultat["format"],
-        "note": ("Visuel d'ILLUSTRATION, produit à partir d'une description — ni un "
-                 "plan, ni une simulation du terrain réel : présente-le comme une "
-                 "intention d'aménagement."),
-    }
-    if cles:
-        sortie["a_faire"] = ("AFFICHE le rendu : insère dans ta réponse un bloc "
-                             "```ui contenant EXACTEMENT ceci : " + bloc +
-                             " — l'écran montre les images. Ne colle pas d'adresse "
-                             "d'image en texte.")
-        # Le chemin POST-VALIDATION est mécanique : aucun modèle n'y repasse
-        # pour lire `a_faire`. Ces deux champs sont le contrat que
-        # `execute_action_node` restitue tel quel — c'est ce qui fait que le
-        # rendu S'AFFICHE aussi quand la génération a attendu un accord.
-        sortie["message_final"] = (
-            f"Voici le rendu ({len(cles)} image{'s' if len(cles) > 1 else ''}) — "
-            "une illustration d'intention d'aménagement, pas une simulation du "
-            "terrain réel.")
-        sortie["bloc_ui"] = _json.loads(bloc)
-    else:
-        sortie["a_faire"] = ("Le dépôt local a échoué : donne les adresses "
-                             "`url_externe` telles quelles, en prévenant qu'elles "
-                             "expirent sous quelques heures.")
-        liens = "\n".join(f"- {i['url_externe']}" for i in images if i.get("url_externe"))
-        sortie["message_final"] = (
-            "Le visuel est généré, mais son dépôt local a échoué. Voici les "
-            "adresses directes (elles expirent sous quelques heures) :\n" + liens)
+    La différence avec une génération n'est pas de degré : ici le modèle reçoit
+    l'IMAGE ELLE-MÊME, pas une description d'elle. C'est ce qui fait qu'on
+    retrouve la même maison au lieu d'une maison qui lui ressemble.
+    """
+    from skills.erreurs import SkillError
+    from visuels.depot import lire
+    from visuels.nano_banana import generer, NanoBananaIndisponible
+
+    reference = (data.get("image") or data.get("reference") or data.get("cle") or "").strip()
+    if not reference:
+        raise SkillError(
+            "Aucune image de départ. `modifier_visuel` retouche une image qui "
+            "EXISTE : donne la référence d'une photo envoyée par l'utilisateur "
+            "ou d'un visuel déjà produit (elle est rappelée dans le résultat du "
+            "geste précédent). Pour créer une image à partir de rien, c'est "
+            "`preparer_visuel` puis `tester_visuel`.")
+
+    source = lire(reference)
+    if not source:
+        raise SkillError(
+            f"L'image « {reference[:16]} » est introuvable dans le dépôt. Demande à "
+            "l'utilisateur de renvoyer la photo, ou repars du dernier visuel produit.")
+
+    changements = data.get("changements") or data.get("modifications") or data.get("demande")
+    if isinstance(changements, (list, tuple)):
+        changements = "; ".join(str(c).strip() for c in changements if str(c).strip())
+    changements = (changements or "").strip()
+    if not changements:
+        raise SkillError(
+            "Il manque ce qu'il faut changer. Demande-le à l'utilisateur, puis "
+            "rappelle `modifier_visuel` avec `changements` EN ANGLAIS simple "
+            "(ex. « replace the lawn with an ipe wood deck; add a low stone wall "
+            "along the left boundary »).")
+
+    prompt = PRESET_FIDELITE.format(changements=changements[:MAX_CHANGEMENTS])
+    octets, mime = source
+
+    try:
+        resultat = await generer(prompt, images_entree=[(octets, mime)],
+                                 qualite=(data.get("qualite") or "finale"))
+    except NanoBananaIndisponible as e:
+        logger.info("Retouche impossible : %s", e)
+        return {"genere": False, "message": str(e),
+                "a_savoir": ("Explique la situation et ARRÊTE-TOI : ne relance pas ce "
+                             "skill dans ce tour. Ce refus ne vaut QUE pour ce tour.")}
+
+    sortie = _rendu(resultat, data.get("titre") or "Variante retouchée", essai=False)
+    if not sortie.get("genere"):
+        return sortie
+    sortie["source"] = reference
+    sortie["changements"] = changements
+    sortie["note"] = ("Retouche de l'image fournie : seuls les points demandés ont été "
+                      "modifiés, le reste de la scène est conservé. Cela reste une "
+                      "ILLUSTRATION d'intention — ni un plan, ni une garantie de rendu "
+                      "après travaux.")
+    sortie["message_final"] = (
+        "Voici la variante : la même scène, avec " + changements[:160] +
+        ". C'est une illustration d'intention, pas une simulation du chantier réel — "
+        "dites-moi ce qu'on ajuste.")
     return sortie
 
 
 async def tester_visuel(data: dict, user) -> dict:
-    """ESSAIE le visuel via Nano Banana (Gemini image). Rapide, inclus dans la
-    clé Google — c'est le banc d'essai : on itère ici, et seul le rendu retenu
-    part chez Higgsfield pour le tirage final."""
+    """ESSAI rapide : modèle rapide, replis autorisés, on itère librement."""
     from visuels.nano_banana import generer, NanoBananaIndisponible
 
     brief = (data.get("brief") or data.get("demande") or "").strip()
@@ -250,14 +404,10 @@ async def tester_visuel(data: dict, user) -> dict:
         from skills.erreurs import SkillError
         raise SkillError("Aucun brief fourni. Prépare-le d'abord avec "
                          "`preparer_visuel`, c'est gratuit.")
-    if "photorealistic textures" not in brief:
-        brief = (brief + ". Ultra realistic professional landscape photograph, "
-                 "photorealistic textures, golden hour light, believable human "
-                 "scale, magazine quality, no text, no watermark, no logo, "
-                 "no people in the foreground")[:MAX_BRIEF]
 
     try:
-        resultat = await generer(brief[:MAX_BRIEF], ratio=data.get("format"))
+        resultat = await generer(_avec_metier(brief), ratio=data.get("format"),
+                                 qualite="essai")
     except NanoBananaIndisponible as e:
         logger.info("Essai de visuel impossible : %s", e)
         return {"genere": False, "message": str(e),
@@ -266,38 +416,19 @@ async def tester_visuel(data: dict, user) -> dict:
                 "a_savoir": ("NE RAPPELLE PLUS `tester_visuel` dans CE tour-ci : le "
                              "quota ne reviendra pas dans la minute, et changer "
                              "le brief n'y change rien. Explique la situation à "
-                             "l'utilisateur avec le message ci-dessus, propose "
-                             "`generer_visuel` (Higgsfield) ou d'attendre, et "
+                             "l'utilisateur avec le message ci-dessus et "
                              "ARRÊTE-TOI là. Ce refus ne vaut QUE pour ce tour : "
                              "si l'utilisateur redemande plus tard, réessaie — "
                              "la facturation peut avoir été activée entre-temps.")}
 
-    from visuels.depot import deposer_octets
-    cles = [c for octets, mime in resultat["images"]
-            if (c := deposer_octets(octets, mime))]
-    if not cles:
-        return {"genere": False,
-                "message": "L'image a été rendue mais son dépôt a échoué : réessayez."}
-
-    import json as _json
-    bloc = {"type": "visuel",
-            "titre": (data.get("titre") or "Essai de visuel")[:80],
-            "images": [{"cle": c} for c in cles]}
-    return {
-        "genere": True,
-        "essai": True,
-        "modele": resultat["modele"],
-        "note": ("ESSAI rapide (Nano Banana), pour régler le brief. Le tirage "
-                 "final, plus abouti, se fait avec `generer_visuel` (Higgsfield, "
-                 "facturé, validé)."),
-        "a_faire": ("AFFICHE l'essai : insère dans ta réponse un bloc ```ui "
-                    "contenant EXACTEMENT ceci : " + _json.dumps(bloc, ensure_ascii=False)
-                    + " — puis propose d'ajuster le brief ou de lancer le tirage "
-                    "final Higgsfield."),
-        "message_final": "Voici l'essai de visuel — dites-moi ce qu'on ajuste, "
-                         "ou si on lance le tirage final.",
-        "bloc_ui": bloc,
-    }
+    sortie = _rendu(resultat, data.get("titre") or "Essai de visuel", essai=True)
+    if not sortie.get("genere"):
+        return sortie
+    sortie["note"] = ("ESSAI rapide, pour régler le brief. Le tirage final, plus "
+                      "abouti, se fait avec `generer_visuel`.")
+    sortie["message_final"] = ("Voici l'essai de visuel — dites-moi ce qu'on ajuste, "
+                               "ou si on lance le tirage final.")
+    return sortie
 
 
 # ── Déclarations : tout ce que le système doit savoir, ICI ───────────
@@ -327,29 +458,50 @@ SKILLS = {
             "image, inclus dans la cle Google, quota journalier) a partir du "
             "brief de `preparer_visuel`. C'est le BANC D'ESSAI : itere ici "
             "autant qu'il faut, montre chaque essai, ajuste le brief avec "
-            "l'utilisateur, et ne passe a `generer_visuel` (Higgsfield, "
-            "facture) que pour le tirage final retenu. Le resultat donne un "
+            "l'utilisateur, et ne passe a `generer_visuel` (tirage final, "
+            "valide) que pour le rendu retenu. Le resultat donne un "
             "bloc ```ui a inserer TEL QUEL pour AFFICHER l'essai. Un echec "
             "de quota d'un tour PRECEDENT ne vaut plus rien : quand "
             "l'utilisateur redemande un essai, APPELLE ce skill au lieu de "
             "repondre de memoire — c'est lui qui sait si le quota est revenu, "
             "pas l'historique de la conversation"),
         requis=["brief"], optionnels=["format", "titre"],
-        # Inclus dans la cle deja en place, pas de facture a l'acte : l'essai
-        # s'itere librement, seul le tirage final passe par la validation.
+        # L'essai s'itere librement ; seul le tirage final passe par un accord.
         effet="lecture",
         libelle="j'essaie le visuel (Nano Banana)"),
+    "modifier_visuel": Declaration(
+        fonction=modifier_visuel,
+        description=(
+            "RETOUCHE une image QUI EXISTE DEJA en gardant tout le reste "
+            "IDENTIQUE : meme maison, meme angle, meme lumiere, seuls les "
+            "points demandes changent. C'est LE skill a appeler quand "
+            "l'utilisateur a envoye une photo, ou qu'un visuel vient d'etre "
+            "produit, et demande d'y changer quelque chose — surtout PAS une "
+            "nouvelle generation, qui rendrait une AUTRE maison. `image` : la "
+            "reference rappelee par le geste precedent ou par l'analyse de la "
+            "photo jointe. `changements` : ce qu'il faut changer, EN ANGLAIS "
+            "simple, liste courte separee par des points-virgules (ex. "
+            "« replace the lawn with an ipe wood deck; add three olive trees "
+            "on the right »). Ne demande QUE ce que l'utilisateur a demande : "
+            "tout le reste doit rester tel quel. Le resultat donne un bloc "
+            "```ui a inserer TEL QUEL pour AFFICHER la variante"),
+        requis=["image", "changements"], optionnels=["titre", "qualite"],
+        # Un rendu qu'on montrera au client : meme porte que le tirage final.
+        effet="externe",
+        libelle="je retouche l'image"),
     "generer_visuel": Declaration(
         fonction=generer_visuel,
         description=(
-            "GENERE le TIRAGE FINAL du visuel via Higgsfield a partir du brief "
-            "de `preparer_visuel`. FACTURE, validation humaine obligatoire : "
-            "jamais de ta propre initiative, jamais pour iterer — c'est le "
-            "role de `tester_visuel`. Le resultat donne un bloc ```ui a "
+            "GENERE le TIRAGE FINAL du visuel a partir du brief de "
+            "`preparer_visuel` : Nano Banana Pro exige, sans repli, avec les "
+            "consignes de finition. Validation humaine obligatoire : jamais de "
+            "ta propre initiative, jamais pour iterer — c'est le role de "
+            "`tester_visuel`. Pour retoucher une image EXISTANTE, ce n'est pas "
+            "ce skill mais `modifier_visuel`. Le resultat donne un bloc ```ui a "
             "inserer TEL QUEL pour AFFICHER le rendu dans le chat. `titre` : "
             "nom court du projet pour la legende"),
         requis=["brief"], optionnels=["format", "resolution", "titre"],
-        # FACTURE et hors du systeme : effet externe, validation humaine.
+        # Le rendu montre au client : effet externe, validation humaine.
         effet="externe",
         libelle="je génère le visuel"),
 }

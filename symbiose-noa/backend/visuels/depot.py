@@ -1,10 +1,11 @@
 """
 LE DÉPÔT DES VISUELS GÉNÉRÉS — sur disque, parce qu'un tirage payé ne se perd pas.
 
-Higgsfield rend des adresses d'images sur son CDN, signées et périssables.
-Les donner telles quelles au chat, c'est montrer des images qui meurent au
-bout de quelques heures — et un rendu FACTURÉ qui disparaît est un rendu payé
-deux fois. Chaque image est donc téléchargée UNE fois par le backend, rangée
+Une image générée n'existe QUE dans la réponse de l'API, en base64 — et les
+fournisseurs qui rendent une adresse de CDN la rendent signée et périssable.
+La donner telle quelle au chat, c'est montrer une image qui meurt au bout de
+quelques heures, et un rendu payé qui disparaît est un rendu payé deux fois.
+Chaque image est donc rangée UNE fois par le backend,
 dans le volume des documents produits (le même qui garde les Word), et servie
 par une route authentifiée. Elle survit aux redémarrages, comme le devis
 qu'elle illustre.

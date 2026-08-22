@@ -22,10 +22,6 @@ const LIBELLES: Record<string, { nom: string; role: string }> = {
   groq_api_key: { nom: "Groq", role: "Repli gratuit et rapide" },
   anthropic_api_key: { nom: "Anthropic", role: "Vision et raisonnement (optionnel)" },
   google_api_key: { nom: "Google AI", role: "Embeddings de la mémoire d'entreprise" },
-  // Higgsfield exige DEUX valeurs. Une seule renseignée ne marche pas : le
-  // service refuse l'authentification, sans dire laquelle manque.
-  higgsfield_api_key: { nom: "Higgsfield (clé)", role: "Visuels paysagers, facturé à l'usage" },
-  higgsfield_api_secret: { nom: "Higgsfield (secret)", role: "Second identifiant, exigé avec la clé" },
 }
 
 // LE MODÈLE FORCÉ EN TÊTE DE CASCADE.

@@ -235,7 +235,7 @@ def _message_apres_action(skill: str, resultat: dict) -> str:
     # (un échec expliqué : quota, crédit, service coupé) : sans ce repli, une
     # génération qui échouait APRÈS validation affichait « exécutée après
     # validation » — un mensonge par omission, relevé en production quand
-    # Higgsfield n'avait plus de crédit.
+    # le tirage final n'avait plus de credit.
     message = str(sortie.get("message_final") or "").strip() \
         or str(sortie.get("message") or "").strip() \
         or f"Action « {skill} » exécutée après validation."

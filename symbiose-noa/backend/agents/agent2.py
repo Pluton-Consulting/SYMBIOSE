@@ -76,9 +76,27 @@ async def preprocess_attachment_node(state: AgentState) -> dict:
             img = img.resize((_MAX_IMG_WIDTH, int(img.height * ratio)))
         out = io.BytesIO()
         img.save(out, format="JPEG", quality=80)  # nouvel encodage = sans métadonnées EXIF
+        octets = out.getvalue()
+
+        # LA PHOTO EST RANGÉE AU DÉPÔT, et c'est ce qui rend la retouche
+        # possible. Sans cela l'image ne vit que le temps du tour, en base64
+        # dans l'état : au tour suivant, « change la terrasse sur cette photo »
+        # n'aurait plus de source, et le modèle repartirait d'une génération
+        # neuve — donc d'une AUTRE maison. L'import est optionnel : là où
+        # l'offre visuelle n'existe pas, il ne se passe simplement rien.
+        cle_visuel = None
+        try:
+            from visuels.depot import deposer_octets
+            cle_visuel = deposer_octets(octets, "image/jpeg")
+        except ImportError:
+            pass
+        except Exception as e:  # noqa: BLE001 — un dépôt raté ne casse pas l'analyse
+            logger.info("Dépôt de la photo jointe impossible : %s", e)
+
         return {
-            "attachment_b64": base64.b64encode(out.getvalue()).decode(),
+            "attachment_b64": base64.b64encode(octets).decode(),
             "attachment_mime": "image/jpeg",
+            "attachment_visuel_cle": cle_visuel,
         }
     except Exception as e:
         return {"error": f"image_illisible_{type(e).__name__}"}
@@ -232,6 +250,22 @@ async def prechiffrage_node(state: AgentState) -> dict:
     summary += ("\n\n_Pré-chiffrage indicatif : estimations préparées par l'IA, à "
                 "vérifier et valider par un humain avant tout usage commercial. "
                 "Rien n'a été envoyé ni engagé._")
+
+    # LA RÉFÉRENCE DE LA PHOTO EST ÉCRITE DANS LA RÉPONSE, à dessein.
+    #
+    # Une image jointe part toujours ici (le routeur envoie tout ce qui n'a pas
+    # de texte extractible à l'agent vision), et cet agent-ci n'appelle aucun
+    # skill : il lit, il ne fait pas. La retouche, elle, vit dans le catalogue
+    # de l'agent conversationnel — au tour SUIVANT. Écrire la référence dans la
+    # réponse la fait entrer dans l'historique du fil, d'où l'autre agent la
+    # relira pour appeler `modifier_visuel`. C'est le seul chemin qui ne
+    # demande ni table, ni état partagé entre deux graphes.
+    cle = state.get("attachment_visuel_cle")
+    if cle:
+        summary += (f"\n\n_Photo enregistrée sous la référence `{cle}`. Je peux en "
+                    "produire une variante : dites-moi ce que vous voulez changer "
+                    "(« remplace la pelouse par une terrasse en bois », « ajoute une "
+                    "pergola à droite »), et je garderai le reste à l'identique._")
 
     return {
         "final_response": summary,

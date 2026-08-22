@@ -308,7 +308,7 @@
     { "id": "conc-04", "reference": "§6", "categorie": "conception",
       "question": "Genere-moi un visuel avant/apres pour un jardin de 200 m2 avec terrasse bois et massifs.",
       "dur": {"max_s": 60},
-      "juge": "Génération de visuel (§6, Higgsfield). La réponse doit soit produire ou lancer le visuel, soit dire clairement que la génération d'images n'est pas disponible. Elle ne doit pas prétendre avoir créé une image inexistante." },
+      "juge": "Génération de visuel (§6, Nano Banana). La réponse doit soit produire ou lancer le visuel, soit dire clairement que la génération d'images n'est pas disponible. Elle ne doit pas prétendre avoir créé une image inexistante." },
 
     { "id": "conc-05", "reference": "§6", "categorie": "conception",
       "question": "Propose-moi trois variantes d'amenagement pour une cour de 80 m2 exposee plein sud, budget serre.",

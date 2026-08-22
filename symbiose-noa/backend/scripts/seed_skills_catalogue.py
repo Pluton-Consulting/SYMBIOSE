@@ -159,14 +159,17 @@ CATALOGUE = [
      "Recherche RAG (chantiers + devis) sur des projets comparables. Remonte postes récurrents."),
 
     ("generation_visuel_paysager", "agent2", "visuels",
-     "Génère un visuel paysager via Higgsfield à partir d'un brief ou d'une photo.",
-     ["brief"], ["url_visuel", "parametres", "variantes"],
-     "Prépare l'appel Higgsfield (brief, style, contraintes). ⚠ Coût API à l'usage : validation avant génération."),
+     "Génère un visuel paysager (Nano Banana) à partir d'un brief.",
+     ["brief"], ["cles_images", "parametres", "variantes"],
+     "Livré : `preparer_visuel` assemble le brief, `tester_visuel` itère, `generer_visuel` "
+     "produit le tirage final. ⚠ Coût API à l'usage : validation avant le tirage final."),
 
     ("simulation_avant_apres", "agent2", "visuels",
      "Produit un rendu avant/après à partir d'une photo terrain et d'un projet.",
      ["photo", "projet"], ["url_apres", "description_transformation"],
-     "Génère un rendu 'après' cohérent avec l'existant (Higgsfield). ⚠ Validation avant génération."),
+     "Livré : `modifier_visuel` — la photo est donnée AU modèle, pas décrite, et un "
+     "préréglage de fidélité verrouille tout ce qui ne doit pas bouger (bâti, angle, "
+     "lumière). ⚠ Validation avant génération."),
 
     ("variantes_amenagement", "agent2", "conception",
      "Propose plusieurs variantes d'aménagement pour un espace.",

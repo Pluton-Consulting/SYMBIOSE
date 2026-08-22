@@ -42,7 +42,7 @@ réels sont donc affichés sans le décor, dans `SourcesReponse`.
 changement de cascade.
 
 **`Image`** attend `base64` et `mediaType` (`Experimental_GeneratedImage`). Nos
-visuels sont des **URL** distantes rendues par Higgsfield (`visuels/higgsfield.py:147`).
+visuels sont des octets rendus par Nano Banana, deposes localement (`visuels/depot.py`).
 Le brancher imposerait de télécharger puis ré-encoder chaque image pour la
 redonner au navigateur qui allait la chercher lui-même.
 *Pour le brancher :* un type de bloc ```ui `visuel` rendant les URL, ce qui est

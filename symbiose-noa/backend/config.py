@@ -63,9 +63,6 @@ class Settings(BaseSettings):
     # Groq (gratuit) — actions simples/backend, rapides
     groq_api_key: Optional[str] = None
 
-    # Higgsfield — generation de visuels paysagers (facturee a l'usage).
-    higgsfield_api_key: Optional[str] = None
-    higgsfield_api_secret: Optional[str] = None
     model_groq_light: str = "llama-3.1-8b-instant"      # rapide, gros quota séparé
     model_groq_large: str = "llama-3.3-70b-versatile"   # plus gros, quota journalier limité
     model_groq_vision: str = "meta-llama/llama-4-scout-17b-16e-instruct"  # multimodal (Agent 2)
@@ -348,6 +345,12 @@ class Settings(BaseSettings):
 
     class Config:
         env_file = ".env"
+        # UN REGLAGE RETIRE DU CODE NE DOIT PAS EMPECHER LE DEMARRAGE.
+        # Le `.env` des serveurs vit sa vie : il garde des lignes de reglages
+        # qu'on a cesse d'utiliser (Higgsfield, retire le 22/08/2026). Sans
+        # cette tolerance, retirer un champ ici ferait tomber le backend au
+        # redemarrage chez qui n'a pas nettoye son fichier le meme jour.
+        extra = "ignore"
         protected_namespaces = ()  # autorise les champs model_light / model_standard / model_complex
 
 

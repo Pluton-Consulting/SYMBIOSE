@@ -32,9 +32,6 @@ CLES_CONNUES = (
     "groq_api_key",
     "anthropic_api_key",
     "google_api_key",
-    # Higgsfield exige DEUX valeurs : une cle ET un secret.
-    "higgsfield_api_key",
-    "higgsfield_api_secret",
 )
 
 DUREE_CACHE_S = 30

@@ -1,38 +1,56 @@
 """
-Nano Banana — la génération d'images Gemini, pour ESSAYER avant de payer.
+Nano Banana — LA génération d'images du projet. Un seul moteur, deux usages.
 
-Higgsfield est le tirage final : beau, facturé, validé par un humain. Nano
-Banana (les modèles image de Gemini, inclus dans la clé Google déjà en place
-pour les embeddings et la vision) est le BANC D'ESSAI : on itère sur le brief
-en quelques secondes, et seul le rendu retenu part chez Higgsfield.
+Higgsfield a été retiré (22/08/2026) : deux fournisseurs pour une même chose,
+c'était deux jeux d'identifiants, deux formats de réponse, deux pannes
+possibles, et un tirage final qu'on n'a jamais réussi à payer. Tout passe
+désormais par l'API Google directe, avec la clé déjà en place pour les
+embeddings et la vision.
+
+TROIS GESTES, UN SEUL APPEL RÉSEAU DERRIÈRE :
+  · l'ESSAI          — modèle rapide, replis autorisés, on itère ;
+  · le TIRAGE FINAL  — Nano Banana Pro EXIGÉ, aucun repli : un rendu montré au
+                       client ne doit pas sortir en douce d'un modèle moindre ;
+  · la RETOUCHE      — une image d'entrée + ce qu'on veut changer.
+
+LA RETOUCHE EST LE VRAI SUJET. Donner une photo de maison et demander « la même,
+avec une terrasse en ipé à la place de la pelouse » n'est pas une génération :
+c'est une ÉDITION. Le modèle reçoit l'image dans la requête (`inlineData`) et
+non une description d'elle — c'est la seule façon de retrouver la MÊME maison.
+Le préréglage de fidélité (`skills/visuels.py`) fait le reste du travail.
 
 L'API rend l'image DANS la réponse (base64), pas une adresse CDN : rien
 n'expire, on dépose les octets tels quels.
 
-Vérifié avec la clé réelle : le format d'appel est accepté (les refus étaient
-des 429 de quota, pas des 400). Le quota image de Google AI Studio est
-journalier et peut exiger la facturation activée : le 429 est donc traduit en
-message d'exploitation, jamais en panne.
+Le quota image de Google est journalier et exige la facturation activée sur LE
+projet de la clé : le 429 est donc traduit en message d'exploitation, jamais en
+panne — et il dit LEQUEL des deux cas c'est.
 """
 from __future__ import annotations
 
 import base64
 import logging
 import time
-from typing import Optional
+from typing import Iterable, Optional
 
 import httpx
 
 logger = logging.getLogger("symbiose.visuels.nano_banana")
 
 BASE = "https://generativelanguage.googleapis.com/v1beta/models"
-# Le premier modèle vient du réglage ; les suivants sont des replis connus de
-# cette clé (relevés sur son catalogue réel). Un 404 passe au suivant : Google
-# retire les anciens modèles aux nouveaux comptes sans préavis.
+
+# Le modèle de tête vient du réglage `model_nano_banana`. Les replis sont des
+# modèles connus de cette clé : un 404 passe au suivant, Google retirant les
+# anciens modèles aux nouveaux comptes sans préavis.
+PRO = "nano-banana-pro-preview"
 REPLIS = ("gemini-3.1-flash-image", "gemini-2.5-flash-image")
 
 RATIOS = ("16:9", "9:16", "1:1", "4:3", "3:4")
-DELAI_S = 120.0
+# Conservées pour l'interface du skill : Google ne prend pas de hauteur en
+# paramètre, mais la résolution demandée est reportée dans le brief, où elle
+# oriente le rendu (« 4K », « ultra-detailed »).
+RESOLUTIONS = ("720p", "1080p", "2k", "4k")
+DELAI_S = 180.0
 
 # APRES UN 429, ON SE TAIT DEUX MINUTES. Releve en production : le modele a
 # rappele `tester_visuel` une quarantaine de fois dans le MEME tour en variant
@@ -54,15 +72,23 @@ def _cle() -> str:
     if not cle:
         raise NanoBananaIndisponible(
             "La clé Google n'est pas configurée (Paramètres > Clés API) : "
-            "impossible d'essayer un visuel Nano Banana.")
+            "impossible de produire un visuel.")
     return cle
 
 
-def _modeles() -> list[str]:
+def _modeles(qualite: str) -> list[str]:
+    """La liste des modèles à essayer, dans l'ordre.
+
+    En qualité `finale`, la liste ne contient QUE Nano Banana Pro : mieux vaut
+    un échec explicite qu'un tirage présenté au client comme le rendu final
+    alors qu'il sort d'un modèle rapide. En qualité `essai`, les replis sont
+    au contraire souhaitables — l'important est d'itérer.
+    """
     from config import settings
-    prefere = (getattr(settings, "model_nano_banana", "") or "").strip()
-    suite = [m for m in REPLIS if m != prefere]
-    return ([prefere] if prefere else []) + suite
+    prefere = (getattr(settings, "model_nano_banana", "") or "").strip() or PRO
+    if qualite == "finale":
+        return [prefere] if prefere else [PRO]
+    return [prefere] + [m for m in REPLIS if m != prefere]
 
 
 def _marquer_blocage(message: str) -> str:
@@ -89,30 +115,49 @@ def _diagnostic_429(rep) -> str:
                 "Recharger des crédits ailleurs n'y change rien : il faut "
                 "activer la facturation sur LE projet de cette clé "
                 "(console.cloud.google.com > Facturation), ou créer une clé "
-                "dans un projet facturé et la coller dans Paramètres > Clés "
-                "API. En attendant : `generer_visuel` (Higgsfield).")
-    return ("Le quota d'images de la clé Google est épuisé. Réessayez plus "
-            "tard, ou utilisez directement `generer_visuel` (Higgsfield).")
+                "dans un projet facturé et la coller dans Paramètres > Clés API.")
+    return ("Le quota d'images de la clé Google est épuisé pour l'instant. "
+            "Réessayez plus tard — le quota est journalier.")
 
 
-async def generer(prompt: str, *, ratio: Optional[str] = None) -> dict:
-    """Génère une image et rend ses octets. Lève NanoBananaIndisponible sinon."""
+async def generer(prompt: str, *,
+                  ratio: Optional[str] = None,
+                  images_entree: Optional[Iterable[tuple[bytes, str]]] = None,
+                  qualite: str = "essai") -> dict:
+    """Génère (ou RETOUCHE) une image et rend ses octets.
+
+    `images_entree` : des couples (octets, mime) placés AVANT le texte dans la
+    requête. L'ordre compte — l'API lit les parties dans l'ordre donné, et une
+    consigne qui précède son image porte moins bien qu'une image suivie de sa
+    consigne. Lève NanoBananaIndisponible en cas de refus.
+    """
     cle = _cle()
     if time.monotonic() < _bloque_jusqua:
         # Refroidissement : même réponse, zéro appel réseau.
         raise NanoBananaIndisponible(_dernier_message or
                                      "Le quota d'images vient d'être refusé : réessayez dans quelques minutes.")
+
+    parts: list[dict] = []
+    n_entrees = 0
+    for octets, mime in (images_entree or []):
+        parts.append({"inlineData": {"mimeType": mime or "image/jpeg",
+                                     "data": base64.b64encode(octets).decode()}})
+        n_entrees += 1
+    parts.append({"text": prompt})
+
     corps: dict = {
-        "contents": [{"parts": [{"text": prompt}]}],
+        "contents": [{"parts": parts}],
         "generationConfig": {"responseModalities": ["TEXT", "IMAGE"]},
     }
     r = (ratio or "").strip()
-    if r in RATIOS:
+    # SUR UNE RETOUCHE, ON N'IMPOSE PAS DE RATIO. Forcer un cadre recadre ou
+    # étire la photo d'origine, et la « même maison » cesse d'être la même.
+    if r in RATIOS and not n_entrees:
         corps["generationConfig"]["imageConfig"] = {"aspectRatio": r}
 
     derniere = "aucun modèle essayé"
     async with httpx.AsyncClient(timeout=DELAI_S) as client:
-        for modele in _modeles():
+        for modele in _modeles(qualite):
             try:
                 rep = await client.post(f"{BASE}/{modele}:generateContent",
                                         params={"key": cle}, json=corps)
@@ -122,10 +167,9 @@ async def generer(prompt: str, *, ratio: Optional[str] = None) -> dict:
             if rep.status_code == 429:
                 # Le quota est un état d'exploitation, pas une panne — et le
                 # DÉTAIL du refus dit lequel : des violations « FreeTier »
-                # signifient que la clé vit sur un projet SANS facturation,
-                # où Nano Banana Pro est quasi inaccessible. Le dire ainsi
-                # évite de « recharger des crédits » au mauvais endroit —
-                # relevé en production, mot pour mot.
+                # signifient que la clé vit sur un projet SANS facturation.
+                # Le dire ainsi évite de « recharger des crédits » au mauvais
+                # endroit — relevé en production, mot pour mot.
                 raise NanoBananaIndisponible(_marquer_blocage(_diagnostic_429(rep)))
             if rep.status_code == 404:
                 derniere = f"{modele} inconnu de cette clé"
@@ -138,9 +182,9 @@ async def generer(prompt: str, *, ratio: Optional[str] = None) -> dict:
                 logger.info("Nano Banana %s : %s", modele, rep.text[:200])
                 continue
 
-            parts = (rep.json().get("candidates") or [{}])[0].get("content", {}).get("parts", [])
+            contenu = (rep.json().get("candidates") or [{}])[0].get("content", {})
             images = []
-            for p in parts:
+            for p in contenu.get("parts", []):
                 donnee = p.get("inlineData") or p.get("inline_data") or {}
                 if donnee.get("data"):
                     try:
@@ -149,10 +193,18 @@ async def generer(prompt: str, *, ratio: Optional[str] = None) -> dict:
                     except Exception:  # noqa: BLE001 - un base64 illisible n'est pas une image
                         continue
             if images:
-                logger.info("Nano Banana : %d image(s) via %s", len(images), modele)
-                return {"termine": True, "modele": modele, "images": images}
+                logger.info("Nano Banana : %d image(s) via %s (%d entrée(s), qualité %s)",
+                            len(images), modele, n_entrees, qualite)
+                return {"termine": True, "modele": modele, "images": images,
+                        "retouche": bool(n_entrees)}
             derniere = f"{modele} : réponse sans image"
 
+    if qualite == "finale":
+        raise NanoBananaIndisponible(
+            f"Le tirage final exige Nano Banana Pro, qui n'a pas répondu ({derniere}). "
+            "Aucun repli n'est tenté à dessein : un rendu montré au client ne doit pas "
+            "sortir d'un modèle plus faible sans que personne ne le sache. "
+            "Réessayez, ou repassez par `tester_visuel` en attendant.")
     raise NanoBananaIndisponible(f"Aucun modèle image n'a répondu ({derniere}).")
 
 
