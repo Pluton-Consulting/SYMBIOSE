@@ -165,6 +165,44 @@ QUESTIONS = {
 }
 
 
+# LA SAISON SE DÉDUIT DE CE QU'ON DIT. Relevé le 22/08 : « en plein hiver avec
+# une légère neige » — et l'image est sortie sans neige. Le modèle avait mis
+# l'hiver dans la scène mais pas dans `saison`, et le gabarit a rempli le trou
+# avec son défaut : « early summer ». Deux saisons dans un même brief, la plus
+# affirmative gagne. On lit donc TOUS les champs ET la demande brute : le mot
+# qui dit la saison est quelque part, il suffit de le prendre.
+_SAISONS = (
+    (("neige", "snow", "enneig", "snowy", "hiver", "winter", "hivernal", "gel", "frost"),
+     "deep winter, light snow covering the ground, plants and surfaces, cold clear light"),
+    (("automne", "autumn", "fall foliage", "feuilles mortes"),
+     "autumn, warm foliage, fallen leaves"),
+    (("printemps", "spring", "floraison", "blossom"),
+     "spring, fresh green growth and first blossoms"),
+    (("été", "ete", "summer", "canicule", "plein soleil"),
+     "high summer, lush planting"),
+)
+
+
+def _saison_deduite(*textes) -> str:
+    corpus = " ".join(str(x or "") for x in textes).lower()
+    for mots, saison in _SAISONS:
+        if any(m in corpus for m in mots):
+            return saison
+    return ""
+
+
+def _brief_client(demande: str) -> str:
+    """La demande du client, telle quelle, en fin de brief : l'autorité.
+
+    Le modèle de conversation traduit et redécoupe la demande en champs, et il
+    en perd en route (la neige, la couleur des poteaux). Les modèles d'image
+    lisent le français : on leur donne AUSSI les mots du client, en leur disant
+    que c'est ce qui fait foi. Borné : c'est un rappel, pas un second gabarit.
+    """
+    d = " ".join(str(demande or "").split())[:500]
+    return f" CLIENT BRIEF (authoritative, in the client's own words, French): \"{d}\"." if d else ""
+
+
 def _champ(data: dict, *noms: str) -> str:
     for n in noms:
         v = (data.get(n) or "").strip()
@@ -204,17 +242,27 @@ async def preparer_visuel(data: dict, user) -> dict:
                      "Ne génère RIEN d'ici là."),
         }
 
+    demande_brute = _champ(data, "demande", "description", "requete")
+    saison = _champ(data, "saison") or _saison_deduite(
+        scene, elements, _champ(data, "ambiance", "lumiere"), demande_brute) or DEFAUTS["saison"]
+    ambiance = _champ(data, "ambiance", "lumiere")
+    # Une ambiance « heure dorée » par défaut sous la neige fait une image
+    # d'été enneigée : quand la saison est l'hiver et que personne n'a demandé
+    # de lumière, on prend une lumière d'hiver.
+    if not ambiance:
+        ambiance = ("soft overcast winter light, cool tones" if "winter" in saison
+                    else DEFAUTS["ambiance"])
     valeurs = {
         "scene": scene,
         "elements": elements,
         "vegetation": _champ(data, "vegetation") or DEFAUTS["vegetation"],
         "materiaux": _champ(data, "materiaux", "materials") or DEFAUTS["materiaux"],
         "style": _champ(data, "style") or DEFAUTS["style"],
-        "ambiance": _champ(data, "ambiance", "lumiere") or DEFAUTS["ambiance"],
-        "saison": _champ(data, "saison") or DEFAUTS["saison"],
+        "ambiance": ambiance,
+        "saison": saison,
         "point_de_vue": _champ(data, "point_de_vue", "vue") or DEFAUTS["point_de_vue"],
     }
-    brief = GABARIT.format(**valeurs)[:MAX_BRIEF]
+    brief = (GABARIT.format(**valeurs) + _brief_client(demande_brute))[:MAX_BRIEF + 600]
 
     ratio = (data.get("format") or "16:9").strip()
     resolution = (data.get("resolution") or "1080p").strip()
@@ -449,11 +497,16 @@ SKILLS = {
             "message court avec des quick_replies, puis rappelle-le. Champs (EN "
             "ANGLAIS simple) : scene (lieu), elements (amenagements a voir), et "
             "en option vegetation, materiaux, style, ambiance, saison, "
-            "point_de_vue, format (16:9, 1:1...), resolution (720p, 1080p). Le "
-            "gabarit photo (lumiere, optique, realisme) est ajoute tout seul"),
+            "point_de_vue, format (16:9, 1:1...), resolution (720p, 1080p). "
+            "TOUJOURS passer `demande` = la phrase exacte de l'utilisateur (en "
+            "francais) : elle entre dans le brief comme reference, rien de ce "
+            "qu'il a dit ne doit se perdre (neige, couleur, saison). Le gabarit "
+            "photo (lumiere, optique, realisme) est ajoute tout seul"),
         requis=[], optionnels=["scene", "elements", "vegetation", "materiaux",
                                "style", "ambiance", "saison", "point_de_vue",
                                "format", "resolution", "demande"],
+        # `demande` : TOUJOURS y recopier la phrase de l'utilisateur telle
+        # quelle (en français) — elle entre dans le brief comme référence.
         effet="lecture",
         libelle="je prépare le brief du visuel"),
     "tester_visuel": Declaration(
