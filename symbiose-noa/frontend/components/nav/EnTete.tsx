@@ -4,6 +4,7 @@ import { usePathname, useRouter } from "next/navigation"
 import { signOut } from "next-auth/react"
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react"
 import { MARQUE, ROLE_LABELS, VUES, getVisibleSections } from "@/lib/permissions"
+import Logo from "@/components/nav/Logo"
 
 /**
  * L'EN-TÊTE EN TROIS BULLES.
@@ -114,7 +115,7 @@ export default function EnTete({ role, email, name }: Props) {
     <>
       <header className="v2-entete" role="banner">
         <Link href="/accueil" className="v2-bulle v2-bulle-logo sym-tap" aria-label={MARQUE.nom}>
-          <img src={MARQUE.logo} alt={MARQUE.logoAlt} />
+          <Logo taille={17} />
         </Link>
 
         <div className="v2-bulle v2-switch" ref={refSwitch} role="tablist" aria-label="Vue principale">

@@ -88,6 +88,16 @@ async def tableau(current_user: User = Depends(get_current_user)):
     # Le filtre de périmètre est le MÊME fragment partout : $1 = user_id,
     # $2 = vrai si global. Un collaborateur ne voit que ce qui porte son nom.
     perim = "($2::boolean OR {col} = $1::uuid)"
+    # LE PLANCHER DES INDICATEURS. Réglage `kpi_depuis` : une remise à zéro qui
+    # ne supprime rien. Les lignes restent en base — on cesse simplement de les
+    # compter. Réversible en effaçant le champ, ce qu'aucun DELETE ne permet.
+    # Il ne s'applique QU'À l'activité : l'inventaire (« mémoire d'entreprise »)
+    # décrit ce que l'outil connaît aujourd'hui, et le remettre à zéro
+    # ferait mentir l'écran sur des documents qui existent bel et bien.
+    from llm.reglages import plancher_sql
+    plancher = plancher_sql("created_at")
+    plancher_a = plancher_sql("a.created_at")
+    plancher_date = plancher_sql("date")
 
     async with get_db() as conn:
         # ── Ce que les experts ont fait ce mois-ci (30 jours glissants) ──
@@ -108,7 +118,7 @@ async def tableau(current_user: User = Depends(get_current_user)):
               COUNT(*) FILTER (WHERE action IN ('browser_task_completed'))                                AS navigations,
               COUNT(*) FILTER (WHERE success = false)                                                     AS echecs
             FROM audit_log
-            WHERE created_at >= NOW() - INTERVAL '30 days' AND {perim.format(col='user_id')}
+            WHERE created_at >= NOW() - INTERVAL '30 days' AND {perim.format(col='user_id')}{plancher}
         """, uid, global_)
 
         # Activité par jour (14 jours) : des barres, pas des courbes de dev.
@@ -117,7 +127,7 @@ async def tableau(current_user: User = Depends(get_current_user)):
                    COUNT(*) FILTER (WHERE action = 'chat_request') AS conversations,
                    COUNT(*) FILTER (WHERE action = 'skill_executed') AS actions
             FROM audit_log
-            WHERE created_at >= NOW() - INTERVAL '14 days' AND {perim.format(col='user_id')}
+            WHERE created_at >= NOW() - INTERVAL '14 days' AND {perim.format(col='user_id')}{plancher}
             GROUP BY 1 ORDER BY 1
         """, uid, global_)
 
@@ -138,7 +148,7 @@ async def tableau(current_user: User = Depends(get_current_user)):
                                       AND metadata->>'skill' IN ('rechercher_documents','interroger_donnees',
                                                                  'chercher_web','ouvrir_page','naviguer'))      AS recherches
             FROM audit_log
-            WHERE created_at >= NOW() - INTERVAL '60 days' AND {perim.format(col='user_id')}
+            WHERE created_at >= NOW() - INTERVAL '60 days' AND {perim.format(col='user_id')}{plancher}
             GROUP BY 1 ORDER BY 1
         """, uid, global_)
 
@@ -173,7 +183,7 @@ async def tableau(current_user: User = Depends(get_current_user)):
                    COUNT(*) FILTER (WHERE status IN ('echec','erreur','failed','interrompue'))   AS echouees,
                    COUNT(*)                                                                       AS total
             FROM taches_differees
-            WHERE created_at >= NOW() - INTERVAL '30 days' AND {perim.format(col='user_id')}
+            WHERE created_at >= NOW() - INTERVAL '30 days' AND {perim.format(col='user_id')}{plancher}
         """, uid, global_)
 
         # ── Actions planifiées (réveils automatiques) ──
@@ -207,15 +217,15 @@ async def tableau(current_user: User = Depends(get_current_user)):
             FROM audit_log a LEFT JOIN users u ON u.id = a.user_id
             WHERE a.action IN ('chat_request','skill_executed','tache_differee_lancee',
                                'browser_task_completed','skill_created','skill_validated')
-              AND {perim.format(col='a.user_id')}
+              AND {perim.format(col='a.user_id')}{plancher_a}
             ORDER BY a.created_at DESC LIMIT 14
         """, uid, global_)
 
         # ── Coût IA du mois (pour l'écart ROI), si le rôle y a droit ──
-        cout = await _une(conn, """
+        cout = await _une(conn, f"""
             SELECT COALESCE(SUM(cost_eur), 0) AS cout
             FROM api_usage_daily
-            WHERE date >= CURRENT_DATE - INTERVAL '30 days'
+            WHERE date >= CURRENT_DATE - INTERVAL '30 days'{plancher_date}
         """) if voir_couts else None
 
     # ── Le ROI : un calcul lisible, des hypothèses visibles ──
