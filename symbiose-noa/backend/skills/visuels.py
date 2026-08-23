@@ -508,6 +508,10 @@ SKILLS = {
         # `demande` : TOUJOURS y recopier la phrase de l'utilisateur telle
         # quelle (en français) — elle entre dans le brief comme référence.
         effet="lecture",
+        # Les visuels s'exécutent dans le graphe d'agent1 (agent2 n'appelle
+        # aucun skill), mais c'est un travail de CONCEPTION : le tableau de
+        # bord et l'historique doivent le porter à l'« Expert plans & visuels ».
+        expert="agent2",
         libelle="je prépare le brief du visuel"),
     "tester_visuel": Declaration(
         fonction=tester_visuel,
@@ -525,6 +529,7 @@ SKILLS = {
         requis=["brief"], optionnels=["format", "titre"],
         # L'essai s'itere librement ; seul le tirage final passe par un accord.
         effet="lecture",
+        expert="agent2",
         libelle="j'essaie le visuel"),
     "modifier_visuel": Declaration(
         fonction=modifier_visuel,
@@ -545,6 +550,7 @@ SKILLS = {
         requis=["image", "changements"], optionnels=["titre", "qualite"],
         # Un rendu qu'on montrera au client : meme porte que le tirage final.
         effet="externe",
+        expert="agent2",
         libelle="je retouche l'image"),
     "generer_visuel": Declaration(
         fonction=generer_visuel,
@@ -560,5 +566,6 @@ SKILLS = {
         requis=["brief"], optionnels=["format", "resolution", "titre"],
         # Le rendu montre au client : effet externe, validation humaine.
         effet="externe",
+        expert="agent2",
         libelle="je génère le visuel"),
 }
