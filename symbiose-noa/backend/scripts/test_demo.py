@@ -382,6 +382,22 @@ _module("optim.tokens", trim_chunks=lambda c: c)
 async def _boites_par_id(uid): return ["contact@symbiose-paysage.fr"]
 
 
+# Les consignes retenues : le vrai module en écrit une ligne en base, on garde
+# la MÊME frontière (texte, portée, plafond de caractères) pour que le banc
+# teste ce qui est écrit, pas ce qu'on aurait aimé écrire.
+CONSIGNES = []
+
+
+async def _ajouter_consigne(texte, user, pour_tous=False, access_level="all"):
+    if len(texte) > 400:
+        return {"ok": False, "message": "Consigne trop longue."}
+    CONSIGNES.append({"texte": texte, "pour_tous": pour_tous})
+    return {"ok": True, "message": "Consigne enregistrée.", "pour_tous": pour_tous}
+
+
+_module("learning.consignes", ajouter=_ajouter_consigne, MAX_CARACTERES=400)
+
+
 # ═══════════════════════════════════════════════════════════════════════
 #  Chargement des modules RÉELS
 # ═══════════════════════════════════════════════════════════════════════
@@ -659,25 +675,62 @@ async def principal():
     # ═══════════════════════════════════════════════════════════════════
     titre(5, "« Liste-moi tous les dossiers clients où on attend une réponse "
              "depuis plus de 15 jours. »")
-    catalogue = protocol_src + "".join(
-        str(getattr(d, "description", "")) for d in
-        list(getattr(routines, "SKILLS", {}).values())
-        + list(getattr(visuels, "SKILLS", {}).values()))
-    verifier("un geste sait rendre les dossiers SANS RÉPONSE depuis N jours",
-             any(m in catalogue.lower() for m in
-                 ("sans reponse depuis", "sans réponse depuis", "en attente depuis",
-                  "relances a faire", "relances à faire")),
-             "aucun geste du catalogue ne croise un statut et une ancienneté ; "
-             "`relance_devis` est un TYPE DE MAIL, pas un suivi")
-    # Ce que l'on peut faire aujourd'hui, à défaut : compter par statut.
+    # Aucun geste ne porte cette question — et c'est le cas NORMAL d'une demande
+    # métier qu'on n'a pas prévue. Ce qui est testé ici n'est donc pas
+    # l'existence d'un skill « dossiers en attente », mais que l'assistant sache
+    # composer, faire valider, et RETENIR la marche à suivre.
+    src_agent1_p = (racine / "agents" / "agent1.py").read_text(encoding="utf-8")
+    verifier("la règle interdit de répondre « je ne sais pas faire »",
+             "Ne réponds pas « je ne sais pas faire »" in src_agent1_p
+             and "2 ou 3 questions COURTES" in src_agent1_p)
+    verifier("elle impose de vérifier AVANT de retenir",
+             "SEULEMENT SI ça a marché" in src_agent1_p)
+    plan_mod = charger("skills.plan", "skills/plan.py")
+    decl = plan_mod.SKILLS["enregistrer_procedure"]
+    verifier("le geste qui retient une marche à suivre existe",
+             callable(decl.fonction) and decl.effet == "ecriture_interne")
+    r = await plan_mod.enregistrer_procedure(
+        {"nom": "dossiers en attente",
+         "quand": "quand on demande les dossiers sans réponse depuis N jours",
+         "etapes": ["interroger les devis au statut envoyé",
+                    "comparer leur date à aujourd'hui",
+                    "rendre un tableau trié du plus ancien au plus récent"]}, User())
+    verifier("la procédure est enregistrée", r.get("ok"), r)
+    verifier("elle est écrite comme une consigne INJECTÉE, pas cherchée",
+             CONSIGNES and CONSIGNES[-1]["texte"].startswith("PROCÉDURE"),
+             CONSIGNES)
+    verifier("le déclencheur ET les trois étapes y sont, dans l'ordre",
+             "sans réponse depuis N jours" in CONSIGNES[-1]["texte"]
+             and "1) interroger les devis" in CONSIGNES[-1]["texte"]
+             and "3) rendre un tableau" in CONSIGNES[-1]["texte"], CONSIGNES[-1])
+    verifier("l'utilisateur est prévenu qu'il n'aura plus à la redemander",
+             "prochaine fois" in (r.get("message_final") or ""), r.get("message_final"))
+    verifier("on peut la retirer aussi facilement qu'on l'a apprise",
+             "oublie la procédure" in (r.get("a_faire") or ""))
+    try:
+        await plan_mod.enregistrer_procedure({"nom": "x", "quand": "y"}, User())
+        vide = False
+    except Exception:  # noqa: BLE001
+        vide = True
+    verifier("une procédure sans étapes est refusée", vide)
+    try:
+        await plan_mod.enregistrer_procedure(
+            {"nom": "trop longue", "quand": "q" * 130,
+             "etapes": ["e" * 90] * 6}, User())
+        longue = False
+    except Exception:  # noqa: BLE001
+        longue = True
+    verifier("une procédure trop longue est REFUSÉE, pas tronquée par la fin",
+             longue)
+    # Ce que la marche à suivre exécutera, une fois retenue.
     r = await donnees.interroger_donnees(
-        {"source_type": "devis", "filtres": {"Statut": "envoyé"}}, User())
-    verifier("à défaut, compter les devis « envoyé » fonctionne",
-             (r.get("nombre") or 0) == 1, r.get("nombre"))
-    signaler("« depuis plus de 15 jours » n'est calculable par aucun geste : les "
-             "dates sont du TEXTE dans les fichiers importés, et rien ne les "
-             "compare à aujourd'hui. La question rendra, au mieux, la liste des "
-             "devis en attente SANS le filtre d'ancienneté.")
+        {"source_type": "devis", "contient": {"Statut": "envoy"}}, User())
+    verifier("les devis en attente se comptent bien, eux", (r.get("nombre") or 0) == 1,
+             r.get("nombre"))
+    signaler("« depuis plus de 15 jours » reste approximatif : les dates des "
+             "fichiers importés sont du TEXTE, et seule une période en mois "
+             "entiers sait les filtrer. La procédure retenue rendra les devis en "
+             "attente triés par date, à la personne de trancher le seuil.")
 
     # ═══════════════════════════════════════════════════════════════════
     titre(6, "« Analyse ce plan PDF : surfaces, zones identifiées, postes de travaux. »")
@@ -734,10 +787,31 @@ async def principal():
     decl = visuels.SKILLS["modifier_visuel"]
     verifier("la retouche exige un accord humain (effet externe)", decl.effet == "externe")
     verifier("elle est créditée à l'expert plans & visuels", decl.expert == "agent2")
-    signaler("une photo jointe part TOUJOURS à l'agent vision, qui n'appelle aucun "
-             "geste : la simulation demande DEUX messages — joindre la photo, puis "
-             "« ajoute une terrasse bois et des graminées ». En un seul message, "
-             "la réponse est une analyse et une proposition, pas une image.")
+    # La photo jointe part à la vision, qui n'appelle aucun geste — mais elle
+    # rend maintenant la main. Encore faut-il que la RÉFÉRENCE de la photo
+    # suive, sinon la retouche repart d'une génération neuve, donc d'un autre
+    # jardin, au moment même où l'utilisateur montre le sien.
+    espace5 = {"AgentState": dict}
+    extraire("agents/agent1.py",
+             {"cles_images_du_fil", "_CLE_IMAGE_RE", "_re_images", "_consigne_images"},
+             espace5)
+    etat_photo = {"attachment_visuel_cle": cle_photo, "messages": [], "tool_results": []}
+    verifier("la photo tout juste envoyée est une image connue du fil",
+             espace5["cles_images_du_fil"](etat_photo) == [cle_photo],
+             espace5["cles_images_du_fil"](etat_photo))
+    verifier("le modèle reçoit sa référence, prête pour `modifier_visuel`",
+             cle_photo in espace5["_consigne_images"](etat_photo)
+             and "modifier_visuel" in espace5["_consigne_images"](etat_photo))
+    espace_route = {"AgentState": dict}
+    extraire("agents/router.py", {"route_apres_agent2", "_SUITE_ATTENDUE"}, espace_route)
+    verifier("« génère une simulation » réclame la suite : la vision rend la main",
+             espace_route["route_apres_agent2"](
+                 {"vision_analysis": "un jardin",
+                  "query": "génère-moi une simulation avant/après avec une "
+                           "terrasse bois et des graminées"}) == "agent1")
+    signaler("la simulation reste un TIRAGE : `modifier_visuel` est à effet externe, "
+             "donc l'image ne part qu'après un accord. En démonstration, il y a un "
+             "bouton à cliquer entre la demande et l'image.")
 
     # ═══════════════════════════════════════════════════════════════════
     titre(8, "« Trouve-moi 3 chantiers similaires (bassin d'Arcachon, terrain en "
@@ -796,17 +870,105 @@ async def principal():
     verifier("une question sans pièce jointe reste à l'assistant",
              r.get("target_agent") == "agent1", r)
     src_router = (racine / "agents" / "router.py").read_text(encoding="utf-8")
-    verifier("après l'analyse du plan, la main peut revenir à l'assistant "
+    verifier("après l'analyse du plan, la main revient à l'assistant "
              "(historique client, pré-devis, mail)",
-             'add_edge("agent2", "agent1")' in src_router
-             or '"agent2", route_apres_agent2' in src_router,
-             "le graphe va de `agent2` à `human_gate` puis à la FIN : l'expert "
-             "vision n'appelle aucun geste et ne rend jamais la main")
-    signaler("LA question de démonstration ne tient pas en UN message : le plan "
-             "joint est analysé par l'expert vision, qui ne sait ni lire la fiche "
-             "du client, ni produire un document, ni rédiger un mail. Il faut la "
-             "jouer en trois temps : (1) joindre le plan, (2) « fais la fiche de "
-             "ce client », (3) « prépare le mail de réponse ».")
+             'route_apres_agent2' in src_router
+             and '"agent1": "passer_la_main"' in src_router,
+             "le graphe va de `agent2` à `human_gate` puis à la FIN")
+    # La passe de main se décide sur ce que la demande RÉCLAME, pas sur l'image.
+    espace4 = {"AgentState": dict}
+    extraire("agents/router.py",
+             {"route_apres_agent2", "_SUITE_ATTENDUE", "passer_la_main_node",
+              "route_apres_execution"}, espace4)
+    vu = {"vision_analysis": "Terrasse 40 m2, dénivelé 1,20 m."}
+    for demande, attendu in (
+            ("analyse ce plan, retrouve son historique et prépare un pré-devis "
+             "et un mail de réponse", "agent1"),
+            ("fais-moi le chiffrage de ce plan", "agent1"),
+            ("c'est quoi cette plante ?", "human_gate"),
+            ("décris-moi ce plan", "human_gate")):
+        verifier(f"« {demande[:42]}… » → {attendu}",
+                 espace4["route_apres_agent2"](dict(vu, query=demande)) == attendu,
+                 espace4["route_apres_agent2"](dict(vu, query=demande)))
+    verifier("une analyse ratée ne part pas dans le vide",
+             espace4["route_apres_agent2"]({"query": "fais le devis"}) == "human_gate")
+    r = await espace4["passer_la_main_node"](
+        dict(vu, attachment_b64="xxx", attachment_name="plan-pereire.pdf",
+             final_response="analyse"))
+    verifier("l'analyse est transmise à l'assistant comme un document du contexte",
+             "Terrasse 40 m2" in (r.get("attachment_text") or ""), r)
+    verifier("l'image n'est PAS repassée (pas de second appel de vision)",
+             r.get("attachment_b64") is None)
+    verifier("la réponse de la vision s'efface : une seule réponse en fin de tour",
+             r.get("final_response") is None and r.get("llm_response") is None)
+    verifier("le tour reste crédité à l'expert qui a lu le plan",
+             "target_agent" not in r, r.get("target_agent"))
+    # Le plan validé : c'est lui qui rouvre le travail après l'accord.
+    verifier("un plan approuvé renvoie le tour dans l'assistant",
+             espace4["route_apres_execution"]({"plan_valide": ["a", "b"]}) == "agent1")
+    verifier("toute autre action validée termine le tour",
+             espace4["route_apres_execution"]({}) == "fin")
+    plan = charger("skills.plan", "skills/plan.py")
+    decl = plan.SKILLS["proposer_plan"]
+    verifier("le plan passe par un accord humain", decl.effet == "externe")
+    r = await plan.proposer_plan(
+        {"titre": "Chiffrage Villa Pereire",
+         "etapes": ["Analyser le plan", "Retrouver l'historique du client",
+                    "Préparer le pré-devis", "Rédiger le mail de réponse"]}, User())
+    verifier("le plan rend un bloc d'écran de type `plan`",
+             (r.get("bloc_ui") or {}).get("type") == "plan", r.get("bloc_ui"))
+    verifier("les quatre étapes y sont, aucune cochée d'avance",
+             len(r["bloc_ui"]["etapes"]) == 4
+             and all(e["etat"] == "a_faire" for e in r["bloc_ui"]["etapes"]),
+             r["bloc_ui"]["etapes"])
+    verifier("la consigne interdit de redemander l'accord et impose UNE réponse",
+             "SANS redemander l'accord" in (r.get("a_faire") or "")
+             and "Une seule réponse" in (r.get("a_faire") or ""))
+    # Le modèle écrit les étapes de dix façons : les trois doivent passer.
+    for forme in (["une", "deux"], [{"titre": "une"}, {"titre": "deux"}],
+                  "- une\n- deux"):
+        b = plan.bloc_du_plan({"etapes": forme})
+        verifier(f"étapes écrites en {type(forme).__name__} : comprises",
+                 [e["titre"] for e in b["etapes"]] == ["une", "deux"], b)
+    try:
+        await plan.proposer_plan({"etapes": ["une seule chose"]}, User())
+        seul = False
+    except Exception:  # noqa: BLE001
+        seul = True
+    verifier("un « plan » d'une seule étape est refusé (c'est l'action elle-même)",
+             seul)
+    src_agent1 = (racine / "agents" / "agent1.py").read_text(encoding="utf-8")
+    verifier("le plan est MONTRÉ avant l'accord, construit sans repasser par le modèle",
+             'action["skill"] == "proposer_plan"' in src_agent1
+             and "bloc_du_plan" in src_agent1)
+    verifier("un plan déjà validé ne peut pas être replanifié",
+             'state.get("plan_valide")' in src_agent1)
+    verifier("le plan approuvé est remis sous les yeux du modèle à la reprise",
+             "_consigne_plan" in src_agent1
+             and src_agent1.count("_consigne_plan(state)") == 2)
+    verifier("le plan ne survit pas au tour suivant",
+             '"plan_valide": None' in (racine / "agents" / "runtime.py").read_text(
+                 encoding="utf-8"))
+    # LE GRAPHE NE SE COMPILE PAS ICI (LangGraph n'est pas installé sur ce
+    # poste) : une arête vers un nœud qui n'existe pas ne se verrait qu'au
+    # démarrage du backend, en production. On vérifie donc à la main que tout
+    # ce qui est cité existe — c'est peu, mais c'est l'erreur qui coûte cher.
+    import re as _re
+    corps = src_router[src_router.index("async def build_main_graph"):]
+    noeuds = set(_re.findall(r'add_node\(\s*"([a-z_0-9]+)"', corps)) | {"END"}
+    cites = set()
+    for appel in _re.findall(r'add_edge\(\s*"([a-z_0-9]+)"\s*,\s*"?([A-Za-z_0-9]+)"?',
+                             corps):
+        cites |= set(appel)
+    for bloc in _re.findall(r'add_conditional_edges\((.*?)\)\n', corps, _re.S):
+        cites |= set(_re.findall(r'"([a-z_0-9]+)"\s*:\s*"([a-z_0-9]+)"', bloc) and
+                     [c for paire in _re.findall(
+                         r'"([a-z_0-9]+)"\s*:\s*"([a-z_0-9]+)"', bloc) for c in paire[1:]])
+        cites.add(_re.match(r'\s*"([a-z_0-9]+)"', bloc).group(1)
+                  if _re.match(r'\s*"([a-z_0-9]+)"', bloc) else "END")
+    inconnus = sorted(c for c in cites if c not in noeuds and c != "fin")
+    verifier("toutes les arêtes du graphe pointent vers un nœud qui existe",
+             not inconnus, f"nœuds cités mais jamais déclarés : {inconnus}")
 
     # ═══════════════════════════════════════════════════════════════════
     print(f"\n{'═' * 72}")
