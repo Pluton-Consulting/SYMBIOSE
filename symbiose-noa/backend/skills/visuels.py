@@ -285,7 +285,7 @@ async def preparer_visuel(data: dict, user) -> dict:
     }
 
 
-def _rendu(resultat: dict, titre: str, *, essai: bool) -> dict:
+def _rendu(resultat: dict, titre: str, *, essai: bool, avant: str = "") -> dict:
     """Dépose les images et fabrique le bloc ```ui. Commun aux trois gestes.
 
     Le dépôt local n'est pas une commodité : l'image ne vit QUE dans la
@@ -301,9 +301,24 @@ def _rendu(resultat: dict, titre: str, *, essai: bool) -> dict:
         return {"genere": False,
                 "message": "L'image a été rendue mais son dépôt a échoué : réessayez."}
 
+    # L'AVANT ET L'APRÈS, DANS LA MÊME PLANCHE.
+    #
+    # Une retouche ne se juge pas seule : « voilà ce que ça donnerait » n'a de
+    # sens qu'à côté de la photo d'origine, et c'est mot pour mot ce qu'un
+    # client demande (« une simulation avant/après »). Les deux images sont
+    # déjà au dépôt — la source y a été rangée en arrivant — donc le montrer ne
+    # coûte ni un appel, ni un octet de plus : seulement de le dire ici.
+    #
+    # Les légendes ne sont posées QUE dans ce cas : sur un essai ou un tirage
+    # simple, une légende « Après » ne voudrait rien dire.
+    if avant and avant not in cles:
+        images = ([{"cle": avant, "legende": "Avant (photo d'origine)"}]
+                  + [{"cle": c, "legende": "Après (projet)"} for c in cles])
+    else:
+        images = [{"cle": c} for c in cles]
     bloc = {"type": "visuel",
             "titre": (titre or ("Essai de visuel" if essai else "Visuel d'aménagement"))[:80],
-            "images": [{"cle": c} for c in cles]}
+            "images": images}
     # LE NOM DU MODÈLE NE SORT PAS. Il était rendu ici, donc visible du modèle
     # de conversation, qui l'a recopié dans ses textes (« via nano-banana-pro… »).
     # C'est un détail d'infrastructure : il va dans le journal, pas à l'écran.
@@ -432,7 +447,8 @@ async def modifier_visuel(data: dict, user) -> dict:
                 "a_savoir": ("Explique la situation et ARRÊTE-TOI : ne relance pas ce "
                              "skill dans ce tour. Ce refus ne vaut QUE pour ce tour.")}
 
-    sortie = _rendu(resultat, data.get("titre") or "Variante retouchée", essai=False)
+    sortie = _rendu(resultat, data.get("titre") or "Avant / après",
+                    essai=False, avant=reference)
     if not sortie.get("genere"):
         return sortie
     sortie["source"] = reference
@@ -442,7 +458,7 @@ async def modifier_visuel(data: dict, user) -> dict:
                       "ILLUSTRATION d'intention — ni un plan, ni une garantie de rendu "
                       "après travaux.")
     sortie["message_final"] = (
-        "Voici la variante : la même scène, avec " + changements[:160] +
+        "Voici l'avant / après : la même scène, avec " + changements[:160] +
         ". C'est une illustration d'intention, pas une simulation du chantier réel — "
         "dites-moi ce qu'on ajuste.")
     return sortie
