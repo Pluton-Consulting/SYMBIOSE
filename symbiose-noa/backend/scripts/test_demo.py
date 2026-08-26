@@ -63,15 +63,54 @@ FACTURES = [
     {"Numéro": "FA-2025-101", "Client": "SCI Les Tilleuls", "Date": "30/04/2025",
      "Montant TTC": "14 940,60 €"},
 ]
+# LES DATES DES CHANTIERS SONT RELATIVES À AUJOURD'HUI, et écrites dans QUATRE
+# formats différents — c'est le cœur de la question 2. Un banc dont les dates
+# sont figées prouve que le code marchait le jour où on l'a écrit ; celui-ci
+# doit valoir dans six mois, et sur un export qui n'écrit pas les dates comme
+# nous. Les deux chantiers « limite » encadrent la borne des douze mois à un
+# jour près : c'est ce qu'un filtre au mois entier ne saurait pas trancher.
+import datetime as _dt
+
+_AUJ = _dt.date.today()
+
+
+def _il_y_a(jours=0, mois=0):
+    a = _AUJ - _dt.timedelta(days=jours)
+    if mois:
+        total = a.year * 12 + (a.month - 1) - mois
+        an, m = divmod(total, 12)
+        a = _dt.date(an, m + 1, min(a.day, 28))
+    return a
+
+
+_MOIS_COURTS = ("janv.", "févr.", "mars", "avr.", "mai", "juin", "juil.",
+                "août", "sept.", "oct.", "nov.", "déc.")
+_L = _il_y_a(mois=6)
+
 CHANTIERS = [
-    {"Chantier": "Villa Pereire", "Client": "SCI Les Tilleuls", "Date": "05/09/2025",
+    # JJ/MM/AAAA — le format le plus courant des exports français.
+    {"Chantier": "Villa Pereire", "Client": "SCI Les Tilleuls",
+     "Date": _il_y_a(mois=11).strftime("%d/%m/%Y"),
      "Prestation": "Création terrasse bois et allée", "Montant HT": "18 400,00 €"},
-    {"Chantier": "Le Moulleau", "Client": "MARTIN Claire", "Date": "14/02/2026",
+    # « 5 sept. 25 » — une saisie à la main, que l'ancien filtre PERDAIT.
+    {"Chantier": "Le Moulleau", "Client": "MARTIN Claire",
+     "Date": f"{_L.day} {_MOIS_COURTS[_L.month - 1]} {_L.strftime('%y')}",
      "Prestation": "Terrasse bois exotique + massif de graminées", "Montant HT": "9 250,00 €"},
-    {"Chantier": "Résidence du Port", "Client": "Mairie de La Teste", "Date": "20/06/2024",
+    # Hors période, et de loin.
+    {"Chantier": "Résidence du Port", "Client": "Mairie de La Teste",
+     "Date": _il_y_a(mois=26).strftime("%d/%m/%Y"),
      "Prestation": "Engazonnement et arrosage", "Montant HT": "31 000,00 €"},
-    {"Chantier": "Cap Ferret", "Client": "MARTIN Claire", "Date": "03/07/2026",
+    # ISO, avec une heure — ce que rend un logiciel métier.
+    {"Chantier": "Cap Ferret", "Client": "MARTIN Claire",
+     "Date": _il_y_a(mois=2).strftime("%Y-%m-%dT08:30:00"),
      "Prestation": "Terrasse en bois et pergola", "Montant HT": "11 900,00 €"},
+    # LES DEUX BORNES, à un jour près de part et d'autre des douze mois.
+    {"Chantier": "Pyla dedans", "Client": "SCI Les Tilleuls",
+     "Date": _il_y_a(jours=363).strftime("%d/%m/%Y"),
+     "Prestation": "Terrasse bois sur plots", "Montant HT": "1 000,00 €"},
+    {"Chantier": "Pyla dehors", "Client": "SCI Les Tilleuls",
+     "Date": _il_y_a(jours=367).strftime("%d/%m/%Y"),
+     "Prestation": "Terrasse bois sur plots", "Montant HT": "1 000 000,00 €"},
 ]
 # Le fournisseur EXISTE, mais ni son SIRET ni son assurance décennale n'ont été
 # importés : c'est exactement le terrain de la question 3.
@@ -123,8 +162,13 @@ class FausseConnexion:
                     if motif in json.dumps(d, ensure_ascii=False).lower()]
         if "@>" in sql and "SELECT title" in sql:         # _filtrer, échantillon
             return [_ligne(args[0], d, i) for i, d in enumerate(self._filtres(*args))]
-        if "WITH base AS" in sql:                         # _agreger
-            return self._agreger(sql, *args)
+        if "SELECT data, champs FROM document_metadata m" in sql:   # _charger
+            # Ce que Postgres filtre : la source, les droits, le containment
+            # JSONB et les ILIKE. Le reste (la période, le calcul) se fait en
+            # Python, dans le module livré — c'est justement ce qu'on teste.
+            *reste, limite = args[2:]
+            return [{"data": _jsonb(d), "champs": _jsonb(_champs(d))}
+                    for d in self._filtres(args[0], args[1], *reste)][:limite]
         if "SELECT data, champs FROM document_metadata" in sql:
             return [{"data": _jsonb(d), "champs": _jsonb(_champs(d))}
                     for d in BASE.get(args[0], [])]
@@ -376,6 +420,55 @@ async def _retrieve_as_context(query, user_role=None, source_types=None, top_k=5
 
 
 _module("vectorstore.rag", retrieve=_retrieve, retrieve_as_context=_retrieve_as_context)
+
+
+# ── Le Drive : une doublure qui répond comme l'API de Google ──────────
+#
+# Les fichiers portent leur `mimeType` et leur `size`, parce que c'est sur ces
+# deux champs que le geste décide : une image ou non, trop lourde ou non.
+FICHIERS_DRIVE = [
+    {"id": "f1", "name": "pereire-avant.jpg", "mimeType": "image/jpeg",
+     "size": "2400000", "modifiedTime": "2026-06-01T10:00:00Z"},
+    {"id": "f2", "name": "pereire-terrasse.jpg", "mimeType": "image/jpeg",
+     "size": "3100000", "modifiedTime": "2026-06-02T10:00:00Z"},
+    {"id": "f3", "name": "pereire-plan.png", "mimeType": "image/png",
+     "size": "800000", "modifiedTime": "2026-06-03T10:00:00Z"},
+    {"id": "f4", "name": "pereire-drone.jpg", "mimeType": "image/jpeg",
+     "size": "40000000", "modifiedTime": "2026-06-04T10:00:00Z"},   # trop lourde
+    {"id": "f5", "name": "cctp-pereire.pdf", "mimeType": "application/pdf",
+     "size": "120000", "modifiedTime": "2026-06-05T10:00:00Z"},     # pas une image
+]
+
+
+class _FauxDrive:
+    """Le strict nécessaire de l'API Google Drive : list() et get_media()."""
+
+    def files(self):
+        return self
+
+    def list(self, q="", **kw):
+        images = "image/jpeg" in q
+        vide = "sans image" in q.lower()
+        trouves = [] if vide else [
+            f for f in FICHIERS_DRIVE
+            if (not images or f["mimeType"].startswith("image/"))]
+        return types.SimpleNamespace(execute=lambda: {"files": trouves})
+
+    def get_media(self, fileId=""):
+        return types.SimpleNamespace(execute=lambda: b"octets-" + fileId.encode())
+
+
+async def _service_drive():
+    return _FauxDrive()
+
+
+async def _rien():
+    return []
+
+
+async def _dossier(chemin):
+    """Le dossier demandé se résout, sauf s'il n'existe pas."""
+    return None if not chemin else f"dossier:{chemin}"
 _module("optim.tokens", trim_chunks=lambda c: c)
 
 
@@ -408,6 +501,14 @@ def charger(nom, chemin):
     spec = importlib.util.spec_from_file_location(nom, racine / chemin)
     module = importlib.util.module_from_spec(spec)
     sys.modules[nom] = module
+    # Rattaché au paquet parent, sinon un `from skills.lecture import ...` fait
+    # DEPUIS un module livré échoue : le module est bien dans sys.modules, mais
+    # Python va chercher l'attribut sur le paquet.
+    if "." in nom:
+        parent, feuille = nom.rsplit(".", 1)
+        if parent not in sys.modules:
+            sys.modules[parent] = types.ModuleType(parent)
+        setattr(sys.modules[parent], feuille, module)
     spec.loader.exec_module(module)
     return module
 
@@ -436,6 +537,10 @@ def extraire(chemin, noms, espace):
     return espace
 
 
+# La lecture des dates et des montants, chargée EN PREMIER : les autres
+# modules livrés l'importent.
+lecture = charger("skills.lecture", "skills/lecture.py")
+_lecture = lecture
 routines = charger("skills.routines", "skills/routines.py")
 donnees = charger("skills.donnees", "skills/donnees.py")
 documents = charger("skills.documents", "skills/documents.py")
@@ -476,6 +581,22 @@ def signaler(texte):
     """Une contrainte du code, vraie aujourd'hui. Ni réussite, ni échec."""
     print(f"  · LIMITE : {texte}")
     limites.append(texte)
+
+
+async def _leve(coroutine) -> bool:
+    """Ce geste refuse-t-il ? Un refus explicite est un résultat, pas une panne."""
+    try:
+        await coroutine
+        return False
+    except Exception:  # noqa: BLE001
+        return True
+
+
+def _plat_test(v):
+    """Forme comparable, pour les contrôles qui regardent un libellé."""
+    import unicodedata
+    s = unicodedata.normalize("NFD", str(v or ""))
+    return "".join(c for c in s if unicodedata.category(c) != "Mn").lower()
 
 
 def titre(n, question):
@@ -525,48 +646,71 @@ async def principal():
     r = await donnees.interroger_donnees(
         {"source_type": "chantiers", "contient": {"Prestation": "terrasse"}}, User())
     verifier("une recherche PARTIELLE retrouve les chantiers « terrasse bois »",
-             (r.get("nombre") or 0) == 3,
-             f"{r.get('nombre')} trouvé(s) sur 3 attendus")
-    # La question complète, en UN appel : le compte ET la moyenne, sur 12 mois.
+             (r.get("nombre") or 0) == 5,
+             f"{r.get('nombre')} trouvé(s) sur 5 attendus")
+    # LA QUESTION COMPLÈTE, EN UN SEUL APPEL : le compte ET la moyenne, sur les
+    # douze derniers mois, avec des dates écrites de quatre façons différentes.
     r = await donnees.interroger_donnees(
         {"source_type": "chantiers", "contient": {"Prestation": "terrasse"},
          "agreger": {"operation": "moyenne", "colonne": "Montant HT"},
          "depuis": "12m"}, User())
     verifier("une période GLISSANTE (12 derniers mois) est comprise",
              bool(r.get("periode")), r.get("erreur") or r)
-    verifier("le chantier plus vieux que la période est écarté",
-             r.get("enregistrements") == 3, r)
+    verifier("les quatre écritures de date sont lues (JJ/MM/AAAA, ISO, « 5 sept. 25 »)",
+             r.get("lignes_sans_date_lisible") is None, r)
+    verifier("le chantier vieux de deux ans est écarté",
+             (r.get("lignes_hors_periode") or 0) >= 1, r)
+    # LA COUPURE EST AU JOUR PRÈS. Un filtre au mois entier ferait entrer le
+    # chantier de J-367 : son montant à sept chiffres rendrait la moyenne
+    # méconnaissable, ce qui est précisément le genre d'erreur qu'on ne voit pas.
+    verifier("le chantier à J-363 est DEDANS, celui à J-367 est DEHORS",
+             r.get("enregistrements") == 4 and (r.get("resultat") or 0) < 20000,
+             f"{r.get('enregistrements')} retenus, moyenne {r.get('resultat')}")
     verifier("le compte ET la moyenne sortent du même appel",
-             r.get("operation") == "avg" and round(r.get("resultat") or 0) == 13183, r)
+             r.get("operation") == "avg"
+             and abs((r.get("resultat") or 0) - 10137.5) < 0.01, r)
     verifier("la note cite la période retenue, pour qu'aucun chiffre ne circule nu",
              "Période retenue" in (r.get("note") or ""), r.get("note"))
     verifier("la note dit combien de valeurs étaient lisibles",
              "lisibles" in (r.get("note") or ""))
-    r = await donnees.interroger_donnees(
-        {"source_type": "chantiers", "depuis": "l'année dernière"}, User())
-    verifier("une période écrite en toutes lettres est comprise aussi",
-             bool(r.get("periode")), r.get("erreur") or r)
+    for forme in ("l'année dernière", "6 mois", "15 jours", "cette semaine",
+                  "3 derniers mois", "30j"):
+        rr = await donnees.interroger_donnees(
+            {"source_type": "chantiers", "depuis": forme}, User())
+        verifier(f"période « {forme} » comprise", bool(rr.get("periode")) or
+                 "Aucun enregistrement" in (rr.get("message") or ""),
+                 rr.get("erreur") or rr)
     r = await donnees.interroger_donnees(
         {"source_type": "chantiers", "depuis": "n'importe quoi"}, User())
     verifier("une période illisible est REFUSÉE, jamais ignorée en silence",
              bool(r.get("erreur")), r)
-    # La formulation de repli : par ANNÉE. Un seul appel rend le compte ET la
-    # moyenne — c'est exactement ce que la question demande, à la période près.
+    # Une colonne de date qui n'en est pas une : il faut le DIRE, pas rendre zéro.
     r = await donnees.interroger_donnees(
-        {"source_type": "chantiers", "annee": "2026",
+        {"source_type": "chantiers", "depuis": "12m",
+         "agreger": {"colonne_date": "Chantier", "operation": "compte"}}, User())
+    verifier("une colonne sans dates lisibles est signalée, pas comptée pour zéro",
+             "date lisible" in (r.get("message") or "") or
+             (r.get("lignes_sans_date_lisible") or 0) > 0, r)
+    # La formulation par ANNÉE marche toujours, elle.
+    annee = str(_AUJ.year)
+    r = await donnees.interroger_donnees(
+        {"source_type": "chantiers", "annee": annee,
          "agreger": {"operation": "moyenne", "colonne": "Montant HT"}}, User())
-    verifier("par ANNÉE, le compte et la moyenne sortent en un seul appel",
-             r.get("enregistrements") == 2 and round(r.get("resultat") or 0) == 10575,
-             r)
-    # Et si le modèle veut seulement COMPTER l'année, sans rien moyenner :
-    r = await donnees.interroger_donnees({"source_type": "chantiers", "annee": "2026"}, User())
+    verifier(f"par ANNÉE ({annee}), le compte et la moyenne sortent en un appel",
+             (r.get("enregistrements") or 0) >= 1 and r.get("resultat"), r)
+    r = await donnees.interroger_donnees(
+        {"source_type": "chantiers", "annee": annee}, User())
     verifier("compter une année sans rien agréger est possible",
-             (r.get("enregistrements") or r.get("nombre") or 0) == 2,
+             (r.get("enregistrements") or r.get("nombre") or 0) >= 1,
              r.get("erreur") or r)
-    signaler("une période glissante se compte en MOIS ENTIERS (« 12 derniers mois » "
-             "au 26/08 part du 1er août de l'an dernier) et ne retient que les dates "
-             "écrites AAAA-MM-JJ ou JJ/MM/AAAA. Un export qui daterait autrement "
-             "(« 5 sept. 25 ») sort de la période : interroger alors par `annee`.")
+    # Grouper par mois : « le montant par mois » d'un dirigeant.
+    r = await donnees.interroger_donnees(
+        {"source_type": "chantiers", "depuis": "12m",
+         "agreger": {"operation": "somme", "colonne": "Montant HT", "par": "mois"}}, User())
+    verifier("le regroupement par mois fonctionne, toutes écritures confondues",
+             len(r.get("groupes") or []) >= 3
+             and all(len(str(g["groupe"])) == 7 for g in r["groupes"]),
+             r.get("groupes"))
 
     # ═══════════════════════════════════════════════════════════════════
     titre(3, "« Le SIRET / l'assurance décennale de Ets Lasserre ? » — LA question "
@@ -722,15 +866,44 @@ async def principal():
         longue = True
     verifier("une procédure trop longue est REFUSÉE, pas tronquée par la fin",
              longue)
-    # Ce que la marche à suivre exécutera, une fois retenue.
-    r = await donnees.interroger_donnees(
-        {"source_type": "devis", "contient": {"Statut": "envoy"}}, User())
-    verifier("les devis en attente se comptent bien, eux", (r.get("nombre") or 0) == 1,
-             r.get("nombre"))
-    signaler("« depuis plus de 15 jours » reste approximatif : les dates des "
-             "fichiers importés sont du TEXTE, et seule une période en mois "
-             "entiers sait les filtrer. La procédure retenue rendra les devis en "
-             "attente triés par date, à la personne de trancher le seuil.")
+    # ── Le geste qui répond VRAIMENT à la question ─────────────────────────
+    r = await routines.dossiers_en_attente({"jours": 15}, User())
+    verifier("le geste du suivi existe et trouve les dossiers en souffrance",
+             r.get("trouve") and (r.get("nombre") or 0) >= 1, r)
+    verifier("le seuil de 15 jours est appliqué ET dit",
+             r.get("seuil_jours") == 15 and "15 jours" in (r.get("message_final") or ""),
+             r.get("message_final"))
+    dossiers = r.get("dossiers") or []
+    verifier("chaque dossier porte son ANCIENNETÉ exacte en jours",
+             all(isinstance(d.get("jours"), int) and d["jours"] >= 15 for d in dossiers),
+             dossiers)
+    verifier("la liste est triée du plus ancien au plus récent (l'ordre des appels)",
+             [d["jours"] for d in dossiers] == sorted((d["jours"] for d in dossiers),
+                                                      reverse=True),
+             [d["jours"] for d in dossiers])
+    verifier("un devis SIGNÉ n'attend plus rien : il est écarté",
+             not any("DEV-2025-014" == d.get("reference") for d in dossiers)
+             and (r.get("dossiers_clos") or 0) >= 1, r)
+    verifier("un devis REFUSÉ est écarté lui aussi",
+             not any("DEV-2025-088" == d.get("reference") for d in dossiers), dossiers)
+    verifier("le devis ENVOYÉ, lui, est bien là",
+             any("DEV-2026-041" == d.get("reference") for d in dossiers), dossiers)
+    verifier("la liste s'affiche dans un tableau prêt à insérer",
+             (r.get("bloc_ui") or {}).get("type") == "table"
+             and "Attente" in (r["bloc_ui"].get("columns") or []), r.get("bloc_ui"))
+    verifier("la consigne interdit d'envoyer les relances de sa propre initiative",
+             "Ne propose PAS d'envoyer" in (r.get("a_faire") or ""))
+    # Un seuil que RIEN n'atteint doit se dire simplement, pas rendre une erreur.
+    r_haut = await routines.dossiers_en_attente({"jours": 9999}, User())
+    verifier("un seuil que rien n'atteint se dit simplement",
+             r_haut.get("trouve") and r_haut.get("nombre") == 0
+             and "Aucun dossier" in (r_haut.get("message_final") or ""), r_haut)
+    # Le vocabulaire de la maison prime, quand on le donne.
+    r_perso = await routines.dossiers_en_attente(
+        {"jours": 0, "statuts": ["refusé"]}, User())
+    verifier("des statuts personnalisés remplacent la liste par défaut",
+             all("refus" in _plat_test(d.get("statut")) for d in r_perso.get("dossiers") or [])
+             and (r_perso.get("nombre") or 0) >= 1, r_perso.get("dossiers"))
 
     # ═══════════════════════════════════════════════════════════════════
     titre(6, "« Analyse ce plan PDF : surfaces, zones identifiées, postes de travaux. »")
@@ -756,9 +929,29 @@ async def principal():
     verifier("les incertitudes sont dites, pas gommées", "non lisible" in reponse)
     verifier("la lecture d'un plan ne demande AUCUNE validation humaine",
              r.get("requires_validation") is False)
-    signaler("un PDF de plusieurs pages n'est lu QUE sur sa première page "
-             "(`load_page(0)` dans agent2) : pour un dossier de plans, joindre "
-             "les pages une par une.")
+    # UN DOSSIER DE PLANS TIENT RAREMENT SUR UNE FEUILLE. La vision ne recevait
+    # que la page 1 et répondait comme si elle avait tout vu.
+    # Le contrôle vise l'APPEL, pas la mention : le commentaire du module cite
+    # `load_page(0)` pour dire ce qui a été corrigé, et un contrôle qui trébuche
+    # là-dessus interdirait d'expliquer ses propres correctifs.
+    code2 = "\n".join(l for l in src2.splitlines() if not l.lstrip().startswith("#"))
+    verifier("plusieurs pages d'un PDF sont rendues, pas seulement la première",
+             "MAX_PAGES_PDF" in code2 and "doc.load_page(numero)" in code2
+             and "doc.load_page(0)" not in code2)
+    verifier("les pages retenues partent TOUTES au modèle de vision",
+             '"attachment_pages"' in src2 and "for page in pages" in src2)
+    verifier("le modèle sait combien de pages il voit, et combien il ne voit pas",
+             "pages_ignorees" in src2 and "n'ont PAS été analysées" in src2)
+    verifier("une page illisible n'interrompt pas l'analyse des autres",
+             "Page de PDF illisible, ignorée" in src2)
+    verifier("les pages du tour précédent ne débordent pas sur le suivant",
+             '"attachment_pages": None' in (racine / "agents" / "runtime.py").read_text(
+                 encoding="utf-8"))
+    espace_vision = {"logger": types.SimpleNamespace(info=lambda *a, **k: None,
+                                                     warning=lambda *a, **k: None)}
+    extraire("agents/agent2.py", {"VISION_PROMPT", "MAX_PAGES_PDF"}, espace_vision)
+    verifier("la borne de pages est un nombre tenable pour un dossier de plans",
+             2 <= espace_vision["MAX_PAGES_PDF"] <= 10, espace_vision["MAX_PAGES_PDF"])
 
     # ═══════════════════════════════════════════════════════════════════
     titre(7, "« À partir de cette photo de terrain, génère une simulation "
@@ -809,9 +1002,27 @@ async def principal():
                  {"vision_analysis": "un jardin",
                   "query": "génère-moi une simulation avant/après avec une "
                            "terrasse bois et des graminées"}) == "agent1")
-    signaler("la simulation reste un TIRAGE : `modifier_visuel` est à effet externe, "
-             "donc l'image ne part qu'après un accord. En démonstration, il y a un "
-             "bouton à cliquer entre la demande et l'image.")
+    # L'ACCORD RESTE, ET C'EST VOULU : le tirage est facturé, et un rendu montré
+    # à un client ne doit pas partir tout seul. Ce qui change, c'est qu'on voit
+    # ce qu'on approuve — sans quoi le clic finit par être donné sans lire.
+    espace_apercu = {"logger": types.SimpleNamespace(info=lambda *a, **k: None)}
+    extraire("agents/agent1.py", {"_apercu_avant_accord"}, espace_apercu)
+    apercu = espace_apercu["_apercu_avant_accord"](
+        "modifier_visuel", {"image": cle_photo,
+                            "changements": "replace the lawn with an ipe wood deck"},
+        "Je prépare la variante.")
+    verifier("la carte d'accord MONTRE la photo qui va être retouchée",
+             cle_photo in apercu and '"type": "visuel"' in apercu, apercu)
+    verifier("elle dit ce qui change, et ce qui ne change pas",
+             "ipe wood deck" in apercu and "conservé à l'identique" in apercu)
+    apercu_plan = espace_apercu["_apercu_avant_accord"](
+        "proposer_plan", {"etapes": ["une", "deux"]}, "")
+    verifier("la carte d'accord d'un plan montre ses étapes",
+             '"type": "plan"' in apercu_plan, apercu_plan)
+    verifier("une action ordinaire garde son brouillon tel quel",
+             espace_apercu["_apercu_avant_accord"]("envoi_devis", {}, "texte") == "")
+    verifier("un aperçu impossible à construire n'empêche pas la validation",
+             espace_apercu["_apercu_avant_accord"]("proposer_plan", None, "t") == "")
 
     # ═══════════════════════════════════════════════════════════════════
     titre(8, "« Trouve-moi 3 chantiers similaires (bassin d'Arcachon, terrain en "
@@ -831,10 +1042,47 @@ async def principal():
              r.get("message"))
     verifier("elle dit ce que la mémoire contient VRAIMENT",
              "42 chantier" in (r.get("inventaire_memoire") or ""), r.get("inventaire_memoire"))
-    signaler("« montre-moi les photos » ne peut pas être tenue : `rechercher_documents` "
-             "rend du TEXTE. Les photos d'un chantier ne s'affichent que par le Drive "
-             "(`drive_apercu` / `drive_ouvrir`), et aucun bloc d'écran ne montre une "
-             "image du Drive dans le chat.")
+    # ── « MONTRE-MOI LES PHOTOS » ──────────────────────────────────────────
+    # Le module Drive est chargé POUR DE VRAI (résolution du dossier, filtrage
+    # des images, bornes, dépôt) ; seul l'accès au service Google est doublé.
+    drive = charger("outils.drive", "outils/drive.py")
+    drive._service = _service_drive
+    drive._racines = lambda service: _rien()
+    drive._resoudre = lambda service, chemin, racines, perimetres=None: _dossier(chemin)
+    drive.perimetres_visibles = lambda role: [("racine-autorisee", "all")]
+    outils = charger("skills.outils", "skills/outils.py")
+    r = await outils.drive_photos({"dossier": "Villa Pereire", "limite": 3}, User())
+    verifier("les photos d'un dossier du Drive reviennent, et sont déposées",
+             (r.get("nombre") or 0) == 3 and all(i["cle"] in DEPOT
+                                                 for i in r["bloc_ui"]["images"]), r)
+    verifier("elles s'affichent dans une planche prête à insérer",
+             (r.get("bloc_ui") or {}).get("type") == "visuel", r.get("bloc_ui"))
+    verifier("chaque photo garde son nom de fichier en légende",
+             all(i.get("legende", "").endswith((".jpg", ".png"))
+                 for i in r["bloc_ui"]["images"]), r["bloc_ui"]["images"])
+    verifier("la limite demandée est respectée, et le total réel est dit",
+             r.get("disponibles", 0) > r["nombre"]
+             and str(r["disponibles"]) in (r.get("message_final") or ""),
+             r.get("message_final"))
+    verifier("la consigne interdit de les faire passer pour un rendu généré",
+             "jamais un rendu" in (r.get("a_faire") or "").lower()
+             or "pas des images générées" in (r.get("a_faire") or ""))
+    # Sans borne serrée, la photo de drone de 40 Mo est rencontrée : elle doit
+    # être écartée ET dite. Une image absente sans explication se lit comme une
+    # image qui n'existe pas.
+    r_tout = await outils.drive_photos({"dossier": "Villa Pereire"}, User())
+    verifier("une photo trop lourde est écartée et signalée, pas ignorée",
+             (r_tout.get("trop_volumineuses") or 0) >= 1
+             and "volumineuse" in (r_tout.get("message_final") or ""), r_tout)
+    verifier("un PDF du même dossier n'est pas pris pour une photo",
+             all(not i["legende"].endswith(".pdf")
+                 for i in r_tout["bloc_ui"]["images"]), r_tout["bloc_ui"]["images"])
+    r_vide = await outils.drive_photos({"dossier": "Dossier sans image"}, User())
+    verifier("un dossier sans image le dit, sans conclure qu'il n'y en a nulle part",
+             (r_vide.get("nombre") or 0) == 0
+             and "pas une preuve" in (r_vide.get("message") or ""), r_vide)
+    verifier("le geste est une simple LECTURE, sans accord à demander",
+             outils.SKILLS["drive_photos"].effet == "lecture")
 
     # ═══════════════════════════════════════════════════════════════════
     titre(9, "« Sur la base de ce plan, prépare une trame de pré-devis avec les "
@@ -850,9 +1098,43 @@ async def principal():
              "Villa Pereire" in reponse,
              "`similar_projects_node` fait la recherche et remplit `raw_chunks` — "
              "que `prechiffrage_node` ne lit jamais : le travail est fait puis jeté")
-    signaler("aucun PRIX n'est proposé : la trame liste des postes et des surfaces. "
-             "Le chiffrage reste à faire à la main (ce que la question demande, "
-             "mais un dirigeant peut attendre des montants).")
+    # ── LES PRIX : ceux de la maison, jamais ceux du marché ────────────────
+    r = await routines.prix_observes({"poste": "terrasse bois"}, User())
+    verifier("le relevé des prix déjà pratiqués existe et trouve les affaires",
+             r.get("trouve") and (r.get("observations") or 0) >= 3, r)
+    verifier("il rend une FOURCHETTE et une médiane, pas un prix unique",
+             all(r.get(k) for k in ("minimum", "median", "maximum")), r)
+    verifier("il dit sur combien d'affaires il s'appuie",
+             "affaire" in (r.get("message_final") or "")
+             and str(r.get("observations")) in (r.get("message_final") or ""),
+             r.get("message_final"))
+    verifier("il nomme les fichiers d'où sortent les chiffres",
+             bool(r.get("sources")), r.get("sources"))
+    verifier("il donne la période couverte, pour qu'un prix de 2019 se voie",
+             bool(r.get("periode")), r.get("periode"))
+    verifier("les exemples cités sont les plus RÉCENTS d'abord",
+             [_lecture.cle_triable(e["date"]) for e in r["exemples"]]
+             == sorted((_lecture.cle_triable(e["date"]) for e in r["exemples"]),
+                       reverse=True), [e["date"] for e in r["exemples"]])
+    verifier("la consigne interdit d'en déduire un prix unique ou un prix au m²",
+             "JAMAIS un prix unique" in (r.get("a_faire") or "")
+             and "revient à un humain" in (r.get("a_faire") or ""))
+    # Le piège déjà payé une fois : le poste cité dans un commentaire.
+    verifier("un montant n'entre dans le relevé que si le poste est dans une "
+             "colonne qui le DÉCRIT",
+             all("terrasse" in _plat_test(e["designation"]) for e in r["exemples"]),
+             [e["designation"] for e in r["exemples"]])
+    # Et quand on n'a pas assez d'affaires : aucun chiffre, et on le dit.
+    r_vide = await routines.prix_observes({"poste": "piscine à débordement"}, User())
+    verifier("sans assez d'affaires, AUCUN chiffre n'est avancé",
+             r_vide.get("trouve") is False
+             and not any(k in r_vide for k in ("minimum", "median", "maximum")),
+             r_vide)
+    verifier("et la consigne interdit d'aller chercher un prix de marché",
+             "ni un prix de marché" in (r_vide.get("a_faire") or ""),
+             r_vide.get("a_faire"))
+    verifier("un poste trop court est refusé plutôt que de ramener n'importe quoi",
+             await _leve(routines.prix_observes({"poste": "bo"}, User())))
 
     # ═══════════════════════════════════════════════════════════════════
     titre(10, "« Le client m'envoie ce plan et demande un chiffrage : analyse le "

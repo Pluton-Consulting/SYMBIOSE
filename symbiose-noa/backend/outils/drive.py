@@ -1129,3 +1129,127 @@ def _garde_perimetre(dossier: str, perimetres: list) -> None:
         raise DriveRefuse(
             "Ce dossier n'est pas dans le périmètre ouvert à l'assistant pour "
             "ce rôle. Demande à un administrateur de l'ajouter s'il doit l'être.")
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+#  LES PHOTOS D'UN CHANTIER, MONTRÉES DANS LE CHAT
+# ═══════════════════════════════════════════════════════════════════════════
+#
+# « Trouve-moi trois chantiers similaires et MONTRE-MOI les photos. » On savait
+# retrouver les chantiers (la recherche documentaire les décrit très bien), et
+# on ne savait pas montrer une seule image : `rechercher_documents` rend du
+# texte, `ouvrir` refuse les formats non textuels (« ce format ne se lit pas
+# ici »), et aucun bloc d'écran n'affichait un fichier du Drive.
+#
+# Or tout était déjà là, à un maillon près. Le dépôt de visuels
+# (`visuels/depot.py`) range n'importe quels octets sous une clé et les sert
+# par `/api/visuels/{clé}` avec le jeton de session ; le bloc `visuel` sait
+# afficher une planche d'images téléchargeables. Il manquait le geste qui va
+# CHERCHER les photos et les dépose. C'est celui-ci.
+#
+# CE QU'IL NE FAIT PAS : sortir du périmètre autorisé (même résolution de
+# dossier que partout ailleurs ici), ni ramener autre chose que des images, ni
+# télécharger un fichier énorme. Une photo de chantier fait deux à cinq méga ;
+# au-delà, c'est autre chose, et on ne la prend pas.
+
+MAX_PHOTOS = 12
+MAX_OCTETS_PHOTO = 12 * 1024 * 1024
+_MIMES_IMAGE = ("image/jpeg", "image/png", "image/webp", "image/heic",
+                "image/heif", "image/gif")
+
+
+async def photos(dossier: Optional[str] = None, motif: Optional[str] = None,
+                 limite: int = 6, perimetres: Optional[list] = None) -> dict:
+    """Les photos d'un dossier du Drive, rangées au dépôt et prêtes à l'écran."""
+    perimetres = perimetres or []
+    if not perimetres:
+        raise DriveRefuse(
+            "Aucun dossier du Drive n'est ouvert à l'assistant pour ce rôle.")
+    limite = max(1, min(int(limite or 6), MAX_PHOTOS))
+
+    service = await _service()
+    conditions = ["trashed = false",
+                  "(" + " or ".join(f"mimeType = '{m}'" for m in _MIMES_IMAGE) + ")"]
+    if motif:
+        conditions.append(f"name contains '{_echappe(motif)}'")
+
+    # Le dossier demandé, résolu comme partout ailleurs (nom OU chemin), sinon
+    # les périmètres autorisés. On ne cherche jamais hors de ces bornes.
+    parents: list[str] = []
+    if dossier:
+        racines = await _racines(service)
+        resolu = await _resoudre(service, dossier, racines, perimetres)
+        if resolu:
+            parents = [resolu] if isinstance(resolu, str) else list(resolu)
+    if not parents and not _tout_le_drive(perimetres):
+        parents = [d for d, _n in perimetres if d]
+
+    requetes = ([f"'{p}' in parents and " + " and ".join(conditions) for p in parents]
+                if parents else [" and ".join(conditions)])
+
+    trouves: list[dict] = []
+    for q in requetes:
+        def _appel(requete=q):
+            return service.files().list(
+                q=requete, spaces="drive",
+                fields="files(id,name,mimeType,size,modifiedTime)",
+                corpora="allDrives", includeItemsFromAllDrives=True,
+                supportsAllDrives=True,
+                orderBy="modifiedTime desc", pageSize=limite * 2,
+            ).execute()
+        try:
+            trouves.extend((await asyncio.to_thread(_appel)).get("files", []))
+        except Exception as e:  # noqa: BLE001
+            logger.warning("Drive : recherche de photos échouée : %s", e)
+
+    if not trouves:
+        ou = f"« {dossier} »" if dossier else "les dossiers ouverts"
+        return {
+            "photos": [], "nombre": 0,
+            "message": (f"Aucune image dans {ou}"
+                        + (f" dont le nom contienne « {motif} »" if motif else "")
+                        + ". Ce n'est pas une preuve qu'il n'y en a pas : elles "
+                          "peuvent être ailleurs, ou hors du périmètre autorisé."),
+        }
+
+    # Dédoublonnage par identifiant : un même fichier peut remonter de deux
+    # périmètres qui se chevauchent.
+    uniques, vus = [], set()
+    for f in trouves:
+        if f["id"] not in vus:
+            vus.add(f["id"])
+            uniques.append(f)
+
+    from visuels.depot import deposer_octets
+    images, trop_gros = [], 0
+    for f in uniques:
+        if len(images) >= limite:
+            break
+        try:
+            if int(f.get("size") or 0) > MAX_OCTETS_PHOTO:
+                trop_gros += 1
+                continue
+            octets = await asyncio.to_thread(
+                lambda fid=f["id"]: service.files().get_media(fileId=fid).execute())
+            cle = deposer_octets(octets, f.get("mimeType") or "image/jpeg")
+            if cle:
+                images.append({"cle": cle, "legende": f.get("name") or "photo",
+                               "modifie_le": f.get("modifiedTime")})
+        except Exception as e:  # noqa: BLE001 — une photo illisible n'arrête pas les autres
+            logger.info("Drive : photo « %s » non récupérée : %s", f.get("name"), e)
+
+    if not images:
+        return {"photos": [], "nombre": 0,
+                "message": ("Des images existent mais aucune n'a pu être "
+                            "récupérée (format, taille ou droits).")}
+
+    return {
+        "photos": images,
+        "nombre": len(images),
+        "disponibles": len(uniques),
+        "trop_volumineuses": trop_gros or None,
+        "bloc_ui": {"type": "visuel",
+                    "titre": (dossier or motif or "Photos du Drive")[:80],
+                    "images": [{"cle": i["cle"], "legende": i["legende"]}
+                               for i in images]},
+    }

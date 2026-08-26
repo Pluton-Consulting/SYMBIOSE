@@ -62,6 +62,37 @@ async def drive_apercu(data: dict, user) -> dict:
                         perimetres=_perimetres(user))
 
 
+async def drive_photos(data: dict, user) -> dict:
+    """LES PHOTOS d'un dossier du Drive, rangées au dépôt et prêtes à l'écran.
+
+    « Montre-moi les photos de ce chantier » ne trouvait aucun geste : la
+    recherche documentaire rend du texte, et `drive_ouvrir` refuse les images.
+    Elles sont ici déposées comme un visuel produit, donc affichables et
+    téléchargeables dans le chat, sans qu'aucun lien ne sorte de l'application.
+    """
+    from outils.drive import photos
+    resultat = await _drive(
+        photos,
+        (data.get("dossier") or data.get("chantier") or "").strip() or None,
+        (data.get("motif") or data.get("nom") or "").strip() or None,
+        data.get("limite") or 6,
+        perimetres=_perimetres(user))
+    if resultat.get("bloc_ui"):
+        resultat["message_final"] = (
+            f"Voici {resultat['nombre']} photo(s)"
+            + (f" sur {resultat['disponibles']} trouvée(s)"
+               if resultat.get("disponibles", 0) > resultat["nombre"] else "")
+            + ((" ; " + str(resultat["trop_volumineuses"])
+                + " étaient trop volumineuse(s) pour être affichée(s)")
+               if resultat.get("trop_volumineuses") else "") + ".")
+        resultat["a_faire"] = (
+            "AFFICHE les photos : insère un bloc ```ui contenant EXACTEMENT le "
+            "contenu de `bloc_ui`. Ce sont de VRAIES photos du Drive, pas des "
+            "images générées : ne les présente jamais comme un rendu ou une "
+            "simulation. Ne colle aucune adresse d'image en texte.")
+    return resultat
+
+
 async def drive_arborescence(data: dict, user) -> dict:
     """L'arbre du Drive — complet si aucun dossier n'est précisé — en un appel."""
     from outils.drive import arborescence
@@ -152,6 +183,19 @@ SKILLS = {
         optionnels=["dossier"],
         effet="lecture",
         libelle="je regarde ce que contient le dossier"),
+    "drive_photos": Declaration(
+        fonction=drive_photos,
+        description=(
+            "MONTRE LES PHOTOS d'un dossier du DRIVE dans le chat : elles sont "
+            "affichees en planche et telechargeables. A utiliser des qu'on "
+            "demande de VOIR des images (« montre-moi les photos du chantier "
+            "X », « les visuels de ce dossier »). `dossier` : le NOM ou le "
+            "CHEMIN du dossier. `motif` : un bout de nom de fichier. `limite` : "
+            "1 a 12 (6 par defaut). Ce sont de VRAIES photos, jamais un rendu "
+            "genere : ne les presente pas comme une simulation"),
+        optionnels=["dossier", "motif", "limite"],
+        effet="lecture",
+        libelle="je vais chercher les photos"),
     "drive_arborescence": Declaration(
         fonction=drive_arborescence,
         description=("ARBRE COMPLET du Drive (Drives partages inclus) en UNE "
