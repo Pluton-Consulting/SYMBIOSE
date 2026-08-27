@@ -640,9 +640,13 @@ async def principal():
     # le mot À L'INTÉRIEUR de la colonne.
     r = await donnees.interroger_donnees(
         {"source_type": "chantiers", "filtres": {"Prestation": "terrasse bois"}}, User())
+    # `contient` est le mot que le MODÈLE doit retenir pour se rattraper : la
+    # consigne vit donc dans `a_faire`. La personne, elle, lit un constat.
     verifier("l'égalité stricte ne trouve rien, et le dit sans se tromper de mot",
-             (r.get("nombre") or 0) == 0 and "contient" in (r.get("message") or ""),
-             r.get("message"))
+             (r.get("nombre") or 0) == 0 and "contient" in (r.get("a_faire") or ""),
+             f"message={r.get('message')!r} a_faire={r.get('a_faire')!r}")
+    verifier("le constat lu par la personne reste lisible",
+             "`" not in (r.get("message") or "") and (r.get("message") or "").strip() != "")
     r = await donnees.interroger_donnees(
         {"source_type": "chantiers", "contient": {"Prestation": "terrasse"}}, User())
     verifier("une recherche PARTIELLE retrouve les chantiers « terrasse bois »",
@@ -1044,10 +1048,16 @@ async def principal():
              not any("image" in json.dumps(x, ensure_ascii=False).lower()
                      for x in r.get("resultats") or []))
     r = await documents.rechercher_documents({"requete": "zzz introuvable"}, User())
+    # LE CONTRÔLE A SUIVI LE CHAMP. La consigne « ne dis pas que la mémoire est
+    # vide » s'adresse au MODÈLE : elle vit dans `a_faire` depuis qu'on a vu
+    # cette phrase s'afficher telle quelle à l'écran (question 8, 27/08). Ce
+    # que la personne lit, c'est le constat et l'inventaire.
     verifier("une recherche vide ne conclut PAS que la mémoire est vide",
-             "Aucun document ne correspond à CETTE recherche" in (r.get("message") or "")
-             and "Ne dis donc PAS qu'elle est vide" in (r.get("message") or ""),
-             r.get("message"))
+             "Aucun document ne correspond" in (r.get("message") or "")
+             and "ne dis pas que la mémoire est vide" in (r.get("a_faire") or "").lower(),
+             f"message={r.get('message')!r} a_faire={r.get('a_faire')!r}")
+    verifier("ce que la personne lit ne contient aucune consigne au modèle",
+             "Ne dis" not in (r.get("message") or ""))
     verifier("elle dit ce que la mémoire contient VRAIMENT",
              "42 chantier" in (r.get("inventaire_memoire") or ""), r.get("inventaire_memoire"))
     # ── « MONTRE-MOI LES PHOTOS » ──────────────────────────────────────────
