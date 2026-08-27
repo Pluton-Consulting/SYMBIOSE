@@ -915,8 +915,13 @@ async def principal():
     verifier("un PDF de plan (peu de texte) part bien à la vision, pas au texte",
              "< 300" in (racine / "routers" / "chat.py").read_text(encoding="utf-8"))
     espace2 = {"json": json, "AgentState": dict,
-               "logger": types.SimpleNamespace(info=lambda *a, **k: None)}
-    extraire("agents/agent2.py", {"prechiffrage_node"}, espace2)
+               "logger": types.SimpleNamespace(info=lambda *a, **k: None,
+                                              warning=lambda *a, **k: None)}
+    extraire("agents/agent2.py",
+         {"prechiffrage_node", "_blocs_extraction", "_bloc", "_libelle",
+          "_valeur_texte", "_CLES_SURFACES", "_CLES_POSTES", "_CLES_ELEMENTS",
+          "_CLES_RESERVES"},
+         espace2)
     etat = {"vision_analysis": "Terrasse existante 40 m2, dénivelé 1,20 m, accès étroit.",
             "extracted_data": {"surfaces_m2": {"terrasse": 40},
                                "postes_travaux": ["dépose terrasse", "terrassement"],
@@ -925,7 +930,10 @@ async def principal():
     r = await espace2["prechiffrage_node"](etat)
     reponse = r.get("final_response") or ""
     verifier("l'analyse du plan atteint la réponse", "40 m2" in reponse)
-    verifier("les postes extraits atteignent la réponse", "postes_travaux" in reponse)
+    verifier("les postes extraits atteignent la réponse, en clair",
+             "dépose terrasse" in reponse and "terrassement" in reponse)
+    verifier("la clé technique du JSON ne s'affiche plus",
+             "postes_travaux" not in reponse and "surfaces_m2" not in reponse)
     verifier("les incertitudes sont dites, pas gommées", "non lisible" in reponse)
     verifier("la lecture d'un plan ne demande AUCUNE validation humaine",
              r.get("requires_validation") is False)
