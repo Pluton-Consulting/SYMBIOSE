@@ -1253,3 +1253,167 @@ async def photos(dossier: Optional[str] = None, motif: Optional[str] = None,
                     "images": [{"cle": i["cle"], "legende": i["legende"]}
                                for i in images]},
     }
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+#  LE DÉPÔT SUR LE DRIVE — l'assistant sait enfin REMETTRE un document
+# ═══════════════════════════════════════════════════════════════════════════
+#
+# Le pendant du dépôt NAS du projet jumeau, demandé par Noa le 30/08 : un
+# document produit par l'atelier doit pouvoir se ranger dans le classement de
+# l'entreprise, pas seulement se télécharger depuis le chat. Le commentaire de
+# `SATISFAIT_PAR` (agents/annonce.py) attendait ce geste depuis le portage.
+#
+# Deux principes, hérités du NAS parce qu'ils y ont été payés :
+#   · on ne dépose QUE des documents produits ICI, et seulement ceux de la
+#     personne — téléverser un chemin arbitraire ferait de ce skill un moyen
+#     d'exfiltration ;
+#   · JAMAIS d'écrasement : un nom déjà pris est un refus, pas un remplacement.
+# Et un troisième, propre au Drive : l'ÉCRITURE a son propre client
+# (`_build_service_ecriture`), la lecture garde son scope minimal.
+
+
+def _nom_avec_extension(nom: Optional[str], entete: dict) -> str:
+    """Le nom du fichier déposé PORTE toujours son vrai format.
+
+    Copié du NAS, où la leçon a été payée : « appelle-le test 2 » a produit un
+    .docx sans extension, parfaitement valide et inutilisable sous Windows.
+    L'extension ne dépend pas de l'humeur du modèle — le code sait dans quel
+    format le fichier a réellement été rendu, c'est lui qui la garantit. Une
+    extension MENTEUSE est corrigée ; un point qui ne désigne aucun format
+    connu (« note.v2 ») fait partie du nom et n'est pas touché.
+    """
+    from bureautique.modele import FORMATS
+    format_reel = (entete.get("format") or "docx").lower()
+    titre = (nom or "").strip() or f"{entete.get('titre', 'document')}"
+    racine_nom, point, extension = titre.rpartition(".")
+    if point and extension.lower() in FORMATS:
+        if extension.lower() != format_reel:
+            return f"{racine_nom}.{format_reel}"
+        return titre
+    return f"{titre}.{format_reel}"
+
+
+async def deposer(dossier: str, nom: str, contenu: bytes,
+                  perimetres: Optional[list] = None) -> dict:
+    """Dépose un fichier dans un dossier du Drive. ÉCRITURE — n'écrase jamais.
+
+    Le dossier se résout par NOM, comme partout ailleurs, et DANS le périmètre
+    autorisé : déposer n'ouvre pas plus de portes que lire.
+    """
+    dossier = (dossier or "").strip()
+    nom = (nom or "").strip()
+    if not dossier or not nom:
+        raise DriveRefuse("Il faut le dossier de destination et le nom du fichier.")
+    if not contenu:
+        raise DriveRefuse("Le fichier à déposer est vide : rien n'a été envoyé.")
+    perimetres = perimetres or []
+    if not perimetres:
+        raise DriveRefuse(
+            "Aucun dossier du Drive n'est ouvert à l'assistant pour ce rôle : "
+            "le dépôt est impossible. Ce n'est pas un Drive vide : dis-le tel quel.")
+
+    service = await _service()
+    racines = ([d for d, _ in perimetres if d]
+               or (await _racines(service) if _tout_le_drive(perimetres) else []))
+    cible = await _resoudre(service, dossier, racines,
+                            partout=_tout_le_drive(perimetres))
+    _garde_perimetre(cible, perimetres)
+
+    # JAMAIS d'écrasement. Le Drive accepte deux fichiers du même nom dans un
+    # même dossier — c'est pire qu'un écrasement : deux « devis.docx » côte à
+    # côte, personne ne sait lequel fait foi. Même règle que le NAS : refus.
+    def _existe():
+        return service.files().list(
+            q=(f"'{cible}' in parents and trashed=false and name='{_echappe(nom)}'"),
+            spaces="drive", fields="files(id)", corpora="allDrives",
+            includeItemsFromAllDrives=True, supportsAllDrives=True, pageSize=1,
+        ).execute()
+    if (await asyncio.to_thread(_existe)).get("files"):
+        raise DriveRefuse(
+            f"Un fichier nommé « {nom} » existe déjà dans ce dossier : rien "
+            "n'a été écrasé. Donne un autre nom pour déposer celui-ci.")
+
+    import io
+    import mimetypes
+    mime = mimetypes.guess_type(nom)[0] or "application/octet-stream"
+    from googleapiclient.http import MediaIoBaseUpload
+    from ingestion.connectors.google_drive import _build_service_ecriture
+    ecriture = await asyncio.to_thread(_build_service_ecriture)
+
+    def _envoi():
+        media = MediaIoBaseUpload(io.BytesIO(contenu), mimetype=mime)
+        return ecriture.files().create(
+            body={"name": nom, "parents": [cible]}, media_body=media,
+            fields="id,name,webViewLink", supportsAllDrives=True,
+        ).execute()
+    try:
+        cree = await asyncio.to_thread(_envoi)
+    except Exception as e:  # noqa: BLE001 — l'API Google lève ses propres types
+        texte = str(e)
+        if "insufficient" in texte.lower() or "403" in texte:
+            raise DriveRefuse(
+                "Le Drive refuse l'ÉCRITURE : l'accès configuré est en lecture "
+                "seule. Un administrateur doit rejouer le consentement Google "
+                "(scripts/google_consentement.py) ou donner au compte de "
+                "service le rôle « Gestionnaire de contenu » sur ce Drive.") from e
+        raise DriveRefuse(f"Le dépôt a échoué : {texte[:200]}") from e
+
+    logger.info("Drive : « %s » déposé dans %s (%d octets)", nom, cible, len(contenu))
+    return {
+        "depose": True,
+        "nom": cree.get("name") or nom,
+        "id": cree.get("id"),
+        "dossier": dossier,
+        "lien": cree.get("webViewLink"),
+        "octets": len(contenu),
+        "message_final": f"« {nom} » est déposé dans « {dossier} » sur le Drive.",
+    }
+
+
+async def deposer_document(document_id: str, dossier: str, proprietaire: str,
+                           nom: Optional[str] = None,
+                           perimetres: Optional[list] = None) -> dict:
+    """Finalise un document en cours et le dépose sur le Drive, en un geste.
+
+    Même architecture que le serveur de fichiers du projet jumeau, où la
+    chaîne en deux gestes cassait : sans l'identifiant sous les yeux, le
+    modèle en inventait un, l'ajout était refusé, et il rouvrait un document
+    en boucle. `proprietaire` vient du skill, qui seul connaît l'utilisateur —
+    un document n'appartient qu'à celui qui l'a ouvert, et composer deux
+    gestes ne compose pas les droits.
+
+    EFFET EXTERNE : le dépôt écrit dans le classement de l'entreprise, la
+    validation humaine reste obligatoire.
+    """
+    from bureautique.atelier import terminer, chemin_fichier
+
+    if not (proprietaire or "").strip():
+        raise PermissionError(
+            "Impossible de déposer un document sans compte identifié.")
+
+    fiche = terminer(document_id, proprietaire)      # lève si inconnu ou vide
+    chemin = chemin_fichier(document_id, proprietaire)
+    if not chemin:
+        raise FileNotFoundError("Le document a été finalisé mais son fichier est "
+                                "introuvable. Recommence-le.")
+
+    entete = fiche["entete"]
+    final = _nom_avec_extension(nom, entete)
+    with open(chemin, "rb") as f:
+        contenu = f.read()
+
+    # `deposer` LÈVE sur tout échec (collision, écriture refusée, périmètre) :
+    # pas de compte rendu optimiste possible — la leçon du NAS est déjà dans
+    # sa structure.
+    depot = await deposer(dossier, final, contenu, perimetres)
+    depot["message_final"] = (
+        f"Document finalisé et déposé : « {final} » dans « {dossier} » sur le Drive.")
+    return {"document_id": document_id, "titre": entete["titre"],
+            "format": entete["format"], "octets": fiche["octets"],
+            "elements": fiche["elements"], **depot,
+            # Le début RÉEL du fichier déposé, pour l'aperçu dans le chat.
+            "extrait": fiche.get("extrait") or "",
+            "note": ("Document finalisé ET déposé sur le Drive. Montre-le "
+                     "avec un bloc ```ui `doc_apercu` portant `titre`, "
+                     "`format` et `extrait` (recopié TEL QUEL).")}

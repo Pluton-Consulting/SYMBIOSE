@@ -23,9 +23,12 @@ import json
 import os
 import sys
 
-# Lecture seule : le connecteur ne modifie jamais rien sur le Drive, et un jeton
-# ne doit jamais porter plus de droits que l'usage qu'on en fait.
-SCOPES = ["https://www.googleapis.com/auth/drive.readonly"]
+# Depuis le 30/08, le jeton porte l'ÉCRITURE : le dépôt sur le Drive
+# (`drive_deposer`, `drive_deposer_document`) en a besoin, et le scope se fixe
+# au CONSENTEMENT — un jeton taillé en lecture seule ne monte jamais tout seul.
+# La lecture, elle, continue de construire ses clients avec le scope minimal
+# (`_SCOPES` du connecteur) : seul le client du dépôt réclame celui-ci.
+SCOPES = ["https://www.googleapis.com/auth/drive"]
 
 CREDENTIALS = os.environ.get("GOOGLE_CREDENTIALS_FILE", "secrets/google_credentials.json")
 TOKEN = os.environ.get("GOOGLE_TOKEN_FILE", "secrets/google_token.json")

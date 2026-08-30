@@ -36,6 +36,12 @@ _MIME_DOSSIER = "application/vnd.google-apps.folder"
 _MIME_RACCOURCI = "application/vnd.google-apps.shortcut"
 
 _SCOPES = ["https://www.googleapis.com/auth/drive.readonly"]
+# Le scope d'ÉCRITURE, demandé SEULEMENT par le client du dépôt
+# (`_build_service_ecriture`) : l'ingestion et toutes les lectures gardent le
+# scope minimal. `drive` complet, et non `drive.file` : ce dernier ne voit que
+# ce que l'application a créé — impossible de déposer DANS un dossier existant
+# de l'entreprise, ce qui est précisément le geste demandé.
+_SCOPES_ECRITURE = ["https://www.googleapis.com/auth/drive"]
 # Documents natifs Google → export vers un format texte lisible.
 _EXPORTABLE = {
     "application/vnd.google-apps.document": "text/plain",
@@ -44,7 +50,9 @@ _EXPORTABLE = {
 }
 
 
-def _build_service():
+def _build_service(scopes=None):
+    # `scopes` : lecture par défaut ; le client du dépôt passe l'écriture.
+    scopes = scopes or _SCOPES
     import json
     import os
     from google.oauth2.credentials import Credentials
@@ -60,7 +68,7 @@ def _build_service():
     if os.path.exists(settings.google_service_account_file):
         from google.oauth2 import service_account
         creds = service_account.Credentials.from_service_account_file(
-            settings.google_service_account_file, scopes=_SCOPES)
+            settings.google_service_account_file, scopes=scopes)
         sujet = (settings.google_admin_subject or "").strip()
         if sujet:
             # Delegation a l'echelle du domaine : on AGIT AU NOM de ce compte.
@@ -99,7 +107,7 @@ def _build_service():
                 f"GOOGLE_TOKEN_JSON incomplet : {', '.join(manquants)} manque(nt). "
                 "Relancez scripts/google_consentement.py et vérifiez qu'il "
                 "affiche « refresh token présent : oui ».")
-        creds = Credentials.from_authorized_user_info(infos, _SCOPES)
+        creds = Credentials.from_authorized_user_info(infos, scopes)
         if not creds.valid:
             # Aucun repli interactif ici : sur un serveur, `run_local_server`
             # attendrait un navigateur qui n'existe pas et le tour resterait
@@ -137,17 +145,40 @@ def _build_service():
 
     creds = None
     if os.path.exists(settings.google_token_file):
-        creds = Credentials.from_authorized_user_file(settings.google_token_file, _SCOPES)
+        creds = Credentials.from_authorized_user_file(settings.google_token_file, scopes)
     if not creds or not creds.valid:
         if creds and creds.expired and creds.refresh_token:
             creds.refresh(Request())
         else:
-            flow = InstalledAppFlow.from_client_secrets_file(settings.google_credentials_file, _SCOPES)
+            flow = InstalledAppFlow.from_client_secrets_file(settings.google_credentials_file, scopes)
             creds = flow.run_local_server(port=0)  # ⚠ interactif : à lancer une fois hors conteneur
         os.makedirs(os.path.dirname(settings.google_token_file) or ".", exist_ok=True)
         with open(settings.google_token_file, "w") as f:
             f.write(creds.to_json())
     return build("drive", "v3", credentials=creds)
+
+
+def _build_service_ecriture():
+    """Le client Drive capable d'ÉCRIRE — construit à la demande, jamais gardé.
+
+    Séparé du client de lecture pour que l'ingestion et les skills de
+    consultation ne portent JAMAIS plus de droits qu'il ne leur en faut. Un
+    jeton OAuth taillé en lecture seule (l'historique GOOGLE_TOKEN_JSON du
+    serveur) ne peut pas monter en écriture tout seul : Google refuse le
+    rafraîchissement, et l'erreur dit alors le geste qui manque — relancer
+    scripts/google_consentement.py (dont les scopes portent l'écriture depuis
+    le 30/08) et recoller le résultat.
+    """
+    from google.auth.exceptions import RefreshError
+    try:
+        return _build_service(_SCOPES_ECRITURE)
+    except RefreshError as e:
+        raise NotImplementedError(
+            "Le jeton Google ne porte que la LECTURE : le dépôt sur le Drive "
+            "exige un nouveau consentement. Relancez "
+            "scripts/google_consentement.py puis recollez le résultat dans "
+            "GOOGLE_TOKEN_JSON. (Avec un compte de service, donnez-lui le rôle "
+            "« Gestionnaire de contenu » sur le Drive partagé.)") from e
 
 
 def _download_text(service, f) -> Optional[str]:

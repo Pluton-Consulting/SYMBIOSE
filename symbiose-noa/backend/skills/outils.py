@@ -123,6 +123,49 @@ async def drive_lire_lot(data: dict, user) -> dict:
                         perimetres=_perimetres(user))
 
 
+async def drive_deposer(data: dict, user) -> dict:
+    """Dépose sur le Drive un document produit par l'assistant. ÉCRITURE."""
+    from outils.drive import deposer
+
+    dossier = (data.get("dossier") or "").strip()
+    jeton = (data.get("document_id") or "").strip()
+    if not dossier or not jeton:
+        _echec("Il faut le dossier du Drive et le `document_id` d'un document "
+               "déjà terminé (`terminer_document`).")
+
+    # On ne dépose QUE des documents produits ici, et seulement ceux de la
+    # personne : téléverser un chemin arbitraire du serveur ferait de ce skill
+    # un moyen d'exfiltrer des fichiers internes vers le Drive.
+    from bureautique.atelier import chemin_fichier, fiche
+    proprio = _proprietaire(user)
+    chemin = chemin_fichier(jeton, proprio)
+    if not chemin:
+        _echec("Document inconnu, pas encore terminé, ou appartenant à "
+               "quelqu'un d'autre. Reprends le `document_id` EXACT rendu par "
+               "`terminer_document`.")
+
+    f = fiche(jeton, proprio) or {}
+    entete = f.get("entete") or {}
+    nom = data.get("nom") or f"{entete.get('titre', 'document')}.{entete.get('format', 'docx')}"
+
+    with open(chemin, "rb") as fichier:
+        contenu = fichier.read()
+    return await _drive(deposer, dossier, nom, contenu, _perimetres(user))
+
+
+async def drive_deposer_document(data: dict, user) -> dict:
+    """Finalise un document en cours et le dépose sur le Drive. EFFET EXTERNE."""
+    from outils.drive import deposer_document
+
+    doc = (data.get("document_id") or "").strip()
+    dossier = (data.get("dossier") or "").strip()
+    if not doc or not dossier:
+        _echec("`document_id` et `dossier` sont requis.")
+    return await _drive(deposer_document, doc, dossier, _proprietaire(user),
+                        (data.get("nom") or "").strip() or None,
+                        _perimetres(user))
+
+
 async def produire_document(data: dict, user) -> dict:
     """Crée, remplit et finalise un document en un seul appel."""
     from outils.documents import produire
@@ -219,6 +262,27 @@ SKILLS = {
         requis=["motif"], optionnels=["dossier", "limite"],
         effet="lecture",
         libelle="je lis les fichiers"),
+    "drive_deposer": Declaration(
+        fonction=drive_deposer,
+        description=("DEPOSE sur le Drive un fichier deja produit. Ecrit dans "
+                     "le classement de l'entreprise : validation humaine. "
+                     "N'ecrase jamais. Aucune suppression ni renommage n'est "
+                     "possible : ne le promets pas"),
+        requis=["dossier", "document_id"], optionnels=["nom"],
+        # Écrire dans le classement de l'entreprise sort du périmètre de
+        # l'application : effet EXTERNE, validation humaine obligatoire.
+        effet="externe",
+        libelle="je dépose le fichier sur le Drive"),
+    "drive_deposer_document": Declaration(
+        fonction=drive_deposer_document,
+        description=("FINALISE un document en cours et le DEPOSE sur le Drive, "
+                     "en un geste. `dossier` accepte le NOM (ex. « Devis 2026 »). "
+                     "Ecrit sur le Drive : demande une validation humaine"),
+        requis=["document_id", "dossier"], optionnels=["nom"],
+        # Le depot ecrit dans le classement de l'entreprise : effet EXTERNE,
+        # donc validation humaine — composer deux gestes ne compose pas les droits.
+        effet="externe",
+        libelle="je finalise et dépose le document"),
     "produire_document": Declaration(
         fonction=produire_document,
         description=(

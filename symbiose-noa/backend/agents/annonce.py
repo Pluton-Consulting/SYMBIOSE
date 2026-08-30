@@ -146,11 +146,13 @@ CLOTURES = {
 # Relevé sur le projet jumeau, dont le serveur de fichiers offre un geste
 # composé « finalise ET dépose » : absent de cette table, il laissait la
 # clôture insatisfaite après un dépôt réussi, et le rappel poussait vers la
-# fermeture SEULE — document jamais déposé. Symbiose n'a pas encore d'action
-# de dépôt sur le Drive ; la table est prête pour le jour où elle arrivera, et
-# le mécanisme reste identique des deux côtés.
+# fermeture SEULE — document jamais déposé. Le jour attendu est arrivé le
+# 30/08 : `drive_deposer_document` finalise ET dépose en un geste, il ferme
+# donc le document au passage. Le dépôt reste une action à effet EXTERNE (il
+# suspend le tour pour la validation humaine) : ce n'est pas un contournement
+# du garde-fou, c'est la reconnaissance qu'il clôt le travail.
 SATISFAIT_PAR: dict[str, set[str]] = {
-    "terminer_document": {"terminer_document"},
+    "terminer_document": {"terminer_document", "drive_deposer_document"},
 }
 
 
