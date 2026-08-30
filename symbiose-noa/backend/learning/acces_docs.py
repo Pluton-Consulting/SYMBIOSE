@@ -60,14 +60,23 @@ def niveau_pour_roles(roles) -> str:
     return "direction_only"
 
 
-def niveau_depuis_permissions(permissions, annuaire: dict) -> str:
-    """Traduit une liste de partages Drive en niveau de l'échelle maison.
+def niveau_depuis_permissions(permissions, annuaire: dict) -> str | None:
+    """Traduit une liste de partages Drive en niveau — ou avoue ne pas savoir.
 
     `annuaire` : adresse e-mail (minuscules) → rôle applicatif. Un GROUPE non
     résolu n'élargit pas l'accès (on ne sait pas qui est dedans) ; une adresse
-    inconnue de l'annuaire non plus (externe). Aucun compte interne reconnu :
-    le plus restrictif — le fichier existe, mais personne d'identifié ne le
-    partage, ce n'est pas une raison de l'ouvrir.
+    inconnue de l'annuaire non plus (externe).
+
+    AUCUN COMPTE INTERNE RECONNU → `None`, PAS « direction seule ». La leçon
+    est de production (30/08, premier lancement) : Drive ne montre la liste
+    complète des partages qu'aux propriétaires et éditeurs — un compte de
+    synchronisation simple LECTEUR ne voit que sa propre entrée. La première
+    version classait alors « le plus restrictif », et les 430 documents sont
+    TOUS partis en direction seule : sûr, et inutilisable. Ne rien reconnaître
+    n'est pas une information sur le fichier, c'est une information sur notre
+    POINT DE VUE : on rend la main, et le niveau stocké à l'ingestion (réglé
+    par périmètre) fait foi. « Direction seule » ne se prononce que sur une
+    identification POSITIVE — des comptes internes vus, et seulement eux.
     """
     roles = set()
     for p in permissions or []:
@@ -79,7 +88,7 @@ def niveau_depuis_permissions(permissions, annuaire: dict) -> str:
         if adresse and adresse in annuaire:
             roles.add(annuaire[adresse])
     if not roles:
-        return "direction_only"
+        return None
     return niveau_pour_roles(roles)
 
 
