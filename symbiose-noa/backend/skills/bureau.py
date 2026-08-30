@@ -231,10 +231,21 @@ async def terminer_document(data: dict, user) -> dict:
         # l'aperçu dans le chat. Sans lui, le modèle « montrait » un contenu
         # recomposé de mémoire, qui divergeait du fichier téléchargé.
         "extrait": f.get("extrait") or "",
-        "note": ("Le fichier est prêt. Annonce-le avec UN SEUL bloc ```ui : un "
-                 "`fichier` portant `url`, `nom`, `format` et `octets`. "
-                 "N'ajoute PAS de `doc_apercu` : la carte `fichier` affiche "
-                 "déjà le document lui-même sous le bouton, et les deux "
-                 "ensemble feraient deux cartes pour un seul fichier. Le lien vaut 24 h et n'est "
+        # LA CARTE FICHIER EST MÉCANIQUE. Relevé le 30/08, la saga du « Word
+        # Symbiose » : le document était bien produit (l'atelier l'atteste),
+        # mais sa carte dépendait du MODÈLE — la note lui demandait d'écrire le
+        # bloc ```ui, et il ne le faisait pas, ou l'inventait avec une URL
+        # morte (effacée à juste titre). Résultat : un fichier réel, jamais
+        # affiché, sur des tours entiers. Le bloc vit désormais dans la sortie
+        # du skill : `_livrables_a_l_ecran` garantit qu'il atteint l'écran et
+        # l'historique, que le modèle l'ait recopié ou non.
+        "bloc_ui": {"type": "fichier", "url": f"/api/documents/{jeton}",
+                    "nom": f"{entete['titre']}.{entete['format']}",
+                    "titre": entete["titre"], "format": entete["format"],
+                    "octets": f["octets"]},
+        "note": ("Le fichier est prêt : sa carte de téléchargement est ajoutée "
+                 "AUTOMATIQUEMENT sous ta réponse. N'écris AUCUN bloc ```ui "
+                 "pour ce fichier — ni `fichier`, ni `doc_apercu` — et "
+                 "n'invente jamais son adresse. Le lien vaut 24 h et n'est "
                  "utilisable que par la personne."),
     }
