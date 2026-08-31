@@ -1204,6 +1204,10 @@ async def principal():
             ("analyse ce plan, retrouve son historique et prépare un pré-devis "
              "et un mail de réponse", "agent1"),
             ("fais-moi le chiffrage de ce plan", "agent1"),
+            # Le scénario n°1 : la retouche se fait dans le MÊME tour (31/08).
+            ("ajoute une pergola à droite", "agent1"),
+            ("remplace la pelouse par une terrasse en bois", "agent1"),
+            ("projette le rendu final avec des graminées", "agent1"),
             ("c'est quoi cette plante ?", "human_gate"),
             ("décris-moi ce plan", "human_gate")):
         verifier(f"« {demande[:42]}… » → {attendu}",
