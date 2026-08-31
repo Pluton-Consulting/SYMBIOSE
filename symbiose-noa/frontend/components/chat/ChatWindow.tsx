@@ -979,7 +979,7 @@ ${texteAffiche}`)
           return
         }
         if (err?.status === 401) {
-          // La session a expiré (le JWT vit 8 h) alors que l'onglet est resté
+          // La session a expiré (le JWT vit 24 h) alors que l'onglet est resté
           // ouvert : rien d'autre ne marchera d'ici la reconnexion. On le dit
           // en français et on y renvoie — « Erreur : Token invalide » (31/08)
           // laissait la personne devant un chat mort.
