@@ -31,6 +31,23 @@ MAX_DOSSIERS_PARCOURUS = 5000  # Une PME du paysage a des centaines de chantiers
 MAX_PAGES_PDF = 300          # Au-delà, ce n'est plus un document de travail.
 DELAI_PAR_DOCUMENT_S = 90    # Le PDF qui a tout bloqué tenait depuis 7 minutes.
 MAX_DOCUMENTS_LENTS = 5      # Plusieurs threads pendus = problème de fond.
+# CE QUE LES JOURNAUX DU 31/08 ONT MONTRÉ. 34 568 fichiers listés, 438 ingérés —
+# hier 34 565 et 436 — et « 5 documents trop lents, arrêt » à chaque passage,
+# sur les MÊMES cinq PDF d'architecte (coupes, façades, plan masse, carnets).
+# La synchro s'arrêtait donc toujours au même endroit, tout ce qui venait
+# après dans l'ordre du Drive n'était jamais lu, et l'écran disait
+# « Terminée ». Trois réponses, ici :
+#   * un fichier abandonné est MÉMORISÉ (id + modifiedTime) et sauté aux
+#     passages suivants : l'arrêt anticipé ne se reproduit plus au même
+#     endroit, la synchro PROGRESSE ;
+#   * un PDF au-delà de MAX_OCTETS_PDF n'est pas téléchargé : un plan de
+#     40 Mo n'a rien à dire au texte, et c'est lui qui tient 90 s ;
+#   * un fichier dont modifiedTime n'a pas bougé depuis sa dernière ingestion
+#     n'est pas re-téléchargé : chaque passage réinsérait les 438 mêmes
+#     documents et remettait ~1 000 embeddings en file pour rien.
+MAX_OCTETS_PDF = 25 * 1024 * 1024
+MAX_LIGNES_TABLEUR = 2000     # un classeur Drive lu comme texte, borné
+FICHIER_LENTS = "drive_lents.json"
 
 _MIME_DOSSIER = "application/vnd.google-apps.folder"
 _MIME_RACCOURCI = "application/vnd.google-apps.shortcut"
@@ -213,12 +230,105 @@ def _download_text(service, f) -> Optional[str]:
                                 name, MAX_PAGES_PDF, len(pdf.pages))
                 return texte
 
-        if mime.startswith("text/") or name.lower().endswith((".txt", ".md", ".csv")):
+        if mime.startswith("text/") or name.lower().endswith((".txt", ".md")):
             data = service.files().get_media(fileId=f["id"]).execute()
             return data.decode("utf-8", "replace") if isinstance(data, bytes) else str(data)
+        # Word, Excel, CSV : `ingestion.parsers` sait les lire depuis longtemps
+        # (le NAS de Duret s'en sert), ce connecteur ne le faisait pas — les
+        # .docx du Drive n'étaient JAMAIS ingérés (31/08). Les images restent
+        # hors champ : l'OCR d'un Drive de photos de chantiers, c'est des
+        # heures pour rien.
+        from ingestion.parsers import (EXT_IMAGE, FichierNonSupporte, analyser,
+                                       famille, ligne_en_texte)
+        if famille(name) is not None and not name.lower().endswith(EXT_IMAGE):
+            data = service.files().get_media(fileId=f["id"]).execute()
+            try:
+                structure = analyser(name, data)
+            except FichierNonSupporte as e:
+                logger.info("Drive : « %s » ignoré (%s)", name, e)
+                return None
+            if structure.get("kind") == "tabulaire":
+                lignes = (structure.get("rows") or [])[:MAX_LIGNES_TABLEUR]
+                return "\n\n".join(ligne_en_texte(l) for l in lignes)
+            return structure.get("text")
     except Exception as e:
         logger.warning("Drive : téléchargement de « %s » échoué : %s", name, e)
-    return None  # docx, images… : gérés via Make ou à ajouter ici
+    return None  # images et formats inconnus
+
+
+def _instant(valeur) -> Optional["datetime"]:
+    """Un `modifiedTime` Drive (« 2026-08-31T07:22:10.123Z ») en datetime UTC."""
+    from datetime import datetime, timezone
+    if not valeur:
+        return None
+    try:
+        d = datetime.fromisoformat(str(valeur).replace("Z", "+00:00"))
+        return d if d.tzinfo else d.replace(tzinfo=timezone.utc)
+    except ValueError:
+        return None
+
+
+def _inchange(fichier: dict, derniere_ingestion) -> bool:
+    """Le fichier n'a pas bougé depuis qu'on l'a ingéré : inutile de le relire.
+    Fonction PURE (banc). Sans date connue d'un côté ou de l'autre, on relit :
+    dans le doute, c'est la relecture qui est sans risque."""
+    modifie = _instant(fichier.get("modifiedTime"))
+    if modifie is None or derniere_ingestion is None:
+        return False
+    from datetime import timezone
+    d = derniere_ingestion if derniere_ingestion.tzinfo else derniere_ingestion.replace(tzinfo=timezone.utc)
+    return d >= modifie
+
+
+def _trop_gros(fichier: dict) -> bool:
+    """Un PDF au-delà de la borne : on ne le télécharge même pas."""
+    est_pdf = (fichier.get("mimeType") == "application/pdf"
+               or str(fichier.get("name", "")).lower().endswith(".pdf"))
+    try:
+        return est_pdf and int(fichier.get("size") or 0) > MAX_OCTETS_PDF
+    except (TypeError, ValueError):
+        return False
+
+
+def _chemin_lents():
+    """Les fichiers abandonnés vivent dans le volume des documents produits : il
+    survit au redéploiement — c'est tout l'intérêt de s'en souvenir."""
+    import os
+    import pathlib
+    return pathlib.Path(os.environ.get("DOCUMENTS_DIR", "/tmp/symbiose-documents")) / FICHIER_LENTS
+
+
+def _lire_lents() -> dict:
+    import json
+    try:
+        return dict(json.loads(_chemin_lents().read_text(encoding="utf-8")))
+    except (OSError, ValueError):
+        return {}
+
+
+def _ecrire_lents(lents: dict) -> None:
+    import json
+    try:
+        chemin = _chemin_lents()
+        chemin.parent.mkdir(parents=True, exist_ok=True)
+        chemin.write_text(json.dumps(lents, ensure_ascii=False, indent=1), encoding="utf-8")
+    except OSError as e:  # noqa: BLE001 — une mémoire d'appoint ne casse pas une synchro
+        logger.warning("Drive : mémoire des fichiers lents non écrite : %s", e)
+
+
+async def _dates_ingerees() -> dict:
+    """source_id → date de la dernière ingestion (les chunks sont réécrits à
+    chaque ingestion, `created_at` la date donc). Illisible → tout sera relu."""
+    try:
+        from database.connection import get_db
+        async with get_db() as conn:
+            lignes = await conn.fetch(
+                "SELECT source_id, MAX(created_at) AS d FROM documents "
+                "WHERE source_type = 'drive' GROUP BY source_id")
+        return {l["source_id"]: l["d"] for l in lignes}
+    except Exception as e:  # noqa: BLE001
+        logger.warning("Drive : dates d'ingestion illisibles (%s) — tout sera relu", e)
+        return {}
 
 
 def perimetres() -> list[tuple[Optional[str], str]]:
@@ -285,7 +395,7 @@ async def _pages(service, q: str) -> list[dict]:
         def _appel(t=token):
             return service.files().list(
                 q=q, spaces="drive",
-                fields="nextPageToken, files(id,name,mimeType)",
+                fields="nextPageToken, files(id,name,mimeType,modifiedTime,size)",
                 pageToken=t,
                 # `corpora` MANQUAIT, et c'est ce qui rendait un Drive partagé
                 # invisible. Par défaut l'API cherche dans le corpus « user »,
@@ -412,6 +522,9 @@ async def sync(folder_id: Optional[str] = None, avancer=None) -> dict:
             logger.debug("Drive : avancement non enregistré : %s", e)
 
     total_vus = total_ingeres = total_lents = 0
+    inchanges = lents_sautes = trop_gros = non_examines = 0
+    connus = await _dates_ingerees()
+    lents = _lire_lents()
     detail = []
     for dossier, niveau in cibles:
         await _prevenir(total_ingeres, None, f"je liste {dossier or 'le Drive'}")
@@ -419,6 +532,17 @@ async def sync(folder_id: Optional[str] = None, avancer=None) -> dict:
                                           declares - {dossier} if dossier else frozenset())
         ingeres = 0
         for i, f in enumerate(fichiers):
+            if _inchange(f, connus.get(f["id"])):
+                inchanges += 1
+                continue
+            if lents.get(f["id"]) == (f.get("modifiedTime") or ""):
+                lents_sautes += 1          # abandonné à un passage précédent, inchangé depuis
+                continue
+            if _trop_gros(f):
+                trop_gros += 1
+                logger.info("Drive : « %s » non téléchargé (%s octets, au-delà de %d)",
+                            f.get("name"), f.get("size"), MAX_OCTETS_PDF)
+                continue
             # UN DÉLAI PAR DOCUMENT. Un PDF a déjà tenu plus de sept minutes à
             # 100 % d'un cœur, et l'ingestion ne s'en est jamais remise : elle
             # est restée bloquée sur ce fichier jusqu'au redémarrage.
@@ -436,10 +560,15 @@ async def sync(folder_id: Optional[str] = None, avancer=None) -> dict:
                     timeout=DELAI_PAR_DOCUMENT_S)
             except (asyncio.TimeoutError, TimeoutError):
                 total_lents += 1
-                logger.warning("Drive : « %s » abandonné après %d s",
+                lents[f["id"]] = f.get("modifiedTime") or ""
+                _ecrire_lents(lents)      # il ne sera plus retenté tant qu'il ne change pas
+                logger.warning("Drive : « %s » abandonné après %d s (mémorisé)",
                                f.get("name"), DELAI_PAR_DOCUMENT_S)
                 if total_lents >= MAX_DOCUMENTS_LENTS:
-                    logger.error("Drive : %d documents trop lents, arrêt", total_lents)
+                    non_examines += len(fichiers) - i - 1
+                    logger.error("Drive : %d documents trop lents, arrêt anticipé — %d fichier(s) "
+                                 "non examiné(s), ils passeront au prochain lancement",
+                                 total_lents, len(fichiers) - i - 1)
                     break
                 continue
             if text and await ingest_document(
@@ -462,7 +591,13 @@ async def sync(folder_id: Optional[str] = None, avancer=None) -> dict:
     # Le détail par périmètre remonte jusqu'à l'écran : c'est la seule façon de
     # vérifier qu'un dossier sensible est bien arrivé au niveau qu'on croit,
     # sans avoir à relire un fichier de configuration sur le serveur.
-    sortie = {"fichiers": total_vus, "ingérés": total_ingeres, "périmètres": detail}
+    sortie = {"fichiers": total_vus, "ingérés": total_ingeres, "périmètres": detail,
+              "inchangés": inchanges, "lents_ignorés": lents_sautes, "trop_gros": trop_gros}
     if total_lents:
         sortie["abandonnés_trop_lents"] = total_lents
+    if non_examines:
+        # L'écran doit dire « partielle », pas « terminée » : c'est le routeur
+        # qui lit ces deux clés (routers/ingestion.py).
+        sortie["arret_anticipe"] = True
+        sortie["non_examines"] = non_examines
     return sortie
