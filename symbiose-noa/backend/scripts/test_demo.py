@@ -849,9 +849,10 @@ async def principal():
     src_agent1_p = (racine / "agents" / "agent1.py").read_text(encoding="utf-8")
     verifier("la règle interdit de répondre « je ne sais pas faire »",
              "Ne réponds pas « je ne sais pas faire »" in src_agent1_p
-             and "2 ou 3 questions COURTES" in src_agent1_p)
+             and "ESSAIE D'ABORD" in src_agent1_p)   # 31/08 : essayer, pas questionner
     verifier("elle impose de vérifier AVANT de retenir",
-             "SEULEMENT SI ça a marché" in src_agent1_p)
+             "qu'elle a marché" in src_agent1_p
+             and "Ne retiens jamais une marche à suivre que tu n'as pas vérifiée" in src_agent1_p)
     plan_mod = charger("skills.plan", "skills/plan.py")
     decl = plan_mod.SKILLS["enregistrer_procedure"]
     verifier("le geste qui retient une marche à suivre existe",
