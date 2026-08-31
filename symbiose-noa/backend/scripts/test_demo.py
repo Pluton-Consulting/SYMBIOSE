@@ -419,7 +419,26 @@ async def _retrieve_as_context(query, user_role=None, source_types=None, top_k=5
     return [c["content"] for c in await _retrieve(query, user_role, source_types, top_k)]
 
 
-_module("vectorstore.rag", retrieve=_retrieve, retrieve_as_context=_retrieve_as_context)
+async def _rechercher(query, user_role=None, source_types=None, mailboxes=None,
+                      limite=6, page=1, fichier=None):
+    """Le geste à l'échelle (31/08) : les mêmes morceaux, GROUPÉS par document."""
+    chunks = await _retrieve(query, user_role, source_types, limite * page * 4, mailboxes)
+    docs = _fusion.grouper_par_document([dict(c, source_id=c["source_filename"], id=c["source_filename"])
+                                         for c in chunks])
+    return {"documents": docs, "total_documents": len(docs), "total_morceaux": len(chunks),
+            "embedding": True, "page": page, "limite": limite}
+
+
+_module("vectorstore.rag", retrieve=_retrieve, retrieve_as_context=_retrieve_as_context,
+        rechercher=_rechercher)
+# `vectorstore.fusion` est PUR (aucune dépendance) : on charge le vrai module,
+# rattaché au paquet doublé — c'est lui que le skill exerce.
+import importlib.util as _ilu
+_spec = _ilu.spec_from_file_location("vectorstore.fusion", pathlib.Path(BACKEND) / "vectorstore" / "fusion.py")
+_fusion = _ilu.module_from_spec(_spec)
+_spec.loader.exec_module(_fusion)
+sys.modules["vectorstore.fusion"] = _fusion
+setattr(sys.modules["vectorstore"], "fusion", _fusion)
 
 
 # ── Le Drive : une doublure qui répond comme l'API de Google ──────────
