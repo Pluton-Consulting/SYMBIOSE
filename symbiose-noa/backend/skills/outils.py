@@ -117,6 +117,24 @@ async def drive_arborescence(data: dict, user) -> dict:
         resultat, f"du dossier « {dossier} »" if dossier else "du Drive")
 
 
+async def drive_chercher(data: dict, user) -> dict:
+    """Dossiers ET fichiers dont le NOM porte un motif, à toutes les profondeurs.
+
+    Demande de Noa du 01/09 : une information sur un client absente de la
+    mémoire d'entreprise doit déclencher, d'instinct, une recherche par NOM
+    dans le classement du Drive — partout, pas au seul premier niveau — puis
+    la proposition d'aller plus loin. Le pendant du `nas_chercher` du projet
+    jumeau, même forme de résultat, même affichage mécanique.
+    """
+    from outils.drive import chercher
+    from skills.affichage import garantir_recherche
+    motif = (data.get("motif") or data.get("nom") or data.get("client") or "").strip()
+    if not motif:
+        _echec("Donne le `motif` à chercher (nom de client, de chantier, de fichier).")
+    resultat = await _drive(chercher, motif, perimetres=_perimetres(user))
+    return garantir_recherche(resultat, motif)
+
+
 async def drive_ouvrir(data: dict, user) -> dict:
     """Lit un fichier du Drive depuis son nom."""
     from outils.drive import ouvrir
@@ -265,6 +283,19 @@ SKILLS = {
         optionnels=["dossier", "profondeur"],
         effet="lecture",
         libelle="je parcours les dossiers du Drive"),
+    "drive_chercher": Declaration(
+        fonction=drive_chercher,
+        description=(
+            "CHERCHE dossiers ET fichiers par NOM sur TOUT le Drive, a toutes "
+            "les profondeurs, et rend leurs CHEMINS. A utiliser D'INSTINCT "
+            "quand une information sur un client, un chantier ou un "
+            "fournisseur ne sort ni des fichiers importes ni des documents : "
+            "le classement porte les noms des clients. Le resultat s'affiche "
+            "automatiquement ; propose ensuite d'ouvrir ou d'explorer ce qui "
+            "est trouve. `motif` : le nom cherche"),
+        requis=["motif"],
+        effet="lecture",
+        libelle="je cherche ce nom sur le Drive"),
     "drive_ouvrir": Declaration(
         fonction=drive_ouvrir,
         description=("OUVRE et lit un fichier du Drive depuis son NOM, sans en "

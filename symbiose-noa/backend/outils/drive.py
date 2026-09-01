@@ -1113,6 +1113,178 @@ async def lire_lot(motif: str, dossier: Optional[str] = None,
     }
 
 
+MAX_TROUVAILLES = 40               # dossiers ou fichiers rendus par recherche
+
+
+async def chercher(motif: str, perimetres: Optional[list] = None) -> dict:
+    """Dossiers ET fichiers dont le NOM porte le motif, à TOUTES les profondeurs.
+
+    Demande de Noa du 01/09 : quand une information sur un client n'est pas en
+    mémoire d'entreprise, l'assistant doit « instinctivement » chercher si un
+    dossier ou un fichier du Drive PARLE de ce client — pas seulement au
+    premier niveau, pas borné à quelques entrées : partout, en se fiant
+    d'abord aux NOMS, puis en proposant d'aller plus loin.
+
+    Deux voies, comme l'arborescence :
+      - Drive entièrement ouvert : le CATALOGUE des dossiers (balayage global)
+        est filtré CHEZ NOUS (`_nu`), donc insensible aux accents, et chaque
+        trouvaille porte son CHEMIN reconstruit ; les fichiers passent par
+        `name contains` (toutes profondeurs par construction — le Drive est
+        plat, seuls les `parents` font l'arbre).
+      - périmètres déclarés : descente par niveaux SANS sortir des racines
+        (mêmes garanties que l'arborescence cloisonnée), puis les fichiers
+        cherchés dans TOUS les dossiers descendus, par lots de quinze parents.
+
+    Le filtre `name contains` de l'API est sensible aux accents (leçon de
+    `_resoudre`) : pour les fichiers, on essaie le motif entier PUIS son mot
+    le plus long — et quand rien ne sort, on le dit sans conclure à l'absence.
+    """
+    motif = (motif or "").strip()
+    if not motif:
+        raise DriveRefuse("Donne le nom à chercher (client, chantier, fichier).")
+    perimetres = perimetres or []
+    if not perimetres:
+        raise DriveRefuse(
+            "Aucun dossier du Drive n'est ouvert à l'assistant pour ce rôle.")
+    service = await _service()
+    cible = _nu(motif)
+    jetons = [t for t in cible.split() if len(t) >= 3]
+
+    def _correspond(nom) -> bool:
+        nu = _nu(nom or "")
+        return bool(nu) and (cible in nu or (jetons and all(t in nu for t in jetons)))
+
+    trouves: list[dict] = []
+    partiel = False
+
+    if _tout_le_drive(perimetres):
+        catalogue, partiel = await _balayer_dossiers(service)
+        drives = {d["id"]: d.get("name") for d in await _drives_nommes(service)}
+
+        def _chemin(did: Optional[str]) -> str:
+            morceaux: list[str] = []
+            cour = did
+            for _ in range(MAX_PROFONDEUR):
+                if not cour:
+                    break
+                if cour in drives:
+                    morceaux.append(str(drives[cour]))
+                    break
+                d = catalogue.get(cour)
+                if not d:
+                    break
+                morceaux.append(str(d.get("nom") or ""))
+                parents = d.get("parents") or []
+                cour = parents[0] if parents else None
+            return "/".join(reversed([m for m in morceaux if m]))
+
+        for did, d in catalogue.items():
+            if _correspond(d.get("nom")):
+                trouves.append({"nom": d.get("nom"), "chemin": _chemin(did),
+                                "dossier": True})
+
+        # Les fichiers : motif entier d'abord ; s'il est composé et que rien ne
+        # sort, son mot le plus long — « Davy SAINT LAURENT » ne matche aucun
+        # nom de devis, « SAINT LAURENT » si.
+        essais = [motif]
+        if len(jetons) > 1:
+            essais.append(max(jetons, key=len))
+        vus: set[str] = set()
+        for essai in essais:
+            if any(not t["dossier"] for t in trouves):
+                break
+
+            def _appel(nom=essai):
+                return service.files().list(
+                    q=(f"mimeType != '{_MIME_DOSSIER}' and trashed = false "
+                       f"and name contains '{_echappe(nom)}'"),
+                    spaces="drive", corpora="allDrives",
+                    includeItemsFromAllDrives=True, supportsAllDrives=True,
+                    fields="files(id,name,parents,modifiedTime)",
+                    pageSize=MAX_TROUVAILLES + 10,
+                ).execute()
+            try:
+                for f in (await asyncio.to_thread(_appel)).get("files", []):
+                    if f["id"] in vus:
+                        continue
+                    vus.add(f["id"])
+                    parents = f.get("parents") or []
+                    trouves.append({"nom": f.get("name"),
+                                    "chemin": _chemin(parents[0] if parents else None),
+                                    "dossier": False,
+                                    "modifie_le": f.get("modifiedTime")})
+            except Exception as e:  # noqa: BLE001
+                logger.warning("Drive : recherche fichiers « %s » échouée : %s", essai, e)
+    else:
+        # ── Cloisonné : on descend, on ne sort JAMAIS des racines ─────────
+        chemins: dict[str, str] = {}
+        niveau = [d for d, _ in perimetres if d]
+        total = 0
+        for _ in range(MAX_PROFONDEUR):
+            if not niveau or total > MAX_DOSSIERS_ARBRE:
+                partiel = partiel or bool(niveau)
+                break
+            infos = await _enfants_par_lots(service, niveau)
+            prochain: list[str] = []
+            for pid in niveau:
+                for sd in (infos.get(pid) or {}).get("dossiers", []):
+                    chemin = (chemins.get(pid, "") + "/" + str(sd.get("nom") or "")).strip("/")
+                    chemins[sd["id"]] = chemin
+                    total += 1
+                    if _correspond(sd.get("nom")):
+                        trouves.append({"nom": sd.get("nom"), "chemin": chemin,
+                                        "dossier": True})
+                    prochain.append(sd["id"])
+            niveau = prochain
+
+        ids = ([d for d, _ in perimetres if d] + list(chemins))[:300]
+        for i in range(0, len(ids), 15):
+            paquet = ids[i:i + 15]
+            ou = " or ".join(f"'{_echappe(p)}' in parents" for p in paquet)
+
+            def _appel(requete=(f"({ou}) and mimeType != '{_MIME_DOSSIER}' "
+                                f"and trashed = false "
+                                f"and name contains '{_echappe(motif)}'")):
+                return service.files().list(
+                    q=requete, spaces="drive", corpora="allDrives",
+                    includeItemsFromAllDrives=True, supportsAllDrives=True,
+                    fields="files(id,name,parents,modifiedTime)",
+                    pageSize=MAX_TROUVAILLES,
+                ).execute()
+            try:
+                for f in (await asyncio.to_thread(_appel)).get("files", []):
+                    parents = f.get("parents") or []
+                    trouves.append({"nom": f.get("name"),
+                                    "chemin": chemins.get(parents[0] if parents else "", ""),
+                                    "dossier": False,
+                                    "modifie_le": f.get("modifiedTime")})
+            except Exception as e:  # noqa: BLE001
+                logger.warning("Drive : recherche cloisonnée « %s » échouée : %s", motif, e)
+
+    # L'exact d'abord, puis le chemin court : le dossier « Davy SAINT LAURENT »
+    # doit précéder « Anciens clients/2019/SAINT LAURENT ancien devis ».
+    trouves.sort(key=lambda t: (0 if _nu(t.get("nom")) == cible else 1,
+                                not t.get("dossier"),
+                                len(t.get("chemin") or ""),
+                                _nu(t.get("nom"))))
+    nombre = len(trouves)
+    sortie: dict = {"motif": motif, "nombre": nombre,
+                    "resultats": trouves[:MAX_TROUVAILLES]}
+    if nombre > MAX_TROUVAILLES:
+        sortie["note"] = (f"{nombre} correspondances : les {MAX_TROUVAILLES} "
+                          "plus proches sont rendues. Précise le nom pour affiner.")
+    if partiel:
+        sortie["note"] = ((sortie.get("note") or "") + " Recherche PARTIELLE : "
+                          "le Drive dépasse le plafond de balayage — une absence "
+                          "n'est pas prouvée.").strip()
+    if not nombre:
+        sortie["note"] = ((sortie.get("note") or "") + " Aucun nom ne correspond. "
+                          "Le filtre fichiers est sensible aux accents : un seul "
+                          "mot du nom, ou une autre orthographe, peut suffire. "
+                          "Une recherche vide ne prouve pas l'absence.").strip()
+    return sortie
+
+
 def _garde_perimetre(dossier: str, perimetres: list) -> None:
     """Un dossier demandé doit appartenir à un périmètre autorisé.
 
