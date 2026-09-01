@@ -11,10 +11,9 @@ export const RACCOURCIS: { libelle: string; prompt: string }[] = [
     prompt: "Fais le point sur tous mes mails des 7 derniers jours : une synthèse message par message, et propose une réponse pour chacun de ceux qui en appellent une." },
   { libelle: "Dossiers en attente",
     prompt: "Quels dossiers sont en attente d’une réponse ou d’une relance, du plus ancien au plus récent ?" },
-  // Les rendus d'image — l'offre visuelle de Symbiose. Le premier attend une
-  // photo jointe (le trombone est à côté), le second part d'une description.
-  { libelle: "Simulation avant/après sur photo",
-    prompt: "Je joins une photo du jardin : fais une simulation avant/après en ajoutant [décrivez : terrasse bois, pergola, massifs…]. Garde la maison et tout le reste à l’identique." },
-  { libelle: "Créer un visuel d'aménagement",
-    prompt: "Prépare un visuel d’aménagement paysager : [décrivez la scène — terrain, ambiance, végétation, matériaux, saison]." },
+  // Le rendu d'image — l'offre visuelle de Symbiose. UNE seule entrée (01/09,
+  // demande de Noa : deux boutons pour la même chose embrouillaient) : avec une
+  // photo jointe c'est la simulation avant/après, sans photo c'est la création.
+  { libelle: "Simulation / visuel d'aménagement",
+    prompt: "Je joins une photo (sinon, pars de ma description) : fais une simulation avant/après en ajoutant [décrivez : terrasse bois, pergola, massifs…]. Garde la maison et tout le reste à l’identique." },
 ]
