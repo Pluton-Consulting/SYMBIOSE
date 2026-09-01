@@ -180,7 +180,7 @@ export default function TableauDeBord({ apiUrl, token }: Props) {
               <b>{d.roi.detail.conversations}</b> conversations · <b>{d.roi.detail.documents}</b> documents · <b>{d.roi.detail.mails}</b> mails · <b>{d.roi.detail.analyses}</b> analyses · <b>{d.roi.detail.recherches}</b> recherches
               {d.roi.cout_ia_eur !== null && <> · coût IA <b>{euros(d.roi.cout_ia_eur)}</b></>}
               <div style={{ marginTop: 6, color: "var(--marque-text-muted)", fontSize: 12 }}>
-                Estimation : temps valorisé {d.roi.hypotheses.taux_horaire} €/h ; une conversation ≈ {d.roi.hypotheses.minutes_par_conversation} min,
+                Estimation : temps valorisé {d.roi.hypotheses.taux_horaire} €/h ; un échange ≈ {d.roi.hypotheses.minutes_par_conversation} min,
                 un document ≈ {d.roi.hypotheses.minutes_par_document} min, un mail ≈ {d.roi.hypotheses.minutes_par_mail} min,
                 une analyse ≈ {d.roi.hypotheses.minutes_par_analyse} min, une recherche ≈ {d.roi.hypotheses.minutes_par_recherche} min.
               </div>

@@ -88,6 +88,15 @@ async def tableau(current_user: User = Depends(get_current_user)):
     # Le filtre de périmètre est le MÊME fragment partout : $1 = user_id,
     # $2 = vrai si global. Un collaborateur ne voit que ce qui porte son nom.
     perim = "($2::boolean OR {col} = $1::uuid)"
+    # CE QUE LES EXPERTS ONT FAIT NE CONCERNE QUE MOI (01/09, demande de Noa :
+    # « fais en sorte que toutes les data des experts dans le tableau de bord
+    # ne concernent que l'utilisateur actuel »). Ces cartes répondent à « qu'ai-
+    # JE confié à l'outil », pas « que fait l'entreprise » : les servir en
+    # global à un administrateur lui montrait l'activité de tout le monde sous
+    # un libellé personnel, ce qui rendait le chiffre inutilisable pour lui.
+    # Le ROI et l'inventaire, eux, restent d'entreprise — c'est leur nature, et
+    # l'écran le dit.
+    perso = "{col} = $1::uuid"
     # LE PLANCHER DES INDICATEURS. Réglage `kpi_depuis` : une remise à zéro qui
     # ne supprime rien. Les lignes restent en base — on cesse simplement de les
     # compter. Réversible en effaçant le champ, ce qu'aucun DELETE ne permet.
@@ -119,7 +128,7 @@ async def tableau(current_user: User = Depends(get_current_user)):
               COUNT(*) FILTER (WHERE action IN ('browser_task_completed'))                                AS navigations,
               COUNT(*) FILTER (WHERE success = false)                                                     AS echecs
             FROM audit_log
-            WHERE created_at >= NOW() - INTERVAL '30 days' AND {perim.format(col='user_id')}{plancher}
+            WHERE created_at >= NOW() - INTERVAL '30 days' AND {perso.format(col='user_id')}{plancher}
         """, uid, global_)
 
         # Activité par jour (14 jours) : des barres, pas des courbes de dev.
@@ -128,7 +137,7 @@ async def tableau(current_user: User = Depends(get_current_user)):
                    COUNT(*) FILTER (WHERE action = 'chat_request') AS conversations,
                    COUNT(*) FILTER (WHERE action = 'skill_executed') AS actions
             FROM audit_log
-            WHERE created_at >= NOW() - INTERVAL '14 days' AND {perim.format(col='user_id')}{plancher}
+            WHERE created_at >= NOW() - INTERVAL '14 days' AND {perso.format(col='user_id')}{plancher}
             GROUP BY 1 ORDER BY 1
         """, uid, global_)
 

@@ -186,12 +186,24 @@ class Settings(BaseSettings):
     # ROI AFFICHÉ AU TABLEAU DE BORD : une estimation, et elle le dit.
     # Le brief (§13) pose 65 €/h. Les minutes par geste sont des hypothèses
     # prudentes, visibles sous le chiffre, réglables ici ou dans l'env.
-    roi_taux_horaire: float = 65.0
-    roi_minutes_question: float = 10.0     # une conversation menée à la place d'une recherche manuelle
-    roi_minutes_document: float = 45.0     # un document produit (devis, courrier, rapport)
-    roi_minutes_mail: float = 4.0          # un mail trié, résumé ou répondu
-    roi_minutes_analyse: float = 30.0      # un plan ou une photo analysés
-    roi_minutes_recherche: float = 6.0     # une recherche (mémoire, données, web)
+    # LES HYPOTHÈSES DU ROI ONT ÉTÉ DIVISÉES (01/09, relevé de Noa : « diminue la
+    # quantité de ROI, il monte trop vite, sûrement une surestimation des
+    # temps »). Il avait raison, et la cause principale n'était pas la valeur :
+    # c'est que le compteur compte des TOURS de chat, pas des conversations.
+    # Cinq messages pour obtenir un devis créditaient cinquante minutes. Le nom
+    # de l'hypothèse était donc faux, et le chiffre calé sur ce nom faux.
+    #
+    # Les valeurs ci-dessous répondent à « combien de temps CE geste-là aurait
+    # pris à la main », pas « combien vaut une journée assistée ». Elles
+    # restent surchargeables par le `.env` de chaque serveur : c'est une
+    # estimation, elle doit pouvoir se discuter, et l'écran dit qu'elle en est
+    # une.
+    roi_taux_horaire: float = 45.0         # coût horaire chargé, prudent
+    roi_minutes_question: float = 3.0      # UN ÉCHANGE (pas une conversation entière)
+    roi_minutes_document: float = 20.0     # un document produit (devis, courrier)
+    roi_minutes_mail: float = 2.0          # un mail trié, résumé ou répondu
+    roi_minutes_analyse: float = 15.0      # un plan ou une photo analysés
+    roi_minutes_recherche: float = 3.0     # une recherche (mémoire, données, web)
 
     # Nano Banana PRO d'abord — choix de l'exploitation : c'est le modèle
     # image le plus abouti du catalogue de la clé, et celui retenu pour tous
