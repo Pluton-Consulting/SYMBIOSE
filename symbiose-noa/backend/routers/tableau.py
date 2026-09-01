@@ -317,8 +317,18 @@ async def tableau(current_user: User = Depends(get_current_user)):
     # accès aux indicateurs financiers). Pour les autres rôles, le bloc n'est
     # pas rendu du tout : l'écran ne dessine pas une carte qu'on ne lui donne
     # pas — c'est le serveur qui tranche, jamais un `if` d'affichage.
+    #
+    # IL DÉPEND DU RÔLE, PLUS DE LA PERMISSION (01/09, demande de Noa : « masque
+    # la carte ROI pour tous les rôles sauf super admin et direction »).
+    # `view_dashboard_global` gouverne le PÉRIMÈTRE du tableau de bord — voir
+    # l'entreprise entière plutôt que soi — et elle est COCHABLE dans la matrice
+    # des permissions. L'accorder à un commercial pour qu'il voie l'activité
+    # collective lui aurait donné le chiffre d'affaires généré au passage, sans
+    # que personne l'ait voulu : deux décisions distinctes tenaient à une seule
+    # case. Le ROI ne se coche pas ; il suit le rôle, et rien d'autre.
+    ROLES_ROI = ("super_admin", "direction")
     bloc_roi = None
-    if global_:
+    if global_ and getattr(current_user, "role", None) in ROLES_ROI:
         bloc_roi = {
             "euros": euros, "heures": heures, "periode": "30 derniers jours",
             "hypotheses": {
