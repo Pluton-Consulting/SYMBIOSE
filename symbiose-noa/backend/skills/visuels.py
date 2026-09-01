@@ -532,16 +532,16 @@ SKILLS = {
     "tester_visuel": Declaration(
         fonction=tester_visuel,
         description=(
-            "ESSAIE le visuel en quelques secondes a partir du brief de "
-            "`preparer_visuel`. C'est le BANC D'ESSAI : itere ici "
-            "autant qu'il faut, montre chaque essai, ajuste le brief avec "
-            "l'utilisateur, et ne passe a `generer_visuel` (tirage final, "
-            "valide) que pour le rendu retenu. Le resultat donne un "
-            "bloc ```ui a inserer TEL QUEL pour AFFICHER l'essai. Un echec "
-            "de quota d'un tour PRECEDENT ne vaut plus rien : quand "
-            "l'utilisateur redemande un essai, APPELLE ce skill au lieu de "
-            "repondre de memoire — c'est lui qui sait si le quota est revenu, "
-            "pas l'historique de la conversation"),
+            "ESSAIE un visuel IMAGINE a partir du brief TEXTE de "
+            "`preparer_visuel`. JAMAIS pour transformer une PHOTO existante : "
+            "le moteur ne voit pas la photo, il rendrait une AUTRE maison — "
+            "pour une photo (« avant/apres », « a l'identique »), c'est "
+            "`modifier_visuel`. C'est le BANC D'ESSAI : itere ici, montre "
+            "chaque essai, et ne passe a `generer_visuel` (tirage final, "
+            "valide) que pour le rendu retenu. Le resultat donne un bloc "
+            "```ui a inserer TEL QUEL. Un echec de quota d'un tour PRECEDENT "
+            "ne vaut plus rien : quand on redemande un essai, APPELLE ce "
+            "skill au lieu de repondre de memoire"),
         requis=["brief"], optionnels=["format", "titre"],
         # L'essai s'itere librement ; seul le tirage final passe par un accord.
         effet="lecture",

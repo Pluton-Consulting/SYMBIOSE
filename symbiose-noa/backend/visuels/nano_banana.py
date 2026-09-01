@@ -28,6 +28,7 @@ panne — et il dit LEQUEL des deux cas c'est.
 """
 from __future__ import annotations
 
+import asyncio
 import base64
 import logging
 import time
@@ -158,11 +159,34 @@ async def generer(prompt: str, *,
     derniere = "aucun modèle essayé"
     async with httpx.AsyncClient(timeout=DELAI_S) as client:
         for modele in _modeles(qualite):
-            try:
-                rep = await client.post(f"{BASE}/{modele}:generateContent",
-                                        params={"key": cle}, json=corps)
-            except httpx.HTTPError as e:
-                derniere = f"{modele} injoignable ({type(e).__name__})"
+            # UN 503 EST PASSAGER, PAS UNE PANNE (01/09, relevé en prod : le
+            # tirage validé par l'utilisateur est mort sur UN 503 « high
+            # demand » de Google, sans le moindre réessai — et le tirage final
+            # n'a qu'un seul moteur autorisé, donc l'échec était garanti).
+            # Les statuts transitoires (surcharge, passerelle) et les pannes
+            # réseau se réessaient DEUX fois, à quelques secondes d'écart,
+            # avant de passer au modèle suivant ou d'abandonner. Le 429 garde
+            # son traitement à part : c'est un état de QUOTA, pas une panne.
+            rep = None
+            for essai, pause_s in enumerate((0, 5, 15)):
+                if pause_s:
+                    await asyncio.sleep(pause_s)
+                try:
+                    rep = await client.post(f"{BASE}/{modele}:generateContent",
+                                            params={"key": cle}, json=corps)
+                except httpx.HTTPError as e:
+                    derniere = f"{modele} injoignable ({type(e).__name__})"
+                    rep = None
+                    continue
+                if rep.status_code in (500, 502, 503, 504):
+                    derniere = (f"{modele} : HTTP {rep.status_code} — surcharge "
+                                "passagère chez Google, pas un problème de crédit")
+                    logger.info("Nano Banana %s : HTTP %s (essai %d)",
+                                modele, rep.status_code, essai + 1)
+                    rep = None
+                    continue
+                break
+            if rep is None:
                 continue
             if rep.status_code == 429:
                 # Le quota est un état d'exploitation, pas une panne — et le
