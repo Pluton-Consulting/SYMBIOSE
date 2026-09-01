@@ -37,7 +37,7 @@ function canTogglePerm(mgr: string, _agent: Agent, target: Role): boolean {
 const ALL_SUB_TABS: { key: SubTab; label: string; roles?: string[] }[] = [
   { key: "utilisateurs", label: "Utilisateurs", roles: ["super_admin", "direction"] },
   { key: "plages", label: "Plages horaires", roles: ["super_admin", "direction"] },
-  { key: "rbac", label: "Permissions RBAC" },
+  { key: "rbac", label: "Permissions RBAC", roles: ["super_admin", "direction"] },
   { key: "agents", label: "États des agents", roles: ["super_admin"] },
   { key: "quotas", label: "Quotas", roles: ["super_admin"] },
   { key: "services", label: "Services connectés", roles: ["super_admin"] },
@@ -244,7 +244,7 @@ function UsersTab({ initialUsers, backendToken, currentRole, apiUrl }: Props) {
             })}
             {users.length === 0 && (
               <tr><td colSpan={7} style={{ padding: 40, textAlign: "center", color: "var(--marque-text-muted)", fontSize: 14 }}>
-                Aucun utilisateur. Vérifiez la connexion au backend.
+                Aucun utilisateur à afficher.
               </td></tr>
             )}
           </tbody>
