@@ -157,22 +157,65 @@ async def _build_service_pour(identite=None, ecriture: bool = False):
     """
     from ingestion.connectors.google_drive import (_SCOPES, _SCOPES_ECRITURE,
                                                    _build_service,
+                                                   _build_service_delegue,
                                                    _build_service_ecriture,
                                                    _build_service_perso)
+    scopes = _SCOPES_ECRITURE if ecriture else _SCOPES
     if identite:
+        # 1. LE CONSENTEMENT INDIVIDUEL, s'il a été donné. C'est la voie qui
+        #    marche partout, y compris sans Google Workspace.
         from mail import google_perso
         await google_perso.rafraichir()      # une boucle asyncio tourne ICI
         creds = google_perso.credentials_pour_utilisateur(str(identite))
-        if creds is None:
-            raise DriveRefuse(
-                "Votre compte Google n'est pas encore relié à l'assistant. "
-                "Reliez-le depuis Paramètres > Mon compte Google : l'assistant "
-                "verra alors le Drive avec VOS accès, et rien d'autre.")
-        return await asyncio.to_thread(
-            _build_service_perso, creds,
-            _SCOPES_ECRITURE if ecriture else _SCOPES)
+        if creds is not None:
+            return await asyncio.to_thread(_build_service_perso, creds, scopes)
+
+        # 2. LA DÉLÉGATION DE DOMAINE, si l'entreprise en a une. Elle donne le
+        #    MÊME résultat — chacun voit SON Drive — sans qu'personne ait à
+        #    cliquer : le compte de service emprunte l'identité de la personne.
+        #    C'est de loin le plus confortable quand le domaine est administré,
+        #    et cela évite aussi les refresh tokens révoqués à sept jours.
+        courriel = await _courriel_du_compte(identite)
+        if courriel:
+            try:
+                return await asyncio.to_thread(
+                    _build_service_delegue, courriel, scopes)
+            except NotImplementedError as e:
+                # Pas de compte de service, ou délégation non accordée : ce
+                # n'est pas une panne, c'est l'autre voie qui reste.
+                logger.info("Délégation de domaine indisponible : %s", e)
+
+        # 3. NI L'UN NI L'AUTRE : on refuse, en nommant les DEUX chemins. Un
+        #    repli silencieux sur le compte de service donnerait à cette
+        #    personne la vue de quelqu'un d'autre — exactement ce que la
+        #    séparation des accès existe pour empêcher.
+        raise DriveRefuse(
+            "Votre compte Google n'est pas encore relié à l'assistant. "
+            "Reliez-le depuis Paramètres > Mon compte Google : l'assistant "
+            "verra alors le Drive avec VOS accès, et rien d'autre. "
+            "(Un administrateur peut aussi activer la délégation de domaine, "
+            "qui relie tout le monde d'un coup, sans aucun clic.)")
     return await asyncio.to_thread(
         _build_service_ecriture if ecriture else _build_service)
+
+
+async def _courriel_du_compte(identite) -> str:
+    """L'adresse Google à emprunter pour cette session, ou "".
+
+    Lue DANS LA BASE à partir de l'identifiant de session, jamais reçue en
+    paramètre : la délégation de domaine permet d'emprunter l'identité de
+    n'importe qui, et une adresse qui viendrait du modèle en ferait une porte
+    ouverte. Ne lève jamais — sans adresse, c'est la voie 3 qui répond.
+    """
+    try:
+        from database.connection import get_db
+        async with get_db() as conn:
+            ligne = await conn.fetchrow(
+                "SELECT email FROM users WHERE id = $1::uuid", str(identite))
+        return (ligne["email"] or "").strip().lower() if ligne else ""
+    except Exception as e:  # noqa: BLE001 — sans adresse, on retombe sur le refus
+        logger.info("Adresse du compte illisible (%s)", type(e).__name__)
+        return ""
 
 
 async def _services(n: int, identite=None) -> list:

@@ -630,3 +630,40 @@ def _build_service_perso(credentials, scopes=None):
     logger.info("Client Drive personnel construit (%s)",
                 "écriture" if scopes == _SCOPES_ECRITURE else "lecture")
     return build("drive", "v3", credentials=credentials, cache_discovery=False)
+
+
+def _build_service_delegue(courriel: str, scopes=None):
+    """Client Drive AU NOM d'une personne du domaine, sans qu'elle clique.
+
+    LA TROISIÈME VOIE, et de loin la plus confortable quand l'entreprise est
+    sur un Google Workspace administré. Un compte de service à qui la console
+    Admin a accordé la DÉLÉGATION À L'ÉCHELLE DU DOMAINE peut emprunter
+    l'identité de n'importe quel compte du domaine : chacun voit alors SON
+    Drive, avec SES droits, sans consentement individuel, sans client OAuth
+    « Web », et sans le piège des refresh tokens révoqués à sept jours.
+
+    `_build_service` le faisait déjà, mais vers UNE adresse fixe
+    (`google_admin_subject`) : c'est cette adresse-là que tout le monde
+    empruntait. Ici le sujet est la personne QUI DEMANDE.
+
+    ⚠️ CE POUVOIR EST ENTIER : la délégation permet d'emprunter l'identité de
+    n'importe qui dans le domaine. Le `courriel` doit donc TOUJOURS venir de la
+    session (la table `users`, lue par l'identifiant de la session), jamais
+    d'un paramètre écrit par le modèle — c'est la même règle que `_identite`
+    dans `skills/outils.py`, et elle n'a pas d'exception.
+    """
+    from google.oauth2 import service_account
+
+    scopes = scopes or _SCOPES
+    adresse = (courriel or "").strip().lower()
+    if not adresse:
+        raise NotImplementedError("Aucune adresse à emprunter.")
+    if not os.path.exists(settings.google_service_account_file):
+        raise NotImplementedError(
+            "Aucun compte de service déposé : la délégation de domaine n'est "
+            "pas disponible sur ce serveur.")
+    creds = service_account.Credentials.from_service_account_file(
+        settings.google_service_account_file, scopes=scopes)
+    logger.info("Google Drive : délégation de domaine au nom de %s", adresse)
+    return build("drive", "v3", credentials=creds.with_subject(adresse),
+                 cache_discovery=False)

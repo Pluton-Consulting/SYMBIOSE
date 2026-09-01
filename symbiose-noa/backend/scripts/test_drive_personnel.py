@@ -130,10 +130,36 @@ verifier("les clients d'un même vivier restent DISTINCTS entre eux "
 drv = (BACKEND / "outils" / "drive.py").read_text(encoding="utf-8")
 verifier("la connexion PERSONNELLE est essayée d'abord",
          re.search(r"if identite:.*?credentials_pour_utilisateur", drv, re.S))
+def _avant(texte, x, y):
+    """« x » apparaît-il avant « y » ? Faux si l'un des deux manque."""
+    ix, iy = texte.find(x), texte.find(y)
+    return ix >= 0 and iy >= 0 and ix < iy
+
+
 verifier("sans compte relié, on REFUSE en disant où le relier — jamais un "
          "repli silencieux sur le Drive de quelqu'un d'autre",
-         "Mon compte Google" in drv and "DriveRefuse(" in
-         drv.split("credentials_pour_utilisateur")[1][:400])
+         "Mon compte Google" in drv and "raise DriveRefuse(" in drv)
+# TROIS VOIES, dans cet ordre. La délégation de domaine donne le MÊME résultat
+# que le consentement individuel — chacun voit SON Drive — mais sans que
+# personne ait à cliquer. Elle n'existe que si l'entreprise administre son
+# domaine ; quand elle manque, ce n'est pas une panne, c'est l'autre voie qui
+# reste, puis le refus.
+verifier("voie 2 : la délégation de domaine emprunte l'identité de la personne",
+         "_build_service_delegue" in drv
+         # L'ORDRE DES APPELS, pas celui des imports : le bloc d'import cite
+         # les deux constructeurs bien avant qu'ils servent.
+         and _avant(drv, "credentials_pour_utilisateur(str(identite))",
+                    "_build_service_delegue, courriel"))
+verifier("son absence n'est pas une panne : on continue vers le refus",
+         "Délégation de domaine indisponible" in drv)
+verifier("le refus nomme LES DEUX chemins (relier son compte, ou déléguer)",
+         "délégation de domaine" in drv.split("raise DriveRefuse")[1][:600])
+verifier("l'adresse empruntée est lue DANS LA BASE, jamais reçue en paramètre",
+         "_courriel_du_compte" in drv
+         and "SELECT email FROM users WHERE id = $1::uuid" in drv)
+_gd = (BACKEND / "ingestion" / "connectors" / "google_drive.py").read_text(encoding="utf-8")
+verifier("la délégation dit que son pouvoir est ENTIER (emprunter n'importe qui)",
+         "CE POUVOIR EST ENTIER" in _gd and "with_subject(adresse)" in _gd)
 verifier("le commentaire interdit d'« harmoniser » le chemin du compte de "
          "service (acces_docs en dépend)",
          "acces_docs" in drv and "NE PAS « harmoniser »" in drv)
