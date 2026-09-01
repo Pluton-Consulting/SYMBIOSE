@@ -36,6 +36,10 @@ _LOGO = """<table cellpadding="0" cellspacing="0" border="0">
 # le VPN, donc inatteignable depuis un téléphone hors réseau.
 LOGO_FICHIER = "logo.png"
 LOGO_CONTENT_ID = "logo-marque"
+# LE LOGO PORTE-T-IL DÉJÀ LE NOM ? Cette question est de la MARQUE, pas du
+# socle : ici le logotype est un MOT : « SYMBIOSE PAYSAGE » y est écrit, le répéter à
+    # côté ferait doublon.
+LOGO_PORTE_LE_NOM = True
 
 MARQUE = {
     "nom": "Symbiose Paysage",
