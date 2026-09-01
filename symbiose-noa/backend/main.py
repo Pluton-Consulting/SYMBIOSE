@@ -4,7 +4,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 from database.connection import init_db
-from routers import auth, users, chat, dashboard, validation, settings as settings_router, ingestion, browser, skills as skills_router, mail as mail_router, tasks as tasks_router, hooks as hooks_router, learning as learning_router, documents_produits, file_attente, navigateur_interne, tableau
+from routers import auth, users, chat, dashboard, validation, settings as settings_router, ingestion, browser, skills as skills_router, mail as mail_router, tasks as tasks_router, hooks as hooks_router, learning as learning_router, documents_produits, file_attente, navigateur_interne, tableau, google_perso as google_perso_router
 from agents.runtime import init_runtime, shutdown_runtime
 from config import settings
 
@@ -111,6 +111,12 @@ async def lifespan(app: FastAPI):
         # l'ouverture de la page.
         from llm.reglages import rafraichir as rafraichir_reglages
         await rafraichir_reglages(force=True)
+        # Les comptes Google reliés par les utilisateurs : même piège que les
+        # clés — sans ce remplissage au démarrage, le cache resterait vide
+        # jusqu'à l'ouverture de Paramètres, et chaque redéploiement ferait
+        # retomber TOUT LE MONDE sur le compte de service.
+        from mail.google_perso import rafraichir as rafraichir_google
+        await rafraichir_google(force=True)
     except Exception as e:
         logging.getLogger("symbiose").error("rafraichir_cles a échoué : %s", e)
     try:
@@ -200,6 +206,7 @@ app.include_router(mail_router.router, prefix="/api/mail", tags=["mail"])
 app.include_router(tasks_router.router, prefix="/api/tasks", tags=["tasks"])
 app.include_router(learning_router.router, prefix="/api/learning", tags=["learning"])
 app.include_router(documents_produits.router, prefix="/api/documents", tags=["documents"])
+app.include_router(google_perso_router.router, prefix="/api/google", tags=["google"])
 # Guichet du conteneur navigateur : il raconte, le backend écrit. NON EXPOSÉ
 # par nginx — aucun bloc `location` ne le route, il ne vit que sur le réseau
 # interne, et chaque appel porte le secret partagé.

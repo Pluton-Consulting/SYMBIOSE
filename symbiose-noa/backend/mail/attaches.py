@@ -128,7 +128,9 @@ async def _du_drive(nom: str, user) -> tuple:
     aucun droit que ni l'un ni l'autre n'accordait.
     """
     from outils.drive import octets, perimetres_visibles
-    return await octets(nom, perimetres_visibles(getattr(user, "role", None)))
+    from skills.outils import _identite
+    return await octets(nom, perimetres_visibles(getattr(user, "role", None)),
+                        identite=_identite(user))
 
 
 async def resoudre(brut, user, boite: str) -> tuple:

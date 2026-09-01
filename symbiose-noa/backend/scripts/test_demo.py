@@ -477,7 +477,7 @@ class _FauxDrive:
         return types.SimpleNamespace(execute=lambda: b"octets-" + fileId.encode())
 
 
-async def _service_drive():
+async def _service_drive(identite=None):
     return _FauxDrive()
 
 

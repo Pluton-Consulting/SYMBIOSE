@@ -601,3 +601,32 @@ async def sync(folder_id: Optional[str] = None, avancer=None) -> dict:
         sortie["arret_anticipe"] = True
         sortie["non_examines"] = non_examines
     return sortie
+
+
+def _build_service_perso(credentials, scopes=None):
+    """Client Drive bâti sur le consentement d'UNE personne (01/09).
+
+    Le jeton est rafraîchi ICI, dans le thread de l'appelant : sinon la première
+    requête Drive échouerait au milieu d'un listage, et l'erreur remonterait
+    comme « le Drive est vide » plutôt que « reconnectez votre compte Google » —
+    c'est le mensonge qu'on paie deux fois (une fois à le lire, une fois à le
+    chercher ailleurs).
+
+    `scopes` n'est pas transmis à `Credentials` : les scopes d'un jeton OAuth
+    sont ceux du CONSENTEMENT, pas ceux qu'on redemande à l'usage. Il n'est là
+    que pour dire, dans le journal, à quoi le client était destiné.
+    """
+    from google.auth.exceptions import RefreshError
+    from google.auth.transport.requests import Request
+    from googleapiclient.discovery import build
+
+    try:
+        credentials.refresh(Request())
+    except RefreshError as e:
+        raise NotImplementedError(
+            "Votre compte Google n'est plus relié à l'assistant (accès révoqué, "
+            "ou consentement expiré). Reliez-le à nouveau depuis "
+            "Paramètres > Mon compte Google.") from e
+    logger.info("Client Drive personnel construit (%s)",
+                "écriture" if scopes == _SCOPES_ECRITURE else "lecture")
+    return build("drive", "v3", credentials=credentials, cache_discovery=False)

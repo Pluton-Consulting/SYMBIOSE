@@ -19,8 +19,12 @@ export default async function ParametresPage() {
   const session = await auth()
   const user = (session as any)?.user
 
-  if (!["super_admin", "direction"].includes(user?.role || "")) {
-    redirect("/accueil")
+  // OUVERT À TOUS LES CONNECTÉS (01/09) : chacun vient y relier SON compte
+  // Google, et c'est la seule façon pour lui d'avoir accès au Drive. Les
+  // onglets d'administration, eux, restent filtrés par rôle dans
+  // `SettingsClient` — la page s'ouvre, son contenu se mérite.
+  if (!user) {
+    redirect("/login")
   }
 
   const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"

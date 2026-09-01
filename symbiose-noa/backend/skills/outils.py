@@ -37,6 +37,31 @@ def _perimetres(user):
     return perimetres_visibles(getattr(user, "role", None))
 
 
+def _identite(user) -> str:
+    """Le compte Google au nom duquel agir sur le Drive.
+
+    L'identifiant APPLICATIF de la session, jamais une valeur venue du modèle :
+    le jeton Google d'une personne ne doit pouvoir être réclamé que par sa
+    propre session. Composer deux gestes ne compose pas les droits — même règle
+    que `_perimetres`.
+
+    LE SUPER-ADMIN FAIT EXCEPTION, et c'est une décision de Noa (01/09) : « sauf
+    super admin, où c'est connecté avec Benjamin Durou, ça ne bouge pas ». Le
+    compte de service reste SA vue — c'est aussi celle dont vivent l'ingestion
+    et l'enrichissement, qui classent les documents pour toute l'entreprise.
+    Tous les autres, Benjamin compris en tant qu'utilisateur ordinaire, voient
+    le Drive avec LEUR propre compte, et rien d'autre.
+
+    LES DEUX FILTRES SE COMPOSENT : le jeton personnel borne par ce que Google
+    laisse voir à cette personne, les périmètres bornent par ce que l'entreprise
+    a déclaré pour ce rôle. Retirer l'un parce que l'autre existe rouvrirait
+    tout ce qui n'a jamais été classé.
+    """
+    if str(getattr(user, "role", "") or "") == "super_admin":
+        return ""
+    return str(getattr(user, "id", "") or "")
+
+
 async def _drive(fonction, *args, **kwargs):
     """Appelle un geste Drive et rend un échec comme un ÉCHEC.
 
@@ -65,7 +90,8 @@ async def drive_apercu(data: dict, user) -> dict:
     from outils.drive import apercu
     from skills.affichage import garantir_apercu
     dossier = (data.get("dossier") or "").strip()
-    resultat = await _drive(apercu, dossier or None, perimetres=_perimetres(user))
+    resultat = await _drive(apercu, dossier or None, perimetres=_perimetres(user),
+                            identite=_identite(user))
     return garantir_apercu(resultat, f"« {dossier} »" if dossier else "le Drive")
 
 
@@ -83,7 +109,7 @@ async def drive_photos(data: dict, user) -> dict:
         (data.get("dossier") or data.get("chantier") or "").strip() or None,
         (data.get("motif") or data.get("nom") or "").strip() or None,
         data.get("limite") or 6,
-        perimetres=_perimetres(user))
+        perimetres=_perimetres(user), identite=_identite(user))
     if resultat.get("bloc_ui"):
         resultat["message_final"] = (
             f"Voici {resultat['nombre']} photo(s)"
@@ -112,7 +138,8 @@ async def drive_arborescence(data: dict, user) -> dict:
     dossier = (data.get("dossier") or "").strip()
     resultat = await _drive(arborescence, dossier or None,
                             data.get("profondeur") or 0,
-                            perimetres=_perimetres(user))
+                            perimetres=_perimetres(user),
+                            identite=_identite(user))
     return garantir_arborescence(
         resultat, f"du dossier « {dossier} »" if dossier else "du Drive")
 
@@ -132,6 +159,7 @@ async def drive_chercher(data: dict, user) -> dict:
     if not motif:
         _echec("Donne le `motif` à chercher (nom de client, de chantier, de fichier).")
     resultat = await _drive(chercher, motif, perimetres=_perimetres(user),
+                            identite=_identite(user),
                             page=data.get("page") or 1)
     return garantir_recherche(resultat, motif)
 
@@ -142,7 +170,8 @@ async def drive_ouvrir(data: dict, user) -> dict:
     nom = (data.get("nom") or "").strip()
     if not nom:
         _echec("Donne le `nom` du fichier à ouvrir.")
-    return await _drive(ouvrir, nom, perimetres=_perimetres(user))
+    return await _drive(ouvrir, nom, perimetres=_perimetres(user),
+                        identite=_identite(user))
 
 
 async def drive_lire_lot(data: dict, user) -> dict:
@@ -154,7 +183,8 @@ async def drive_lire_lot(data: dict, user) -> dict:
     return await _drive(lire_lot, motif,
                         (data.get("dossier") or "").strip() or None,
                         data.get("limite") or 5,
-                        perimetres=_perimetres(user))
+                        perimetres=_perimetres(user),
+                        identite=_identite(user))
 
 
 async def drive_deposer(data: dict, user) -> dict:
@@ -184,7 +214,9 @@ async def drive_deposer(data: dict, user) -> dict:
 
     with open(chemin, "rb") as fichier:
         contenu = fichier.read()
-    return await _drive(deposer, dossier, nom, contenu, _perimetres(user))
+    return await _drive(deposer, dossier, nom, contenu,
+                        perimetres=_perimetres(user),
+                        identite=_identite(user))
 
 
 async def drive_deposer_document(data: dict, user) -> dict:
@@ -195,9 +227,13 @@ async def drive_deposer_document(data: dict, user) -> dict:
     dossier = (data.get("dossier") or "").strip()
     if not doc or not dossier:
         _echec("`document_id` et `dossier` sont requis.")
+    # `proprietaire` (le propriétaire du BROUILLON) et `identite` (le compte
+    # Google au nom duquel on écrit) sont deux notions distinctes : les
+    # confondre exploserait au premier document repris par quelqu'un d'autre.
     return await _drive(deposer_document, doc, dossier, _proprietaire(user),
                         (data.get("nom") or "").strip() or None,
-                        _perimetres(user))
+                        perimetres=_perimetres(user),
+                        identite=_identite(user))
 
 
 async def produire_document(data: dict, user) -> dict:

@@ -319,7 +319,7 @@ verifier("un document natif Google est EXPORTÉ, pas téléchargé",
          "export_media" in drv and "_EXPORT_NATIF" in drv)
 verifier("la garde de périmètre n'est pas dupliquée : les deux gestes "
          "passent par la MÊME résolution",
-         drv.count("await _resoudre_fichier(nom, perimetres)") == 2)
+         drv.count("await _resoudre_fichier(nom, perimetres, identite)") == 2)
 
 print(f"\n{'═' * 70}\n{'✗ ' + str(len(echecs)) + ' échec(s) : ' + ', '.join(echecs) if echecs else '✓ 0 échec'}\n")
 sys.exit(1 if echecs else 0)

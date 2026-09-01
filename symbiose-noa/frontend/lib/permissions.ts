@@ -121,7 +121,9 @@ export const TABS: TabDef[] = [
     key: "parametres",
     label: "Paramètres",
     href: "/parametres",
-    roles: MANAGERS,
+    // Ouvert à TOUS : chacun y relie SON compte Google (01/09). Les onglets
+    // d'administration restent filtrés par rôle à l'intérieur de l'écran.
+    roles: ALL_ROLES,
   },
   // Console développeur — journaux bruts en direct, super_admin uniquement.
   // Marquée `dev` : elle se dessine dans la couleur à part, pour qu'on ne la
@@ -175,7 +177,7 @@ export const SECTIONS: TabDef[] = [
     // débrief d'apprentissage, savoir-faire — réunis.
     href: "/connaissances", roles: MANAGERS },
   { key: "gestion",       label: "Pilotage",      href: "/gestion",     roles: ["super_admin", "direction"] },
-  { key: "parametres",    label: "Paramètres",    href: "/parametres",  roles: MANAGERS },
+  { key: "parametres",    label: "Paramètres",    href: "/parametres",  roles: ALL_ROLES },
   { key: "superviseur",   label: "Développeur",   href: "/superviseur", roles: ["super_admin"], dev: true },
 ]
 

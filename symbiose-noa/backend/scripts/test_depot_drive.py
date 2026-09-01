@@ -108,7 +108,8 @@ class _Service:
 
 
 def espace_drive(collision: bool):
-    async def _service():
+    async def _service(identite=None):
+# 01/09 : le client Drive est construit PAR IDENTITÉ (voir test_drive_personnel).
         return _Service({"files": [{"id": "deja-la"}] if collision else []})
 
     async def _racines(service):

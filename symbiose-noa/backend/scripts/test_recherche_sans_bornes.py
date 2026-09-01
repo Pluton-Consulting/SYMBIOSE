@@ -112,7 +112,8 @@ if not nas_cote:
         def files(self):
             return _Fichiers()
 
-    async def _srv():
+    async def _srv(identite=None):
+# 01/09 : le client Drive est construit PAR IDENTITÉ (voir test_drive_personnel).
         return _Service()
 
     async def _balaye(service):

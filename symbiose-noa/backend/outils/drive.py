@@ -89,8 +89,43 @@ def perimetres_visibles(role: Optional[str]) -> list[tuple[Optional[str], str]]:
 #
 # Durée de vie courte : un jeton d'accès Google vaut une heure, on se reconstruit
 # bien avant pour ne jamais servir un client périmé.
-_CLIENT: dict = {"service": None, "expire": 0.0}
+# LE CLIENT EST GARDÉ PAR IDENTITÉ, ET C'EST UNE QUESTION DE SÉCURITÉ, PAS DE
+# VITESSE (01/09). Depuis que chaque personne relie SON compte Google, un cache
+# unique servirait pendant une demi-heure le client de la PREMIÈRE personne à
+# toutes les suivantes : chacune verrait le Drive d'une autre. La clé du cache
+# est donc le compte au nom duquel on agit — « service » quand c'est le compte
+# de service, « perso:<user_id> » sinon.
+#
+# Le construire coûte DEUX allers-retours avec Google (rafraîchissement du jeton
+# OAuth, puis document de description de l'API Drive) : une à deux secondes,
+# payées à CHAQUE action. C'est pour cette raison que le cache existe ; la clé
+# par identité est ce qui le rend sûr.
+#
+# Durée de vie courte : un jeton d'accès Google vaut une heure, on se reconstruit
+# bien avant pour ne jamais servir un client périmé.
+_CLIENTS: dict = {}                     # clé -> {"service": …, "expire": …}
 _DUREE_CLIENT_S = 1800
+# Plafond d'entrées : sans lui, une entreprise de quarante salariés garderait
+# quarante clients (et leurs connexions HTTP) vivants en permanence. On évince
+# la plus ancienne échéance.
+_MAX_CLIENTS = 20
+
+
+def _cle_client(identite) -> str:
+    """La clé de cache. Jamais de valeur par défaut partagée : un appelant qui
+    ne passe pas d'identité retombe sur le compte de service, EXPLICITEMENT."""
+    return f"perso:{identite}" if identite else "service"
+
+
+def _evincer(cache: dict) -> None:
+    """Fait de la place, en retirant d'abord ce qui est déjà périmé."""
+    import time
+    maintenant = time.monotonic()
+    for cle in [c for c, v in cache.items() if v.get("expire", 0) <= maintenant]:
+        cache.pop(cle, None)
+    while len(cache) >= _MAX_CLIENTS:
+        cache.pop(min(cache, key=lambda c: cache[c].get("expire", 0)), None)
+
 
 # UN VIVIER DE CLIENTS, PARCE QUE `Resource` N'EST PAS SÛR ENTRE THREADS.
 #
@@ -102,12 +137,45 @@ _DUREE_CLIENT_S = 1800
 #
 # On paie donc quelques constructions supplémentaires, une fois, et chaque
 # lecture menée en parallèle reçoit SON client. Le vivier a la même durée de
-# vie que le client unique, et se reconstruit avec lui.
-_POOL: dict = {"services": [], "expire": 0.0}
+# vie que le client unique, et se reconstruit avec lui. Lui aussi est indexé
+# par identité, pour la même raison.
+_POOLS: dict = {}                       # clé -> {"services": [...], "expire": …}
 _POOL_TAILLE = 5
 
 
-async def _services(n: int) -> list:
+async def _build_service_pour(identite=None, ecriture: bool = False):
+    """La connexion PERSONNELLE d'abord, le compte de service ensuite.
+
+    Même ordre, même raison que le connecteur Gmail du projet jumeau : quand la
+    personne a relié son compte elle-même, c'est SON autorisation qui sert.
+
+    Sans identité (`None`), on prend le compte de service : c'est le chemin de
+    l'ingestion, de l'enrichissement et du super-admin. NE PAS « harmoniser »
+    cela plus tard — `learning/acces_docs.py` appelle `_service()` sans argument
+    et DOIT continuer à voir le Drive avec le compte de service : il y classe
+    les documents pour tout le monde, pas pour une personne.
+    """
+    from ingestion.connectors.google_drive import (_SCOPES, _SCOPES_ECRITURE,
+                                                   _build_service,
+                                                   _build_service_ecriture,
+                                                   _build_service_perso)
+    if identite:
+        from mail import google_perso
+        await google_perso.rafraichir()      # une boucle asyncio tourne ICI
+        creds = google_perso.credentials_pour_utilisateur(str(identite))
+        if creds is None:
+            raise DriveRefuse(
+                "Votre compte Google n'est pas encore relié à l'assistant. "
+                "Reliez-le depuis Paramètres > Mon compte Google : l'assistant "
+                "verra alors le Drive avec VOS accès, et rien d'autre.")
+        return await asyncio.to_thread(
+            _build_service_perso, creds,
+            _SCOPES_ECRITURE if ecriture else _SCOPES)
+    return await asyncio.to_thread(
+        _build_service_ecriture if ecriture else _build_service)
+
+
+async def _services(n: int, identite=None) -> list:
     """`n` clients Drive DISTINCTS, pour des lectures menées de front.
 
     Construits en parallèle : chaque construction fait un rafraîchissement OAuth
@@ -116,29 +184,34 @@ async def _services(n: int) -> list:
     """
     import time
     n = max(1, min(n, _POOL_TAILLE))
-    if time.monotonic() >= _POOL["expire"]:
-        _POOL["services"] = []
-    if len(_POOL["services"]) < n:
-        from ingestion.connectors.google_drive import _build_service
-        a_creer = n - len(_POOL["services"])
-        _POOL["services"].extend(await asyncio.gather(
-            *[asyncio.to_thread(_build_service) for _ in range(a_creer)]))
-        _POOL["expire"] = time.monotonic() + _DUREE_CLIENT_S
-    return _POOL["services"][:n]
+    cle = _cle_client(identite)
+    vivier = _POOLS.get(cle)
+    if vivier is None or time.monotonic() >= vivier["expire"]:
+        _evincer(_POOLS)
+        vivier = _POOLS[cle] = {"services": [], "expire": 0.0}
+    if len(vivier["services"]) < n:
+        a_creer = n - len(vivier["services"])
+        vivier["services"].extend(await asyncio.gather(
+            *[_build_service_pour(identite) for _ in range(a_creer)]))
+        vivier["expire"] = time.monotonic() + _DUREE_CLIENT_S
+    return vivier["services"][:n]
 
 
-async def _service():
-    """Le client Drive, construit HORS de la boucle d'événements, et gardé.
+async def _service(identite=None):
+    """Le client Drive de CETTE identité, construit hors boucle, et gardé.
 
     `_build_service` fait un rafraîchissement OAuth synchrone : laissé dans la
     boucle, il gèle tout le backend le temps de l'aller-retour avec Google.
     """
     import time
-    if _CLIENT["service"] is not None and time.monotonic() < _CLIENT["expire"]:
-        return _CLIENT["service"]
-    from ingestion.connectors.google_drive import _build_service
-    service = await asyncio.to_thread(_build_service)
-    _CLIENT.update({"service": service, "expire": time.monotonic() + _DUREE_CLIENT_S})
+    cle = _cle_client(identite)
+    garde = _CLIENTS.get(cle)
+    if garde and time.monotonic() < garde["expire"]:
+        return garde["service"]
+    service = await _build_service_pour(identite)
+    _evincer(_CLIENTS)
+    _CLIENTS[cle] = {"service": service,
+                     "expire": time.monotonic() + _DUREE_CLIENT_S}
     return service
 
 
@@ -506,7 +579,7 @@ def _classer(entrees: list[dict]) -> tuple[list[dict], list[dict]]:
 
 
 async def apercu(dossier: Optional[str] = None,
-                 perimetres: Optional[list] = None) -> dict:
+                 perimetres: Optional[list] = None, identite=None) -> dict:
     """Ce que contient un dossier, compté et classé — sans lister le détail.
 
     Répond en UN appel à « combien de dossiers sur le Drive », « qu'est-ce
@@ -523,14 +596,14 @@ async def apercu(dossier: Optional[str] = None,
                 "n'est PAS un Drive vide : dis-le tel quel.")
         cibles = [d for d, _ in perimetres if d]
         if not cibles and _tout_le_drive(perimetres):
-            cibles = await _racines(await _service())
+            cibles = await _racines(await _service(identite))
         if not cibles:
             raise DriveRefuse(
                 "Aucun dossier du Drive n'est ouvert à l'assistant pour ce rôle.")
     else:
         # Le dossier arrive presque toujours sous forme de NOM ou de CHEMIN :
         # c'est ce qu'un humain dit, et donc ce que le modèle répète.
-        service = await _service()
+        service = await _service(identite)
         racines = ([d for d, _ in perimetres if d]
                    or (await _racines(service) if _tout_le_drive(perimetres) else []))
         dossier = await _resoudre(service, dossier, racines,
@@ -538,7 +611,7 @@ async def apercu(dossier: Optional[str] = None,
         _garde_perimetre(dossier, perimetres)
         cibles = [dossier]
 
-    service = await _service()
+    service = await _service(identite)
     resume, illisibles = [], []
     for d in cibles:
         try:
@@ -789,7 +862,7 @@ def _assembler(racines: list[dict], catalogue: dict, comptes: dict) -> int:
 
 
 async def arborescence(dossier: Optional[str] = None, profondeur: int = 0,
-                       perimetres: Optional[list] = None) -> dict:
+                       perimetres: Optional[list] = None, identite=None) -> dict:
     """L'arbre — COMPLET si on ne précise rien — en UN appel.
 
     « Parcours tous les dossiers et sous-dossiers du Drive et fais-moi un
@@ -811,7 +884,7 @@ async def arborescence(dossier: Optional[str] = None, profondeur: int = 0,
     import time as _t
     debut = _t.monotonic()
     perimetres = perimetres or []
-    service = await _service()
+    service = await _service(identite)
     profondeur = min(int(profondeur), MAX_PROFONDEUR) if profondeur else MAX_PROFONDEUR
     profondeur = max(1, profondeur)
 
@@ -974,7 +1047,8 @@ _EXPORT_NATIF = {
 }
 
 
-async def _resoudre_fichier(nom: str, perimetres: Optional[list] = None):
+async def _resoudre_fichier(nom: str, perimetres: Optional[list] = None,
+                            identite=None):
     """(fichier, service, autres noms) — LE fichier que ce nom désigne.
 
     Extrait de `ouvrir()` le 01/09 pour être partagé avec `octets()` : lire un
@@ -990,7 +1064,7 @@ async def _resoudre_fichier(nom: str, perimetres: Optional[list] = None):
         raise DriveRefuse(
             "Aucun dossier du Drive n'est ouvert à l'assistant pour ce rôle.")
 
-    service = await _service()
+    service = await _service(identite)
     echappe = nom.replace("\\", "\\\\").replace("'", "\\'")
     trouves = []
 
@@ -1041,7 +1115,7 @@ async def _resoudre_fichier(nom: str, perimetres: Optional[list] = None):
     return trouves[0], service, trouves[1:5]
 
 
-async def octets(nom: str, perimetres: Optional[list] = None) -> tuple:
+async def octets(nom: str, perimetres: Optional[list] = None, identite=None) -> tuple:
     """(octets, nom réel, mime) d'un fichier du Drive, par son NOM.
 
     Même résolution que `ouvrir()` — la recherche reste DANS le périmètre
@@ -1052,7 +1126,7 @@ async def octets(nom: str, perimetres: Optional[list] = None) -> tuple:
     Lève `DriveRefuse` avec une phrase lisible : l'appelant
     (`mail/attaches.resoudre`) la restitue telle quelle comme raison de refus.
     """
-    fichier, service, _ = await _resoudre_fichier(nom, perimetres)
+    fichier, service, _ = await _resoudre_fichier(nom, perimetres, identite)
     vrai_nom = fichier.get("name") or nom
     mime = fichier.get("mimeType") or ""
 
@@ -1087,13 +1161,13 @@ async def octets(nom: str, perimetres: Optional[list] = None) -> tuple:
     return binaire, vrai_nom, mime or "application/octet-stream"
 
 
-async def ouvrir(nom: str, perimetres: Optional[list] = None) -> dict:
+async def ouvrir(nom: str, perimetres: Optional[list] = None, identite=None) -> dict:
     """Lit un fichier depuis son NOM, sans en connaître l'identifiant.
 
     La voie normale pour lire un fichier : personne ne connaît par cœur un
     identifiant Drive, et un modèle qui n'en a pas sous les yeux l'INVENTE.
     """
-    fichier, service, autres = await _resoudre_fichier(nom, perimetres)
+    fichier, service, autres = await _resoudre_fichier(nom, perimetres, identite)
     from ingestion.connectors.google_drive import _download_text
     texte = await asyncio.to_thread(_download_text, service, fichier)
     if texte is None:
@@ -1113,7 +1187,7 @@ async def ouvrir(nom: str, perimetres: Optional[list] = None) -> dict:
 
 async def lire_lot(motif: str, dossier: Optional[str] = None,
                    limite: int = MAX_LOT,
-                   perimetres: Optional[list] = None) -> dict:
+                   perimetres: Optional[list] = None, identite=None) -> dict:
     """Lit plusieurs fichiers correspondant à un motif, en UN appel."""
     motif = (motif or "").strip()
     if not motif:
@@ -1121,7 +1195,7 @@ async def lire_lot(motif: str, dossier: Optional[str] = None,
     perimetres = perimetres or []
     limite = max(1, min(int(limite or MAX_LOT), MAX_LOT))
     partout = _tout_le_drive(perimetres) and not dossier
-    service = await _service()
+    service = await _service(identite)
     if dossier:
         racines = ([d for d, _ in perimetres if d]
                    or (await _racines(service) if _tout_le_drive(perimetres) else []))
@@ -1199,7 +1273,7 @@ MAX_TROUVAILLES = 40               # dossiers ou fichiers rendus par recherche
 
 
 async def chercher(motif: str, perimetres: Optional[list] = None,
-                   page: int = 1) -> dict:
+                   page: int = 1, identite=None) -> dict:
     """Dossiers ET fichiers dont le NOM porte le motif, à TOUTES les profondeurs.
 
     Demande de Noa du 01/09 : quand une information sur un client n'est pas en
@@ -1229,7 +1303,7 @@ async def chercher(motif: str, perimetres: Optional[list] = None,
     if not perimetres:
         raise DriveRefuse(
             "Aucun dossier du Drive n'est ouvert à l'assistant pour ce rôle.")
-    service = await _service()
+    service = await _service(identite)
     cible = _nu(motif)
     jetons = [t for t in cible.split() if len(t) >= 3]
 
@@ -1422,7 +1496,7 @@ _MIMES_IMAGE = ("image/jpeg", "image/png", "image/webp", "image/heic",
 
 
 async def photos(dossier: Optional[str] = None, motif: Optional[str] = None,
-                 limite: int = 6, perimetres: Optional[list] = None) -> dict:
+                 limite: int = 6, perimetres: Optional[list] = None, identite=None) -> dict:
     """Les photos d'un dossier du Drive, rangées au dépôt et prêtes à l'écran."""
     perimetres = perimetres or []
     if not perimetres:
@@ -1430,7 +1504,7 @@ async def photos(dossier: Optional[str] = None, motif: Optional[str] = None,
             "Aucun dossier du Drive n'est ouvert à l'assistant pour ce rôle.")
     limite = max(1, min(int(limite or 6), MAX_PHOTOS))
 
-    service = await _service()
+    service = await _service(identite)
     conditions = ["trashed = false",
                   "(" + " or ".join(f"mimeType = '{m}'" for m in _MIMES_IMAGE) + ")"]
     if motif:
@@ -1558,7 +1632,7 @@ def _nom_avec_extension(nom: Optional[str], entete: dict) -> str:
 
 
 async def deposer(dossier: str, nom: str, contenu: bytes,
-                  perimetres: Optional[list] = None) -> dict:
+                  perimetres: Optional[list] = None, identite=None) -> dict:
     """Dépose un fichier dans un dossier du Drive. ÉCRITURE — n'écrase jamais.
 
     Le dossier se résout par NOM, comme partout ailleurs, et DANS le périmètre
@@ -1576,7 +1650,7 @@ async def deposer(dossier: str, nom: str, contenu: bytes,
             "Aucun dossier du Drive n'est ouvert à l'assistant pour ce rôle : "
             "le dépôt est impossible. Ce n'est pas un Drive vide : dis-le tel quel.")
 
-    service = await _service()
+    service = await _service(identite)
     racines = ([d for d, _ in perimetres if d]
                or (await _racines(service) if _tout_le_drive(perimetres) else []))
     cible = await _resoudre(service, dossier, racines,
@@ -1601,8 +1675,7 @@ async def deposer(dossier: str, nom: str, contenu: bytes,
     import mimetypes
     mime = mimetypes.guess_type(nom)[0] or "application/octet-stream"
     from googleapiclient.http import MediaIoBaseUpload
-    from ingestion.connectors.google_drive import _build_service_ecriture
-    ecriture = await asyncio.to_thread(_build_service_ecriture)
+    ecriture = await _build_service_pour(identite, ecriture=True)
 
     def _envoi():
         media = MediaIoBaseUpload(io.BytesIO(contenu), mimetype=mime)
@@ -1636,7 +1709,7 @@ async def deposer(dossier: str, nom: str, contenu: bytes,
 
 async def deposer_document(document_id: str, dossier: str, proprietaire: str,
                            nom: Optional[str] = None,
-                           perimetres: Optional[list] = None) -> dict:
+                           perimetres: Optional[list] = None, identite=None) -> dict:
     """Finalise un document en cours et le dépose sur le Drive, en un geste.
 
     Même architecture que le serveur de fichiers du projet jumeau, où la

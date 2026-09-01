@@ -4,8 +4,9 @@ import { ROLE_LABELS, ROLE_COLORS } from "@/lib/permissions"
 import ImportTab from "@/components/settings/ImportTab"
 import SyncTab from "@/components/settings/SyncTab"
 import ClesApiTab from "@/components/settings/ClesApiTab"
+import GoogleTab from "@/components/settings/GoogleTab"
 
-type SubTab = "utilisateurs" | "plages" | "rbac" | "agents" | "quotas" | "services" | "import" | "synchro" | "cles"
+type SubTab = "google" | "utilisateurs" | "plages" | "rbac" | "agents" | "quotas" | "services" | "import" | "synchro" | "cles"
 type Role = "super_admin" | "direction" | "commercial" | "bureau_etudes" | "conducteur" | "administratif" | "terrain"
 type Agent = "agent1" | "agent2" | "agent3"
 
@@ -35,6 +36,9 @@ function canTogglePerm(mgr: string, _agent: Agent, target: Role): boolean {
 // (et lui) ; « États des agents » rejoint les onglets d'administration système
 // (super_admin seul, comme Quotas, Services, Synchronisations et Clés API).
 const ALL_SUB_TABS: { key: SubTab; label: string; roles?: string[] }[] = [
+  // Sans `roles` : visible de CHACUN — l'onglet ne parle que du compte de la
+  // personne connectée, et c'est le seul onglet d'un collaborateur.
+  { key: "google", label: "Mon compte Google" },
   { key: "utilisateurs", label: "Utilisateurs", roles: ["super_admin", "direction"] },
   { key: "plages", label: "Plages horaires", roles: ["super_admin", "direction"] },
   { key: "rbac", label: "Permissions RBAC", roles: ["super_admin", "direction"] },
@@ -749,7 +753,7 @@ export default function SettingsClient({ initialUsers, backendToken, currentRole
   const subTabs = ALL_SUB_TABS.filter((t) => !t.roles || t.roles.includes(currentRole))
   // Le premier onglet VISIBLE pour ce rôle : « utilisateurs » en dur laissait
   // un rôle sans cet onglet atterrir sur un écran vide (01/09).
-  const [activeTab, setActiveTab] = useState<SubTab>(subTabs[0]?.key ?? "rbac")
+  const [activeTab, setActiveTab] = useState<SubTab>(subTabs[0]?.key ?? "google")
 
   return (
     <div className="sym-page" style={{ padding: 32, maxWidth: 1300, margin: "0 auto" }}>
@@ -780,6 +784,10 @@ export default function SettingsClient({ initialUsers, backendToken, currentRole
           )
         })}
       </div>
+
+      {activeTab === "google" && (
+        <GoogleTab apiUrl={apiUrl} backendToken={backendToken} currentRole={currentRole} />
+      )}
 
       {activeTab === "utilisateurs" && (
         <UsersTab initialUsers={initialUsers} backendToken={backendToken} currentRole={currentRole} apiUrl={apiUrl} />

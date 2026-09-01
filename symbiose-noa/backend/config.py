@@ -335,6 +335,13 @@ class Settings(BaseSettings):
     # membre du Drive : moins de pouvoir, et le partage se voit dans l'interface.
     google_admin_subject: Optional[str] = None
     google_credentials_file: str = "secrets/google_credentials.json"  # client OAuth (client_id/secret)
+    # Le client OAuth « application Web » du consentement INDIVIDUEL (chaque
+    # salarié relie SON compte Google, Paramètres > Mon compte Google). À ne pas
+    # confondre avec `google_credentials_file`, qui est le client « application
+    # de bureau » du consentement UNIQUE joué par scripts/google_consentement.py
+    # pour le compte de service.
+    google_oauth_client_id: Optional[str] = None
+    google_oauth_client_secret: Optional[str] = None
     google_token_file: str = "secrets/google_token.json"              # refresh token (1er consentement)
     # LE MÊME JETON, EN VARIABLE. Sur un serveur, copier un fichier de secret
     # suppose les bons droits sur `secrets/` — souvent root, créé par Docker,
