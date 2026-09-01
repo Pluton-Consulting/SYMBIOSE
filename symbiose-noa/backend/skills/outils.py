@@ -56,10 +56,17 @@ async def _drive(fonction, *args, **kwargs):
 # ── Google Drive ─────────────────────────────────────────────────────
 
 async def drive_apercu(data: dict, user) -> dict:
-    """Compte et classe le contenu d'un dossier du Drive, sans lister le détail."""
+    """Compte et classe le contenu d'un dossier du Drive, sans lister le détail.
+
+    Le résumé s'affiche en blocs MÉCANIQUES (fiche + noms des sous-dossiers) :
+    relevé le 01/09, laissé au modèle, l'aperçu devenait une carte de document
+    inventée aux lignes vides.
+    """
     from outils.drive import apercu
-    return await _drive(apercu, (data.get("dossier") or "").strip() or None,
-                        perimetres=_perimetres(user))
+    from skills.affichage import garantir_apercu
+    dossier = (data.get("dossier") or "").strip()
+    resultat = await _drive(apercu, dossier or None, perimetres=_perimetres(user))
+    return garantir_apercu(resultat, f"« {dossier} »" if dossier else "le Drive")
 
 
 async def drive_photos(data: dict, user) -> dict:
@@ -94,12 +101,20 @@ async def drive_photos(data: dict, user) -> dict:
 
 
 async def drive_arborescence(data: dict, user) -> dict:
-    """L'arbre du Drive — complet si aucun dossier n'est précisé — en un appel."""
+    """L'arbre du Drive — complet si aucun dossier n'est précisé — en un appel.
+
+    L'arbre s'affiche par un bloc MÉCANIQUE (`arbre`) : demander au modèle de
+    recopier le `schema` produisait une carte de document inventée, sans rien
+    dedans (relevé le 01/09).
+    """
     from outils.drive import arborescence
-    return await _drive(arborescence,
-                        (data.get("dossier") or "").strip() or None,
-                        data.get("profondeur") or 0,
-                        perimetres=_perimetres(user))
+    from skills.affichage import garantir_arborescence
+    dossier = (data.get("dossier") or "").strip()
+    resultat = await _drive(arborescence, dossier or None,
+                            data.get("profondeur") or 0,
+                            perimetres=_perimetres(user))
+    return garantir_arborescence(
+        resultat, f"du dossier « {dossier} »" if dossier else "du Drive")
 
 
 async def drive_ouvrir(data: dict, user) -> dict:
@@ -220,9 +235,10 @@ SKILLS = {
             "COMPTE et resume un dossier du DRIVE : combien de dossiers, de "
             "fichiers, de quels types. LE DRIVE, LE CLOUD, GOOGLE et LE PARTAGE "
             "designent la meme chose. A utiliser des qu'on demande un NOMBRE ou "
-            "« ce qu'il y a sur le Drive ». `dossier` accepte le NOM ou le "
-            "CHEMIN, sans identifiant. Le nom d'un DRIVE PARTAGE est un debut "
-            "de chemin valide (ex. « Holding Symbiose Paysage/Communication »)"),
+            "« ce qu'il y a sur le Drive ». Le resume S'AFFICHE AUTOMATIQUEMENT "
+            "dans le chat : n'en fais jamais un document. `dossier` accepte le "
+            "NOM ou le CHEMIN, sans identifiant ; le nom d'un DRIVE PARTAGE est "
+            "un debut de chemin valide"),
         optionnels=["dossier"],
         effet="lecture",
         libelle="je regarde ce que contient le dossier"),
@@ -243,7 +259,8 @@ SKILLS = {
         fonction=drive_arborescence,
         description=("ARBRE COMPLET du Drive (Drives partages inclus) en UNE "
                      "action : sans `dossier`, TOUT y passe, avec les comptes. "
-                     "Rend `schema` : recopie-le TEL QUEL dans un bloc ```. "
+                     "L'arbre S'AFFICHE AUTOMATIQUEMENT dans le chat : ne le "
+                     "recopie pas, n'en fais jamais un document. "
                      "`dossier` (NOM ou CHEMIN) limite a un sous-arbre"),
         optionnels=["dossier", "profondeur"],
         effet="lecture",

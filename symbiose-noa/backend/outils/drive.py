@@ -798,7 +798,8 @@ async def arborescence(dossier: Optional[str] = None, profondeur: int = 0,
       - périmètres déclarés : descente PAR NIVEAUX, quinze parents par
         requête, sans jamais interroger hors des racines autorisées.
 
-    Le résultat porte `schema` : l'arbre en texte, à recopier tel quel.
+    Le résultat porte `schema` : l'arbre en texte. La couche skill le
+    transforme en bloc d'écran mécanique (`skills/affichage.py`).
     """
     import time as _t
     debut = _t.monotonic()
@@ -866,8 +867,8 @@ async def arborescence(dossier: Optional[str] = None, profondeur: int = 0,
         if complet and not fichiers_partiels:
             sortie["note"] = (
                 "ARBORESCENCE COMPLÈTE : tous les dossiers y sont, comptes "
-                "exacts. Recopie le `schema` TEL QUEL dans un bloc ```. Ne "
-                "relance PAS l'exploration, il n'y a rien de plus à trouver.")
+                "exacts. Elle est déjà affichée à l'écran. Ne relance PAS "
+                "l'exploration, il n'y a rien de plus à trouver.")
         else:
             morceaux = []
             if dossiers_partiels or total > MAX_DOSSIERS_ARBRE:
@@ -939,8 +940,8 @@ async def arborescence(dossier: Optional[str] = None, profondeur: int = 0,
         "duree_s": round(_t.monotonic() - debut, 1),
     }
     sortie["note"] = (
-        "ARBORESCENCE COMPLÈTE du périmètre autorisé. Recopie le `schema` TEL "
-        "QUEL dans un bloc ```. Ne relance pas l'exploration."
+        "ARBORESCENCE COMPLÈTE du périmètre autorisé. Elle est déjà affichée "
+        "à l'écran : ne relance pas l'exploration."
         if not partiel else
         f"Arbre partiel (plafond de {MAX_DOSSIERS_ARBRE} dossiers ou de "
         "profondeur atteint) : précise un sous-dossier pour le détail. Ne le "
