@@ -274,7 +274,9 @@ async def decrire_image(octets: bytes, mime: str, consigne: str) -> str:
     ])
     for llm, label in candidats:
         try:
-            reponse = await llm.ainvoke([message])
+            from llm.concurrence import porte_llm
+            async with porte_llm():
+                reponse = await llm.ainvoke([message])
             texte = reponse.content if isinstance(reponse.content, str) else str(reponse.content)
             if texte and texte.strip():
                 return texte.strip()

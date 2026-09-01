@@ -228,7 +228,11 @@ async def vision_node(state: AgentState, config=None) -> dict:
     derniere = None
     for llm, label in candidats:
         try:
-            response = await llm.ainvoke([message], config=config)
+            # Hors cascade : la porte se pose ici aussi, sinon la vision
+            # échapperait au plafond du fournisseur.
+            from llm.concurrence import porte_llm
+            async with porte_llm():
+                response = await llm.ainvoke([message], config=config)
             usage = getattr(response, "usage_metadata", None) or {}
             return {
                 "vision_analysis": response.content,
