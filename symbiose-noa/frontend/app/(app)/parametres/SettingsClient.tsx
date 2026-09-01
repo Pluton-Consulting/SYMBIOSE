@@ -30,11 +30,15 @@ function canTogglePerm(mgr: string, _agent: Agent, target: Role): boolean {
   return false
 }
 
+// VISIBILITÉ RESSERRÉE LE 01/09 (demande de Noa) : le super_admin garde tous
+// les onglets ; « Utilisateurs » et « Plages horaires » sont pour la direction
+// (et lui) ; « États des agents » rejoint les onglets d'administration système
+// (super_admin seul, comme Quotas, Services, Synchronisations et Clés API).
 const ALL_SUB_TABS: { key: SubTab; label: string; roles?: string[] }[] = [
-  { key: "utilisateurs", label: "Utilisateurs" },
-  { key: "plages", label: "Plages horaires" },
+  { key: "utilisateurs", label: "Utilisateurs", roles: ["super_admin", "direction"] },
+  { key: "plages", label: "Plages horaires", roles: ["super_admin", "direction"] },
   { key: "rbac", label: "Permissions RBAC" },
-  { key: "agents", label: "États des agents" },
+  { key: "agents", label: "États des agents", roles: ["super_admin"] },
   { key: "quotas", label: "Quotas", roles: ["super_admin"] },
   { key: "services", label: "Services connectés", roles: ["super_admin"] },
   { key: "import", label: "Import de données", roles: ["super_admin", "direction"] },
@@ -742,9 +746,10 @@ function ServicesTab({ apiUrl, backendToken }: { apiUrl: string; backendToken: s
 
 /* ---------- MAIN COMPONENT ---------- */
 export default function SettingsClient({ initialUsers, backendToken, currentRole, apiUrl }: Props) {
-  const [activeTab, setActiveTab] = useState<SubTab>("utilisateurs")
-
   const subTabs = ALL_SUB_TABS.filter((t) => !t.roles || t.roles.includes(currentRole))
+  // Le premier onglet VISIBLE pour ce rôle : « utilisateurs » en dur laissait
+  // un rôle sans cet onglet atterrir sur un écran vide (01/09).
+  const [activeTab, setActiveTab] = useState<SubTab>(subTabs[0]?.key ?? "rbac")
 
   return (
     <div className="sym-page" style={{ padding: 32, maxWidth: 1300, margin: "0 auto" }}>
