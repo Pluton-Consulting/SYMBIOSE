@@ -131,7 +131,8 @@ async def drive_chercher(data: dict, user) -> dict:
     motif = (data.get("motif") or data.get("nom") or data.get("client") or "").strip()
     if not motif:
         _echec("Donne le `motif` à chercher (nom de client, de chantier, de fichier).")
-    resultat = await _drive(chercher, motif, perimetres=_perimetres(user))
+    resultat = await _drive(chercher, motif, perimetres=_perimetres(user),
+                            page=data.get("page") or 1)
     return garantir_recherche(resultat, motif)
 
 
@@ -292,8 +293,8 @@ SKILLS = {
             "fournisseur ne sort ni des fichiers importes ni des documents : "
             "le classement porte les noms des clients. Le resultat s'affiche "
             "automatiquement ; propose ensuite d'ouvrir ou d'explorer ce qui "
-            "est trouve. `motif` : le nom cherche"),
-        requis=["motif"],
+            "est trouve. `motif` : le nom cherche ; `page` pour la suite"),
+        requis=["motif"], optionnels=["page"],
         effet="lecture",
         libelle="je cherche ce nom sur le Drive"),
     "drive_ouvrir": Declaration(

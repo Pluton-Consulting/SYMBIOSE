@@ -46,11 +46,18 @@ logger = logging.getLogger("symbiose.outils.drive")
 # n'est donc plus une affaire de coût, seulement d'affichage.
 MAX_PROFONDEUR = 20                # l'arbre COMPLET, plafonné contre les cycles
 MAX_DOSSIERS_ARBRE = 3000          # au-delà, on l'écrit honnêtement
-MAX_PAGES_BALAYAGE = 5             # 5 × 1000 dossiers par balayage global
-MAX_PAGES_FICHIERS = 10            # 10 × 1000 fichiers pour les comptes
+# 5 → 30 et 10 → 30 (01/09, règle de Noa : une recherche ne se bloque jamais en
+# quantité). À 5 000 dossiers balayés, un Drive plus gros rendait des recherches
+# et des arbres PARTIELS alors que chaque page ne coûte qu'une requête : trente
+# requêtes couvrent 30 000 dossiers, la borne ne reste que contre l'infini.
+MAX_PAGES_BALAYAGE = 30            # 30 × 1000 dossiers par balayage global
+MAX_PAGES_FICHIERS = 30            # 30 × 1000 fichiers pour les comptes
 MAX_SCHEMA_CARACTERES = 9000       # le schéma texte rendu au modèle
 MAX_LOT = 5
-MAX_ENTREES = 200          # par dossier listé, comme l'API le pagine
+# 200 → 1000 (01/09) : l'API accepte mille entrées par page — un aperçu qui
+# disait « compte PARTIEL » sur un dossier de 300 fichiers se payait en
+# crédibilité, pas en requêtes.
+MAX_ENTREES = 1000         # par dossier listé, une page d'API pleine
 
 _MIME_DOSSIER = "application/vnd.google-apps.folder"
 _MIME_RACCOURCI = "application/vnd.google-apps.shortcut"
@@ -1116,7 +1123,8 @@ async def lire_lot(motif: str, dossier: Optional[str] = None,
 MAX_TROUVAILLES = 40               # dossiers ou fichiers rendus par recherche
 
 
-async def chercher(motif: str, perimetres: Optional[list] = None) -> dict:
+async def chercher(motif: str, perimetres: Optional[list] = None,
+                   page: int = 1) -> dict:
     """Dossiers ET fichiers dont le NOM porte le motif, à TOUTES les profondeurs.
 
     Demande de Noa du 01/09 : quand une information sur un client n'est pas en
@@ -1201,7 +1209,7 @@ async def chercher(motif: str, perimetres: Optional[list] = None) -> dict:
                     spaces="drive", corpora="allDrives",
                     includeItemsFromAllDrives=True, supportsAllDrives=True,
                     fields="files(id,name,parents,modifiedTime)",
-                    pageSize=MAX_TROUVAILLES + 10,
+                    pageSize=200,
                 ).execute()
             try:
                 for f in (await asyncio.to_thread(_appel)).get("files", []):
@@ -1237,7 +1245,7 @@ async def chercher(motif: str, perimetres: Optional[list] = None) -> dict:
                     prochain.append(sd["id"])
             niveau = prochain
 
-        ids = ([d for d, _ in perimetres if d] + list(chemins))[:300]
+        ids = ([d for d, _ in perimetres if d] + list(chemins))[:1000]
         for i in range(0, len(ids), 15):
             paquet = ids[i:i + 15]
             ou = " or ".join(f"'{_echappe(p)}' in parents" for p in paquet)
@@ -1267,12 +1275,19 @@ async def chercher(motif: str, perimetres: Optional[list] = None) -> dict:
                                 not t.get("dossier"),
                                 len(t.get("chemin") or ""),
                                 _nu(t.get("nom"))))
+    # PAGINÉ, JAMAIS COUPÉ (01/09, règle de Noa : une recherche ne se bloque
+    # pas en quantité) : la page demandée est rendue, le compte total est dit,
+    # et la suite s'obtient en rappelant avec `page` suivante.
     nombre = len(trouves)
-    sortie: dict = {"motif": motif, "nombre": nombre,
-                    "resultats": trouves[:MAX_TROUVAILLES]}
-    if nombre > MAX_TROUVAILLES:
-        sortie["note"] = (f"{nombre} correspondances : les {MAX_TROUVAILLES} "
-                          "plus proches sont rendues. Précise le nom pour affiner.")
+    page = max(1, int(page or 1))
+    pages = max(1, -(-nombre // MAX_TROUVAILLES))
+    debut = (page - 1) * MAX_TROUVAILLES
+    sortie: dict = {"motif": motif, "nombre": nombre, "page": page,
+                    "pages": pages,
+                    "resultats": trouves[debut:debut + MAX_TROUVAILLES]}
+    if page < pages:
+        sortie["pour_continuer"] = (f"{nombre} correspondances au total : "
+                                    f"rappelle avec page={page + 1} pour la suite.")
     if partiel:
         sortie["note"] = ((sortie.get("note") or "") + " Recherche PARTIELLE : "
                           "le Drive dépasse le plafond de balayage — une absence "
