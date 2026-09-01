@@ -956,11 +956,31 @@ async def arborescence(dossier: Optional[str] = None, profondeur: int = 0,
     return sortie
 
 
-async def ouvrir(nom: str, perimetres: Optional[list] = None) -> dict:
-    """Lit un fichier depuis son NOM, sans en connaître l'identifiant.
+# Un fichier joint à un mail : le plafond du message commande, pas celui d'une
+# photo. `mail/attaches.py` ré-applique le sien par-dessus.
+MAX_OCTETS_PIECE = 20 * 1024 * 1024
 
-    La voie normale pour lire un fichier : personne ne connaît par cœur un
-    identifiant Drive, et un modèle qui n'en a pas sous les yeux l'INVENTE.
+# Un document NATIF Google (Docs, Sheets, Slides) n'a pas de fichier à
+# télécharger : `get_media` rend une erreur. Il faut l'EXPORTER, et choisir
+# dans quel format — celui que le destinataire saura ouvrir.
+_EXPORT_NATIF = {
+    "application/vnd.google-apps.document": (
+        "application/pdf", ".pdf"),
+    "application/vnd.google-apps.spreadsheet": (
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", ".xlsx"),
+    "application/vnd.google-apps.presentation": (
+        "application/pdf", ".pdf"),
+    "application/vnd.google-apps.drawing": ("image/png", ".png"),
+}
+
+
+async def _resoudre_fichier(nom: str, perimetres: Optional[list] = None):
+    """(fichier, service, autres noms) — LE fichier que ce nom désigne.
+
+    Extrait de `ouvrir()` le 01/09 pour être partagé avec `octets()` : lire un
+    fichier et le JOINDRE à un mail passent par la même résolution, et la même
+    garde de périmètre. Dupliquer la recherche aurait été dupliquer le filtre
+    de droits — c'est-à-dire créer l'occasion d'en oublier un.
     """
     nom = (nom or "").strip()
     if not nom:
@@ -1018,7 +1038,62 @@ async def ouvrir(nom: str, perimetres: Optional[list] = None) -> dict:
             "Ce n'est pas une preuve qu'il n'existe pas : il peut être ailleurs "
             "sur le Drive, ou hors du périmètre autorisé.")
 
-    fichier = trouves[0]
+    return trouves[0], service, trouves[1:5]
+
+
+async def octets(nom: str, perimetres: Optional[list] = None) -> tuple:
+    """(octets, nom réel, mime) d'un fichier du Drive, par son NOM.
+
+    Même résolution que `ouvrir()` — la recherche reste DANS le périmètre
+    autorisé —, mais on rapatrie le BINAIRE au lieu d'en extraire du texte :
+    joindre un PDF à un mail n'a pas besoin de savoir le lire. C'est ce qui
+    manquait pour que « joins le devis du Drive » soit autre chose qu'un lien.
+
+    Lève `DriveRefuse` avec une phrase lisible : l'appelant
+    (`mail/attaches.resoudre`) la restitue telle quelle comme raison de refus.
+    """
+    fichier, service, _ = await _resoudre_fichier(nom, perimetres)
+    vrai_nom = fichier.get("name") or nom
+    mime = fichier.get("mimeType") or ""
+
+    if int(fichier.get("size") or 0) > MAX_OCTETS_PIECE:
+        raise DriveRefuse(
+            f"« {vrai_nom} » pèse trop lourd pour un message. Envoie plutôt "
+            "le lien de partage.")
+
+    export = _EXPORT_NATIF.get(mime)
+    if export:
+        # Un Google Doc n'est pas un fichier : il s'exporte. Sans ce chemin,
+        # « joins le devis » sur un document natif rendait une erreur d'API
+        # incompréhensible.
+        cible, extension = export
+        def _exporter():
+            return service.files().export_media(
+                fileId=fichier["id"], mimeType=cible).execute()
+        binaire = await asyncio.to_thread(_exporter)
+        if not vrai_nom.lower().endswith(extension):
+            vrai_nom += extension
+        return binaire, vrai_nom, cible
+    if mime.startswith("application/vnd.google-apps."):
+        raise DriveRefuse(
+            f"« {vrai_nom} » est un élément Google qui ne se télécharge pas "
+            "(formulaire, carte, raccourci).")
+
+    def _telecharger():
+        return service.files().get_media(fileId=fichier["id"]).execute()
+    binaire = await asyncio.to_thread(_telecharger)
+    if not binaire:
+        raise DriveRefuse(f"« {vrai_nom} » n'a pas pu être téléchargé.")
+    return binaire, vrai_nom, mime or "application/octet-stream"
+
+
+async def ouvrir(nom: str, perimetres: Optional[list] = None) -> dict:
+    """Lit un fichier depuis son NOM, sans en connaître l'identifiant.
+
+    La voie normale pour lire un fichier : personne ne connaît par cœur un
+    identifiant Drive, et un modèle qui n'en a pas sous les yeux l'INVENTE.
+    """
+    fichier, service, autres = await _resoudre_fichier(nom, perimetres)
     from ingestion.connectors.google_drive import _download_text
     texte = await asyncio.to_thread(_download_text, service, fichier)
     if texte is None:
@@ -1032,7 +1107,7 @@ async def ouvrir(nom: str, perimetres: Optional[list] = None) -> dict:
         "modifie_le": fichier.get("modifiedTime"),
         "contenu": texte[:20000],
         "tronque": len(texte) > 20000,
-        "autres_correspondances": [f.get("name") for f in trouves[1:5]] or None,
+        "autres_correspondances": [f.get("name") for f in autres] or None,
     }
 
 

@@ -2485,6 +2485,21 @@ def _apercu_avant_accord(skill: str, args: dict, texte: str) -> str:
             if cc:
                 lignes.append("Copie : " + ", ".join(str(c) for c in cc[:10]))
             lignes.append(f"Objet : {args.get('objet', '')}")
+            # LES PIÈCES SE VOIENT AVANT L'ACCORD (01/09). Un envoi qu'on
+            # approuve emporte des FICHIERS hors de l'entreprise : « Approuver »
+            # sans la liste de ce qui part est le même clic à l'aveugle que la
+            # retouche d'image sans sa photo, juste en dessous. On se contente
+            # de lignes de texte : un bloc ```ui `fichier` construit ici
+            # risquerait d'être effacé par `_livrables_a_l_ecran`, dont la
+            # référence n'existe pas encore au moment de l'armement.
+            jointes = (args.get("pieces") or args.get("pieces_jointes")
+                       or args.get("fichiers") or args.get("attachments") or [])
+            if isinstance(jointes, (str, dict)):
+                jointes = [jointes]
+            if jointes:
+                lignes.append("Pièces jointes : " + ", ".join(
+                    str(p.get("nom") or p.get("ref") or p) if isinstance(p, dict)
+                    else str(p) for p in jointes[:10]))
             corps = str(args.get("corps") or "")
             if len(corps) > 1500:
                 corps = corps[:1500] + "…"
