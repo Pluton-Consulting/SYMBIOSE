@@ -18,7 +18,7 @@ import logging
 from fastapi import HTTPException, status
 
 from database.connection import get_db
-from tasks.scheduler import prochaine_echeance, valider_planification
+from tasks.scheduler import heure_du_jour, prochaine_echeance, valider_planification
 
 logger = logging.getLogger("symbiose.tasks.skills")
 
@@ -58,7 +58,10 @@ async def creer_tache_agent(data: dict, user) -> dict:
             str(user.id), titre[:255], consigne, json.dumps({}),
             "schedule" if planifiee else "manual",
             planification["schedule_kind"], planification["interval_minutes"],
-            planification["time_of_day"], planification["days_of_week"], premiere,
+            # `heure_du_jour` : asyncpg exige un `time`, pas une chaîne — sans
+            # quoi toute tâche quotidienne échouait à la création.
+            heure_du_jour(planification["time_of_day"]),
+            planification["days_of_week"], premiere,
         )
 
     logger.info("Tâche « %s » créée par %s (planifiée=%s)", titre, user.id, planifiee)

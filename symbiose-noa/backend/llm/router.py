@@ -631,6 +631,17 @@ class ResilientLLM:
                     from llm.concurrence import porte_llm
                     async with porte_llm():
                         result = await llm.ainvoke(messages, **kwargs)
+                    # CE QUE L'APPEL A COÛTÉ, compté ICI parce que c'est le seul
+                    # endroit que TOUS les appels traversent. Les nœuds du
+                    # graphe sont une vingtaine et il en naît de nouveaux :
+                    # compter chez eux, c'était compter une fois sur trois —
+                    # d'où des colonnes « Jetons » et « Coût » fausses par
+                    # construction. Ne lève jamais.
+                    try:
+                        from llm.compteur import ajouter as _compter
+                        _compter(provider, model, result)
+                    except Exception:  # noqa: BLE001
+                        pass
                     if _contenu_vide(result):
                         if not budget_double:
                             budget_double = True
