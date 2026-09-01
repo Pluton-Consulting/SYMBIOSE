@@ -172,7 +172,11 @@ function UsersTab({ initialUsers, backendToken, currentRole, apiUrl }: Props) {
       )}
 
       <div className="sym-card sym-in sym-in-1" style={{ background: "var(--marque-surface)", borderRadius: "var(--marque-radius-card)", boxShadow: "var(--marque-shadow-card)", overflow: "hidden" }}>
-        <table style={{ width: "100%", borderCollapse: "collapse" }}>
+        {/* Sept colonnes sur un téléphone : sans ce conteneur, les dernières
+            sont coupées par l'`overflow: hidden` de la carte et rien ne permet
+            d'y accéder. Les deux autres tables de cet écran l'avaient déjà. */}
+        <div className="sym-table-large" style={{ overflowX: "auto" }}>
+        <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 640 }}>
           <thead>
             <tr style={{ borderBottom: "1px solid var(--marque-border)", background: "var(--marque-canvas)" }}>
               {["Utilisateur", "Rôle", ...visibleAgents.map((a) => a.replace("agent", "Agent ")), "Statut", ""].map((h, i) => (
@@ -253,6 +257,7 @@ function UsersTab({ initialUsers, backendToken, currentRole, apiUrl }: Props) {
             )}
           </tbody>
         </table>
+        </div>
       </div>
     </div>
   )
@@ -767,7 +772,7 @@ export default function SettingsClient({ initialUsers, backendToken, currentRole
         Configuration du système PLUTON, accès {ROLE_LABELS[currentRole] || currentRole}
       </p>
 
-      <div className="sym-in sym-in-3" style={{ display: "flex", gap: 2, marginBottom: 28, background: "var(--marque-surface)", padding: 6, borderRadius: "var(--marque-radius-card-sm)", width: "fit-content", boxShadow: "var(--marque-shadow-card)" }}>
+      <div className="sym-in sym-in-3 sym-onglets" style={{ display: "flex", gap: 2, marginBottom: 28, background: "var(--marque-surface)", padding: 6, borderRadius: "var(--marque-radius-card-sm)", width: "fit-content", maxWidth: "100%", boxShadow: "var(--marque-shadow-card)" }}>
         {subTabs.map((t) => {
           const active = activeTab === t.key
           return (

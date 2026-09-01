@@ -404,8 +404,8 @@ export default function ChatWindow({ threadId: initialThreadId = null, token: to
           const apercu = (active.response || "").trim()
           pushAssistant(
             apercu
-              ? `${apercu}\n\n⏳ Votre accord est nécessaire : voir « En arrière-plan », à droite.`
-              : "⏳ Une action attend votre accord : voir « En arrière-plan », à droite.",
+              ? `${apercu}\n\n⏳ Votre accord est nécessaire : approuvez-la pour continuer.`
+              : "⏳ Une action attend votre accord : approuvez-la pour continuer.",
             true)
         }
       }
@@ -651,7 +651,7 @@ export default function ChatWindow({ threadId: initialThreadId = null, token: to
       principalOccupeRef.current = true
       setPrincipalOccupe(true)
       terminerTourDetache()
-      pushAssistant("⏳ Une action attend votre accord : voir « En arrière-plan », à droite.", true)
+      pushAssistant("⏳ Une action attend votre accord : approuvez-la pour continuer.", true)
       rafraichirEtat()
       return
     }
@@ -689,7 +689,7 @@ export default function ChatWindow({ threadId: initialThreadId = null, token: to
         if (tour.suspendu) filSuspenduRef.current = tour.suspendu
         setLoading(false)
         setThinkingNode(null)
-        pushAssistant("⏳ Une action attend votre accord : voir « En arrière-plan », à droite.", true)
+        pushAssistant("⏳ Une action attend votre accord : approuvez-la pour continuer.", true)
         rafraichirEtat()
       } else if (tour.activite) {
         setActivite(tour.activite)
@@ -957,7 +957,7 @@ ${texteAffiche}`)
       } else {
         setThinkingNode(null)
         setLoading(false)
-        pushAssistant("⏳ Une action attend votre accord : voir « En arrière-plan », à droite.", true)
+        pushAssistant("⏳ Une action attend votre accord : approuvez-la pour continuer.", true)
       }
       // Le fil principal reste PRIS : c'est ce qui envoie les messages suivants
       // en file au lieu de les lancer sur un fil suspendu. On note quel accord
@@ -1008,7 +1008,7 @@ ${texteAffiche}`)
             : { etat: "terminee", reponse: res.response ?? "", activite: "terminée" })
           if (attend) rafraichirEtat()
         } else if (attend) {
-          pushAssistant("⏳ Une action attend votre accord : voir « En arrière-plan », à droite.", true)
+          pushAssistant("⏳ Une action attend votre accord : approuvez-la pour continuer.", true)
           rafraichirEtat()
         } else {
           pushAssistant(res.response ?? "")
@@ -1208,6 +1208,32 @@ ${texteAffiche}`)
           trace={traceReflexion}
           enCours={loading}
         />
+
+        {/* LES ACCORDS EN ATTENTE, AU TÉLÉPHONE (01/09).
+            Sur PC, `FileAttente` vit dans la colonne de droite, montée par
+            `ReasoningPath`. Or cette colonne est masquée sous 900 px — et elle
+            emportait avec elle les boutons Approuver / Refuser. Conséquence
+            mesurée : sur un téléphone, AUCUNE action à effet externe ne pouvait
+            aboutir. Envoyer un mail, déposer sur le Drive, tirer un visuel : le
+            tour restait suspendu, sans rien à l'écran pour le débloquer, et le
+            chat renvoyait même vers une colonne invisible.
+            La même file est donc montée ici, juste au-dessus de la saisie —
+            là où le regard est déjà — et n'apparaît QUE sous 900 px. Elle rend
+            `null` quand il n'y a ni tâche ni accord : la doubler ne coûte rien
+            le reste du temps. */}
+        <div className="sym-file-tel">
+          <FileAttente
+            taches={cartesTaches}
+            accords={accords}
+            accordEnCours={accordEnCours}
+            erreurAccord={erreurAccord}
+            peutDecider={peutDecider}
+            onAfficher={afficherTache}
+            onFermer={fermerTache}
+            onArreter={arreterTache}
+            onResoudre={resoudreAccord}
+          />
+        </div>
 
         {contexte && (
           <div className="v2-contexte" role="status" data-testid="contexte-prealable">
