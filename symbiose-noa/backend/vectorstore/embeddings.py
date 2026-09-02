@@ -311,11 +311,21 @@ async def _embed_ollama_cloud(texts: list[str], modele: str = "") -> list[Option
     nom = modele or settings.ollama_cloud_embedding_model
     base = (settings.ollama_cloud_base_url or "").rstrip("/")
     max_chars = settings.embedding_max_chars
-    try:
-        r = await _client().post(
-            f"{base}/embeddings",
-            headers={"Authorization": f"Bearer {cle}"},
-            json={"model": nom, "input": [t[:max_chars] for t in texts]})
+    entetes = {"Authorization": f"Bearer {cle}"}
+    courts = [t[:max_chars] for t in texts]
+
+    # DEUX ROUTES, PARCE QUE LA PREMIÈRE N'EXISTE PAS TOUJOURS. Mesuré en
+    # production le 02/09 sur l'abonnement de Noa : `POST /v1/embeddings` rend
+    # « path "/v1/embeddings" not found » — un 404 sur le CHEMIN, pas sur le
+    # modèle. La façade compatible OpenAI d'Ollama Cloud ne couvre que la
+    # complétion ; les embeddings, quand ils existent, passent par l'API native
+    # `/api/embed`. On essaie donc l'une puis l'autre, et un 404 sur la
+    # première ne compte pas comme une panne.
+    async def _openai_like():
+        r = await _client().post(f"{base}/embeddings", headers=entetes,
+                                 json={"model": nom, "input": courts})
+        if r.status_code == 404:
+            return None
         r.raise_for_status()
         # L'ordre de `data` suit celui de l'entrée, mais le contrat OpenAI
         # porte un `index` : on s'y fie plutôt qu'à la position, sans quoi
@@ -326,6 +336,30 @@ async def _embed_ollama_cloud(texts: list[str], modele: str = "") -> list[Option
             if isinstance(i, int) and 0 <= i < len(texts):
                 out[i] = item.get("embedding") or None
         return out
+
+    async def _native():
+        # `/api/embed` vit à la RACINE du domaine, pas sous /v1 : on retire le
+        # suffixe de version plutôt que de le concaténer.
+        racine = base[:-3].rstrip("/") if base.endswith("/v1") else base
+        r = await _client().post(f"{racine}/api/embed", headers=entetes,
+                                 json={"model": nom, "input": courts})
+        if r.status_code == 404:
+            return None
+        r.raise_for_status()
+        vecteurs = r.json().get("embeddings") or []
+        return [(vecteurs[i] if i < len(vecteurs) else None)
+                for i in range(len(texts))]
+
+    try:
+        for tentative in (_openai_like, _native):
+            resultat = await tentative()
+            if resultat is not None:
+                return resultat
+        _warn_once(
+            "Ollama Cloud ne propose pas d'embeddings : ni « /v1/embeddings » "
+            "ni « /api/embed » ne répondent. Choisissez un autre fournisseur "
+            "pour la mémoire vectorielle (Google ou OpenAI).")
+        return [None] * len(texts)
     except Exception as e:  # noqa: BLE001 — jamais d'exception vers l'appelant
         logger.warning("Échec embeddings Ollama Cloud (%s) — mode dégradé",
                        type(e).__name__)

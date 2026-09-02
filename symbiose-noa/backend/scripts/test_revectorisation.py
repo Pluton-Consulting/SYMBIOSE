@@ -349,6 +349,21 @@ verifier("l'écran sait demander la liste des modèles et leurs dimensions",
 verifier("il dit que les dimensions sont MESURÉES, pas déduites d'une liste",
          "pas déduites" in carte)
 
+# ── 7. CE QU'OLLAMA CLOUD PROPOSE VRAIMENT (mesuré en production) ───────
+# Sondé le 02/09 sur l'abonnement réel : 19 modèles, TOUS de texte, et
+# `POST /v1/embeddings` rend « path "/v1/embeddings" not found » — un 404 sur le
+# CHEMIN, pas sur le modèle. La façade compatible OpenAI d'Ollama Cloud ne
+# couvre que la complétion. Le fournisseur doit donc essayer la route native
+# avant de conclure, et dire quoi faire s'il n'y en a aucune.
+verifier("le fournisseur essaie la route NATIVE quand /v1/embeddings est absent",
+         "/api/embed" in emb)
+verifier("un 404 sur la première route n'est pas compté comme une panne",
+         emb.count("if r.status_code == 404:") >= 2)
+verifier("`/api/embed` vit à la racine : le suffixe /v1 est RETIRÉ, pas ajouté",
+         'racine = base[:-3].rstrip("/") if base.endswith("/v1") else base' in emb)
+verifier("et si aucune route ne répond, le message dit vers quoi se tourner",
+         "Choisissez un autre fournisseur" in emb)
+
 arbre = ast.parse((BACKEND / "vectorstore" / "revectorisation.py").read_text(encoding="utf-8"))
 noms = {n.name for n in arbre.body if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))}
 verifier("le module expose ce que l'écran et le garde-fou attendent",
