@@ -263,6 +263,38 @@ verifier("un désaccord annule tout et le dit clairement",
 verifier("l'opération laisse une trace d'audit",
          'action="revectorisation_lancee"' in reglages)
 
+# ── 5. CE QUE LA LECTURE RISQUAIT, ET QUE L'ÉCRAN NIAIT ─────────────────
+# L'avertissement affiché promettait « refusé à l'écriture, sans rien casser ».
+# L'écriture était bien protégée ; la LECTURE ne l'était pas : les deux voies de
+# `rechercher()` partageaient un même `try`, et le cast `::vector` d'un
+# embedding mal dimensionné faisait rendre VIDE — pas dégradé, vide.
+rag = (BACKEND / "vectorstore" / "rag.py").read_text(encoding="utf-8")
+verifier("la voie vectorielle a son PROPRE filet : la lexicale lui survit",
+         "Voie vectorielle écartée" in rag)
+verifier("un embedding mal dimensionné est écarté AVANT l'aller-retour SQL",
+         "len(embedding) != attendue" in rag)
+verifier("la voie lexicale est appelée hors du filet de la vectorielle",
+         rag.index("voies[\"texte\"]") > rag.index("Voie vectorielle écartée"))
+verifier("le désaccord se dit UNE fois, pas à chaque requête",
+         "_DIMENSION_DITE" in rag and "if (rendue, attendue) in _DIMENSION_DITE" in rag)
+verifier("et le message nomme le geste qui répare",
+         "Re-vectorisez le corpus" in rag)
+
+# LE PIÈGE LE PLUS VICIEUX : `google` est le nom du fournisseur dans la cascade
+# de texte et dans le catalogue de l'écran ; le moteur d'embedding l'appelle
+# `gemini`. Le choix le plus naturel de l'écran coupait donc la vectorisation.
+reg = (BACKEND / "llm" / "reglages.py").read_text(encoding="utf-8")
+verifier("les embeddings ont leur PROPRE liste de fournisseurs",
+         "FOURNISSEURS_EMBEDDING" in reg)
+verifier("elle est celle qu'on applique à `modele_embedding`",
+         'admis = (FOURNISSEURS_EMBEDDING if nom == "modele_embedding"' in reg)
+verifier("un fournisseur de TEXTE seul n'y figure pas (longcat ne vectorise pas)",
+         "longcat" not in reg.split("FOURNISSEURS_EMBEDDING = (")[1].split(")")[0])
+verifier("« google » y est admis : c'est le nom que l'écran affiche",
+         '"google"' in reg.split("FOURNISSEURS_EMBEDDING = (")[1].split(")")[0])
+verifier("et le moteur le ramène à gemini, sans quoi il resterait inconnu",
+         '"google": _embed_gemini' in emb)
+
 arbre = ast.parse((BACKEND / "vectorstore" / "revectorisation.py").read_text(encoding="utf-8"))
 noms = {n.name for n in arbre.body if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))}
 verifier("le module expose ce que l'écran et le garde-fou attendent",

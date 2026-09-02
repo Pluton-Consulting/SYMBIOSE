@@ -319,7 +319,12 @@ async def _embed_ollama_cloud(texts: list[str], modele: str = "") -> list[Option
 
 
 _PROVIDERS = {"gemini": _embed_gemini, "openai": _embed_openai,
-              "ollama": _embed_ollama, "ollama_cloud": _embed_ollama_cloud}
+              "ollama": _embed_ollama, "ollama_cloud": _embed_ollama_cloud,
+              # « google » est le nom du fournisseur dans la cascade de texte et
+              # dans le catalogue de l'écran ; « gemini » celui du moteur
+              # d'embedding. Le même service sous deux noms : sans cet alias, le
+              # choix le plus naturel de l'écran coupait la vectorisation.
+              "google": _embed_gemini}
 
 
 # ── API publique ──────────────────────────────────────────────────────────
