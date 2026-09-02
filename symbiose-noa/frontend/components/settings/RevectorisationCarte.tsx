@@ -125,6 +125,14 @@ export default function RevectorisationCarte(
         {etat.mesure_possible ? etat.detail : <em>{etat.detail}</em>}
       </div>
 
+      {/* LE BOUTON NE DOIT PAS DÉPENDRE D'UN ÉCART DE DIMENSION (02/09).
+          Il n'était offert que si les tailles différaient — or deux modèles de
+          MÊME dimension produisent des vecteurs tout aussi incomparables : une
+          distance entre un vecteur Gemini et un vecteur Ollama n'a aucun sens
+          géométrique, même à 1536 composantes de part et d'autre. Passer de
+          gemini-embedding-001 à text-embedding-3-small (tous deux 1536) aurait
+          donc laissé un corpus silencieusement faux, sans aucun moyen de le
+          reconstruire depuis l'écran. */}
       {desaccord && (
         <div style={{ marginTop: 10, padding: "10px 12px", borderRadius: 8,
                       background: "var(--marque-warning-bg, #fff8e6)",
@@ -139,8 +147,17 @@ export default function RevectorisationCarte(
         </div>
       )}
 
-      {desaccord && !ouvert && (
-        <button type="button" onClick={() => setOuvert(true)} disabled={busy}
+      {!desaccord && etat.mesure_possible && (
+        <div style={{ ...petit, marginTop: 8 }}>
+          Les dimensions concordent. Si vous venez de CHANGER de modèle sans
+          changer de dimension, re-vectorisez quand même : deux modèles ne
+          produisent pas des vecteurs comparables, et la recherche répondrait
+          sans rien signaler.
+        </div>
+      )}
+
+      {!ouvert && (
+        <button type="button" onClick={() => setOuvert(true)} disabled={busy || !etat.mesure_possible}
           style={{ marginTop: 10, padding: "6px 12px", borderRadius: 999, fontSize: 13,
                    cursor: "pointer", border: "1px solid var(--marque-border)",
                    background: "var(--marque-surface)" }}>

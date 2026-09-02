@@ -219,6 +219,14 @@ async def _embed_gemini(texts: list[str], modele: str = "") -> list[Optional[lis
         return [None] * len(texts)
 
     model = modele or settings.gemini_embedding_model
+    # La dimension que la colonne attend ; sans base lisible, celle de la
+    # configuration — un embedding vaut mieux qu'aucun.
+    cible = settings.embedding_dimensions
+    try:
+        from vectorstore.revectorisation import dimension_attendue
+        cible = await dimension_attendue()
+    except Exception:  # noqa: BLE001 — la configuration reste le repli
+        pass
     max_chars = settings.embedding_max_chars
     url = (f"https://generativelanguage.googleapis.com/v1beta/models/"
            f"{model}:batchEmbedContents?key={settings.google_api_key}")
@@ -227,7 +235,13 @@ async def _embed_gemini(texts: list[str], modele: str = "") -> list[Optional[lis
             {
                 "model": f"models/{model}",
                 "content": {"parts": [{"text": t[:max_chars]}]},
-                "outputDimensionality": settings.embedding_dimensions,
+                # LA CIBLE SUIT LA BASE, PAS LA CONFIGURATION (02/09).
+                # Gemini est le seul fournisseur qui CHOISIT sa dimension
+                # (les autres la subissent) : après une re-vectorisation
+                # vers 768, il aurait continué de réclamer les 1536 de
+                # `config.py` et chacun de ses vecteurs aurait été refusé
+                # par le garde-fou, sans que rien ne relie les deux.
+                "outputDimensionality": cible,
             }
             for t in texts
         ]
