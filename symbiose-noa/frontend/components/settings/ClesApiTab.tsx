@@ -1,6 +1,7 @@
 "use client"
 
 import { useCallback, useEffect, useState } from "react"
+import RevectorisationCarte from "./RevectorisationCarte"
 
 // Saisie des clés d'API des fournisseurs de modèles, réservée à
 // l'administration système. La valeur n'est JAMAIS renvoyée par le serveur :
@@ -380,6 +381,11 @@ function ReglageModeles({ apiUrl, backendToken, signal = 0 }:
         avertissement={`Changer de modèle impose de re-vectoriser tout le corpus : les vecteurs existants (${dimensions} dimensions) ne se comparent pas à ceux d'un autre modèle. Un modèle qui rend une autre dimension est refusé à l'écriture, sans rien casser.`}
         onChoisir={(v) => ecrire("modele_embedding", v, `${v} vectorise désormais. Re-vectorisation nécessaire.`)}
         onRetirer={() => ecrire("modele_embedding", "", "Modèle d'embedding retiré.")} />
+
+      {/* L'avertissement au-dessus annonçait la re-vectorisation sans
+          permettre de la faire : exact, et sans issue. Cette carte mesure
+          l'écart, montre l'avancement, et ouvre l'opération. */}
+      <RevectorisationCarte apiUrl={apiUrl} backendToken={backendToken} />
 
       {/* LA GÉNÉRATION D'IMAGES SE MONTRE, ELLE NE SE CHOISIT PAS — décision de
           Noa. On l'affiche pour qu'on sache ce qui tire les visuels : ne rien

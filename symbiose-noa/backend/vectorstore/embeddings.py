@@ -193,13 +193,14 @@ def _client():
     return _CLIENT
 
 
-async def _embed_openai(texts: list[str]) -> list[Optional[list[float]]]:
+async def _embed_openai(texts: list[str], modele: str = "") -> list[Optional[list[float]]]:
     client = _openai()
     if client is None:
         _warn_once("OPENAI_API_KEY absente : embeddings openai désactivés (dégradation pg_trgm).")
         return [None] * len(texts)
     try:
-        resp = await client.embeddings.create(model=settings.embedding_model, input=texts)
+        resp = await client.embeddings.create(
+            model=modele or settings.embedding_model, input=texts)
         return [d.embedding for d in resp.data]
     except Exception as e:
         logger.warning("Échec embeddings OpenAI (%s) — mode dégradé", type(e).__name__)
@@ -207,7 +208,7 @@ async def _embed_openai(texts: list[str]) -> list[Optional[list[float]]]:
 
 
 # ── Gemini (Google AI Studio, REST) ───────────────────────────────────────
-async def _embed_gemini(texts: list[str]) -> list[Optional[list[float]]]:
+async def _embed_gemini(texts: list[str], modele: str = "") -> list[Optional[list[float]]]:
     if not settings.google_api_key:
         _warn_once("GOOGLE_API_KEY absente : embeddings gemini désactivés (dégradation pg_trgm).")
         return [None] * len(texts)
@@ -217,7 +218,7 @@ async def _embed_gemini(texts: list[str]) -> list[Optional[list[float]]]:
         _warn_once(f"Embeddings Gemini en pause ({reason}) — chunks conservés, reprise auto.")
         return [None] * len(texts)
 
-    model = settings.gemini_embedding_model
+    model = modele or settings.gemini_embedding_model
     max_chars = settings.embedding_max_chars
     url = (f"https://generativelanguage.googleapis.com/v1beta/models/"
            f"{model}:batchEmbedContents?key={settings.google_api_key}")
@@ -256,14 +257,15 @@ async def _embed_gemini(texts: list[str]) -> list[Optional[list[float]]]:
 
 
 # ── Ollama (local) ────────────────────────────────────────────────────────
-async def _embed_ollama(texts: list[str]) -> list[Optional[list[float]]]:
+async def _embed_ollama(texts: list[str], modele: str = "") -> list[Optional[list[float]]]:
     out: list[Optional[list[float]]] = []
     try:
         async with httpx.AsyncClient(timeout=120) as client:
             for t in texts:
                 r = await client.post(
                     f"{settings.ollama_base_url}/api/embeddings",
-                    json={"model": settings.ollama_embedding_model, "prompt": t},
+                    json={"model": modele or settings.ollama_embedding_model,
+                          "prompt": t},
                 )
                 r.raise_for_status()
                 out.append(r.json().get("embedding") or None)
@@ -273,7 +275,51 @@ async def _embed_ollama(texts: list[str]) -> list[Optional[list[float]]]:
         return out + [None] * (len(texts) - len(out))
 
 
-_PROVIDERS = {"gemini": _embed_gemini, "openai": _embed_openai, "ollama": _embed_ollama}
+# ── Ollama Cloud (abonnement, API compatible OpenAI) ──────────────────────
+#
+# CE FOURNISSEUR MANQUAIT (02/09). Le réglage « modèle des embeddings »
+# proposait les modèles d'Ollama Cloud, mais `_PROVIDERS` n'en connaissait
+# pas le nom : le choix retombait sur « fournisseur inconnu », et plus rien
+# n'était vectorisé. Le fournisseur `ollama` existant, lui, vise
+# `ollama_base_url` — l'instance LOCALE, absente des serveurs. Les deux
+# sont donc bien deux fournisseurs distincts, comme pour le texte (§4.5).
+#
+# La clé passe par `llm.cles`, jamais par la configuration seule : une clé
+# saisie dans Paramètres prime sur le `.env`, et le cache est rafraîchi au
+# démarrage (piège du §4.6).
+async def _embed_ollama_cloud(texts: list[str], modele: str = "") -> list[Optional[list[float]]]:
+    from llm.cles import valeur as _cle_valeur
+    cle = _cle_valeur("ollama_cloud_api_key") or ""
+    if not cle:
+        _warn_once("Clé Ollama Cloud absente : embeddings désactivés "
+                   "(la recherche reste servie par la voie lexicale).")
+        return [None] * len(texts)
+    nom = modele or settings.ollama_cloud_embedding_model
+    base = (settings.ollama_cloud_base_url or "").rstrip("/")
+    max_chars = settings.embedding_max_chars
+    try:
+        r = await _client().post(
+            f"{base}/embeddings",
+            headers={"Authorization": f"Bearer {cle}"},
+            json={"model": nom, "input": [t[:max_chars] for t in texts]})
+        r.raise_for_status()
+        # L'ordre de `data` suit celui de l'entrée, mais le contrat OpenAI
+        # porte un `index` : on s'y fie plutôt qu'à la position, sans quoi
+        # une réponse réordonnée collerait les vecteurs aux mauvais textes.
+        out: list[Optional[list[float]]] = [None] * len(texts)
+        for item in (r.json().get("data") or []):
+            i = item.get("index")
+            if isinstance(i, int) and 0 <= i < len(texts):
+                out[i] = item.get("embedding") or None
+        return out
+    except Exception as e:  # noqa: BLE001 — jamais d'exception vers l'appelant
+        logger.warning("Échec embeddings Ollama Cloud (%s) — mode dégradé",
+                       type(e).__name__)
+        return [None] * len(texts)
+
+
+_PROVIDERS = {"gemini": _embed_gemini, "openai": _embed_openai,
+              "ollama": _embed_ollama, "ollama_cloud": _embed_ollama_cloud}
 
 
 # ── API publique ──────────────────────────────────────────────────────────
@@ -323,7 +369,12 @@ async def embed_texts(texts: list[str]) -> list[Optional[list[float]]]:
         if t not in seen:
             seen[t] = len(unique_texts)
             unique_texts.append(t)
-    unique_vectors = await provider(unique_texts)
+    # LE MODÈLE CHOISI ÉTAIT CALCULÉ PUIS JETÉ (corrigé le 02/09) : seul le
+    # FOURNISSEUR était retenu, et chaque fonction reprenait le modèle par
+    # défaut de la configuration. Choisir « ollama_cloud:embeddinggemma » à
+    # l'écran vectorisait donc avec un autre modèle que celui affiché — et
+    # rien ne le disait.
+    unique_vectors = await provider(unique_texts, modele_choisi)
 
     results: list[Optional[list[float]]] = [None] * len(texts)
     for orig_idx, t in to_embed:
