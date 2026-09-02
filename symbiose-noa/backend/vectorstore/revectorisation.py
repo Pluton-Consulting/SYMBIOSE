@@ -123,7 +123,7 @@ async def mesurer_dimension(modele: str = "") -> tuple[Optional[int], str]:
     from vectorstore.embeddings import embed_texts
 
     # Un texte court et neutre : on mesure la forme de la réponse, pas son sens.
-    vecteurs = await embed_texts(["essai de dimension"])
+    vecteurs = await embed_texts(["essai de dimension"], modele_force=modele)
     vecteur = vecteurs[0] if vecteurs else None
     if not vecteur:
         return None, ("Le modèle n'a rendu aucun vecteur. Vérifiez la clé du "
@@ -243,3 +243,67 @@ async def revectoriser(dimension: int, modele: str = "") -> dict:
         "index_recree": indexe,
         "jobs_ajoutes": manquants,
     }
+
+
+# ── Le catalogue des modèles d'embedding, avec leur dimension ────────────
+#
+# DEMANDE DE NOA (02/09) : « dis-moi quels modèles j'ai accès pour l'embedding
+# et l'OCR/vision avec ma clé, et fais en sorte que je puisse les sélectionner
+# dans l'interface ». La réponse ne peut pas être une liste écrite à la main :
+# elle dépend de l'abonnement, elle change, et la DIMENSION — qui décide de
+# tout ici — n'est annoncée nulle part.
+#
+# On la mesure donc, modèle par modèle, en cache d'une heure : un catalogue de
+# fournisseur ne bouge pas dans la journée, et un appel par modèle à chaque
+# ouverture de l'écran serait payé pour rien. Le cache porte la dimension ET
+# l'échec : un modèle qui ne répond pas ne doit pas être re-sondé à chaque
+# affichage.
+_CATALOGUE_DIMS: dict = {}
+_CATALOGUE_EXPIRE: dict = {}
+_DUREE_CATALOGUE_S = 3600
+
+
+async def catalogue_embeddings(rafraichir: bool = False) -> list[dict]:
+    """Les modèles d'embedding accessibles, chacun avec sa dimension MESURÉE.
+
+    Un modèle dont la dimension ne peut pas être mesurée est rendu quand même,
+    avec sa raison : le taire laisserait croire qu'il n'existe pas, alors que
+    c'est peut-être la clé qui manque.
+    """
+    import time as _t
+
+    from llm.router import catalogue_modeles, usage_du_modele
+
+    attendue = await dimension_attendue()
+    sortie: list[dict] = []
+    for fiche in catalogue_modeles():
+        if not fiche.get("cle_presente"):
+            continue
+        for m in fiche.get("modeles") or []:
+            nom = m.get("id") or ""
+            if usage_du_modele(nom) != "embedding":
+                continue
+            ref = f"{fiche['fournisseur']}:{nom}"
+            frais = (not rafraichir
+                     and ref in _CATALOGUE_DIMS
+                     and _t.monotonic() < _CATALOGUE_EXPIRE.get(ref, 0))
+            if not frais:
+                dim, detail = await mesurer_dimension(ref)
+                _CATALOGUE_DIMS[ref] = (dim, detail)
+                _CATALOGUE_EXPIRE[ref] = _t.monotonic() + _DUREE_CATALOGUE_S
+            dim, detail = _CATALOGUE_DIMS[ref]
+            sortie.append({
+                "reference": ref,
+                "fournisseur": fiche["fournisseur"],
+                "libelle": fiche["libelle"],
+                "modele": nom,
+                "dimension": dim,
+                "detail": detail,
+                # CE QUI DÉCIDE POUR L'UTILISATEUR : un modèle de la même
+                # dimension que la base entre sans re-vectorisation forcée par
+                # le schéma (il en faut une quand même, les vecteurs n'étant
+                # pas comparables — mais l'opération est plus légère).
+                "meme_dimension": bool(dim and dim == attendue),
+                "utilisable": dim is not None,
+            })
+    return sortie

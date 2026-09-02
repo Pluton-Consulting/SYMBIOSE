@@ -440,3 +440,21 @@ async def lancer_revectorisation(body: RevectoriserRequest,
                  "temps, la recherche continue de répondre par sa voie "
                  "textuelle : les résultats sont moins fins, pas absents."),
     }
+
+
+@router.get("/embeddings/catalogue")
+async def catalogue_des_embeddings(rafraichir: bool = False,
+                                   current_user: User = Depends(get_current_user)):
+    """Les modèles d'embedding accessibles avec les clés posées, chacun avec sa
+    DIMENSION mesurée.
+
+    C'est la seule façon honnête de répondre à « quels modèles ai-je ? » : le
+    catalogue du fournisseur ne rend que des noms, et la dimension — qui décide
+    de tout ici — n'est annoncée nulle part. On la mesure.
+    """
+    if not has_permission(current_user.role, "manage_system"):
+        raise HTTPException(status_code=403, detail="Réservé à l'administration système")
+    from vectorstore.revectorisation import catalogue_embeddings, dimension_attendue
+
+    return {"dimension_base": await dimension_attendue(),
+            "modeles": await catalogue_embeddings(rafraichir=rafraichir)}

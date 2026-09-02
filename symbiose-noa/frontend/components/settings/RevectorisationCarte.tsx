@@ -20,6 +20,16 @@ import { useCallback, useEffect, useState } from "react"
  * attendaient depuis des jours derrière un quota épuisé. Un chiffre qu'on ne
  * regarde jamais est un chiffre qui dérive.
  */
+type CatalogueModele = {
+  reference: string
+  libelle: string
+  modele: string
+  dimension: number | null
+  detail: string
+  meme_dimension: boolean
+  utilisable: boolean
+}
+
 type Etat = {
   morceaux: number
   vectorises: number
@@ -42,6 +52,26 @@ export default function RevectorisationCarte(
   const [busy, setBusy] = useState(false)
   const [confirme, setConfirme] = useState("")
   const [ouvert, setOuvert] = useState(false)
+  // LE CATALOGUE DES MODÈLES D'EMBEDDING, avec la dimension MESURÉE de chacun.
+  // Demande de Noa : « dis-moi quels modèles j'ai accès ». Aucune liste écrite
+  // à la main ne peut répondre — cela dépend de l'abonnement, cela change, et
+  // la dimension n'est annoncée par aucun catalogue de fournisseur. On la
+  // mesure, une fois, et l'écran la montre.
+  const [catalogue, setCatalogue] = useState<CatalogueModele[] | null>(null)
+  const [chargeCatalogue, setChargeCatalogue] = useState(false)
+
+  const voirCatalogue = async () => {
+    setChargeCatalogue(true); setErreur("")
+    try {
+      const r = await fetch(`${apiUrl}/api/settings/embeddings/catalogue`, {
+        headers: { Authorization: `Bearer ${backendToken}` }, cache: "no-store",
+      })
+      const json = await r.json().catch(() => ({}))
+      if (!r.ok) throw new Error(json?.detail || `HTTP ${r.status}`)
+      setCatalogue(json?.modeles || [])
+    } catch (e: any) { setErreur(e?.message || "catalogue illisible") }
+    finally { setChargeCatalogue(false) }
+  }
 
   const relire = useCallback(async () => {
     try {
@@ -124,6 +154,69 @@ export default function RevectorisationCarte(
         Base : {etat.dimension_base} dimensions · Modèle choisi :{" "}
         {etat.mesure_possible ? etat.detail : <em>{etat.detail}</em>}
       </div>
+
+      <div style={{ marginTop: 8 }}>
+        <button type="button" onClick={voirCatalogue} disabled={chargeCatalogue}
+          style={{ padding: 0, border: "none", background: "none", fontSize: 12,
+                   color: "var(--marque-primary)", cursor: "pointer",
+                   textDecoration: "underline" }}>
+          {chargeCatalogue ? "mesure en cours…"
+            : catalogue ? "actualiser la liste des modèles"
+            : "quels modèles d'embedding puis-je choisir ?"}
+        </button>
+      </div>
+
+      {catalogue && (
+        <div style={{ marginTop: 8, fontSize: 12 }}>
+          {catalogue.length === 0 ? (
+            <div style={petit}>
+              Aucun modèle d&apos;embedding trouvé chez les fournisseurs dont la
+              clé est posée. Saisissez une clé, ou écrivez l&apos;identifiant du
+              modèle à la main dans le champ libre.
+            </div>
+          ) : (
+            <div style={{ overflowX: "auto" }}>
+              <table style={{ borderCollapse: "collapse", width: "100%",
+                              fontVariantNumeric: "tabular-nums" }}>
+                <thead>
+                  <tr style={{ textAlign: "left", color: "var(--marque-text-muted)" }}>
+                    <th style={{ padding: "4px 8px 4px 0", fontWeight: 600 }}>Modèle</th>
+                    <th style={{ padding: "4px 8px", fontWeight: 600 }}>Fournisseur</th>
+                    <th style={{ padding: "4px 8px", fontWeight: 600 }}>Dimension</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {catalogue.map((m) => (
+                    <tr key={m.reference}
+                        style={{ borderTop: "1px solid var(--marque-border)",
+                                 opacity: m.utilisable ? 1 : 0.55 }}>
+                      <td style={{ padding: "5px 8px 5px 0" }}>{m.modele}</td>
+                      <td style={{ padding: "5px 8px", color: "var(--marque-text-muted)" }}>
+                        {m.libelle}
+                      </td>
+                      <td style={{ padding: "5px 8px" }}>
+                        {/* La dimension MESURÉE, ou la raison pour laquelle elle
+                            ne l'a pas été : un modèle muet n'est pas un modèle
+                            absent, c'est peut-être une clé qui manque. */}
+                        {m.dimension
+                          ? <>{m.dimension}{m.meme_dimension && (
+                              <span style={{ color: "var(--marque-text-muted)" }}>
+                                {" "}· celle de la base
+                              </span>)}</>
+                          : <span style={{ color: "var(--marque-text-muted)" }}>{m.detail}</span>}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              <div style={{ ...petit, marginTop: 6 }}>
+                Dimensions mesurées en interrogeant chaque modèle, pas déduites
+                d&apos;une liste : aucun catalogue de fournisseur ne les annonce.
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* LE BOUTON NE DOIT PAS DÉPENDRE D'UN ÉCART DE DIMENSION (02/09).
           Il n'était offert que si les tailles différaient — or deux modèles de

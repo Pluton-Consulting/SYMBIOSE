@@ -342,7 +342,8 @@ _PROVIDERS = {"gemini": _embed_gemini, "openai": _embed_openai,
 
 
 # ── API publique ──────────────────────────────────────────────────────────
-async def embed_texts(texts: list[str]) -> list[Optional[list[float]]]:
+async def embed_texts(texts: list[str],
+                      modele_force: str = "") -> list[Optional[list[float]]]:
     """
     Vectorise un lot de textes. Ordre de sortie = ordre d'entrée. Textes vides →
     None sans appel réseau. Ne lève jamais ; renvoie [None,…] si indisponible.
@@ -362,11 +363,19 @@ async def embed_texts(texts: list[str]) -> list[Optional[list[float]]]:
     # sur Gemini : un nom mal écrit dans la configuration donnait un système
     # qui semble obéir et n'obéit pas — le pire des deux mondes, puisque rien
     # ne le signale.
+    # UN MODÈLE PEUT ÊTRE ESSAYÉ SANS ÊTRE CHOISI (02/09). Sans ce paramètre,
+    # la seule façon de connaître la dimension d'un modèle était de le POSER en
+    # réglage — c'est-à-dire de basculer tout le système dessus pour savoir
+    # s'il convenait. On veut l'inverse : mesurer, montrer, puis choisir.
     nom_fournisseur = (settings.embedding_provider or "gemini").strip().lower()
     modele_choisi = ""
+    if modele_force and ":" in modele_force:
+        f, _, m = modele_force.partition(":")
+        if f.strip() and m.strip():
+            nom_fournisseur, modele_choisi = f.strip().lower(), m.strip()
     try:
         from llm.reglages import texte as _reglage_texte
-        brut = _reglage_texte("modele_embedding")
+        brut = "" if modele_force else _reglage_texte("modele_embedding")
         if brut:
             f, _, m = brut.partition(":")
             if f.strip() and m.strip():

@@ -111,7 +111,14 @@ DIMENSION_RENDUE = {"n": 768}
 faux_embed = types.ModuleType("vectorstore.embeddings")
 
 
-async def _embed(textes):
+# La doublure suit la signature du module livré : `modele_force` permet de
+# MESURER un modèle sans le poser en réglage, ce qui est tout l'intérêt du
+# catalogue (on mesure, on montre, puis on choisit).
+MODELE_ESSAYE = {"dernier": ""}
+
+
+async def _embed(textes, modele_force=""):
+    MODELE_ESSAYE["dernier"] = modele_force
     n = DIMENSION_RENDUE["n"]
     return [[0.0] * n if n else None for _ in textes]
 
@@ -150,6 +157,14 @@ n, detail = asyncio.run(rv.mesurer_dimension())
 verifier("une dimension trop grande est ACCEPTÉE mais annoncée", n == 3072)
 verifier("l'écran est prévenu que l'index HNSW ne se construira pas",
          "index HNSW" in detail)
+
+DIMENSION_RENDUE["n"] = 1024
+asyncio.run(rv.mesurer_dimension("ollama_cloud:bge-m3"))
+verifier("EXÉCUTÉ — mesurer un modèle NOMMÉ l'essaie vraiment "
+         "(le paramètre était ignoré)",
+         MODELE_ESSAYE["dernier"] == "ollama_cloud:bge-m3",
+         repr(MODELE_ESSAYE["dernier"]))
+DIMENSION_RENDUE["n"] = 768
 
 # ── 2. LA DIMENSION ATTENDUE VIENT DE LA COLONNE ─────────────────────────
 rv.oublier_dimension()
@@ -294,6 +309,45 @@ verifier("« google » y est admis : c'est le nom que l'écran affiche",
          '"google"' in reg.split("FOURNISSEURS_EMBEDDING = (")[1].split(")")[0])
 verifier("et le moteur le ramène à gemini, sans quoi il resterait inconnu",
          '"google": _embed_gemini' in emb)
+
+# ── 6. LE CATALOGUE : « quels modèles ai-je ? » ─────────────────────────
+# Aucune liste écrite à la main ne peut répondre : cela dépend de l'abonnement,
+# cela change, et la dimension — qui décide de tout — n'est annoncée par aucun
+# catalogue de fournisseur. On la mesure, modèle par modèle.
+routeur = (BACKEND / "llm" / "router.py").read_text(encoding="utf-8")
+verifier("le serveur déduit l'USAGE d'un modèle (embedding, vision, texte)",
+         "def usage_du_modele" in routeur)
+verifier("et chaque modèle du catalogue le porte", '"usage": usage_du_modele(m)' in routeur)
+verifier("l'embedding est testé AVANT la vision (qwen3-embedding porte les deux "
+         "familles de marques)",
+         routeur.index("_MARQUES_EMBEDDING") < routeur.index("_MARQUES_VISION"))
+verifier("le module rend un catalogue d'embeddings avec leurs dimensions",
+         "async def catalogue_embeddings" in
+         (BACKEND / "vectorstore" / "revectorisation.py").read_text(encoding="utf-8"))
+verifier("il est en cache : un appel par modèle à chaque affichage serait payé "
+         "pour rien",
+         "_CATALOGUE_EXPIRE" in (BACKEND / "vectorstore" / "revectorisation.py")
+         .read_text(encoding="utf-8"))
+verifier("une route l'expose, réservée à l'administration",
+         '@router.get("/embeddings/catalogue")' in reglages)
+
+ecran = (BACKEND.resolve().parent / "frontend" / "components" / "settings"
+         / "ClesApiTab.tsx").read_text(encoding="utf-8")
+verifier("les lignes Vision et Embeddings ne proposent que leurs modèles",
+         'titre="Vision et OCR" usage="vision"' in ecran
+         and 'titre="Embeddings" usage="embedding"' in ecran)
+# LE FILTRE NE DOIT PAS ENFERMER. L'usage est déduit d'un NOM : l'heuristique
+# peut se tromper, et un menu vide empêcherait de choisir un modèle qu'on sait
+# bon. Un fournisseur sans correspondance garde donc sa liste entière.
+verifier("un fournisseur sans modèle correspondant garde sa liste entière",
+         "gardes.length ? { ...f, modeles: gardes } : f" in ecran)
+
+carte = (BACKEND.resolve().parent / "frontend" / "components" / "settings"
+         / "RevectorisationCarte.tsx").read_text(encoding="utf-8")
+verifier("l'écran sait demander la liste des modèles et leurs dimensions",
+         "embeddings/catalogue" in carte)
+verifier("il dit que les dimensions sont MESURÉES, pas déduites d'une liste",
+         "pas déduites" in carte)
 
 arbre = ast.parse((BACKEND / "vectorstore" / "revectorisation.py").read_text(encoding="utf-8"))
 noms = {n.name for n in arbre.body if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))}
