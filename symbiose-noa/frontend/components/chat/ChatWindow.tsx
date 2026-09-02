@@ -895,7 +895,7 @@ ${texteAffiche}`)
     if (contexte) oublierContexte()
     if (!token) {
       setMessages((prev) => [...prev,
-        { id: newId(), role: "user", content: text },
+        { id: newId(), role: "user", content: texteAffiche },
         { id: newId(), role: "assistant", content: "Erreur : session expirée, veuillez vous reconnecter." }])
       return
     }
@@ -910,7 +910,7 @@ ${texteAffiche}`)
       // suite vaut mieux qu'un fichier silencieusement ignore.
       if (piece) {
         setMessages((prev) => [...prev,
-          { id: newId(), role: "user", content: `📎 ${piece.name}\n${text}` },
+          { id: newId(), role: "user", content: `📎 ${piece.name}\n${texteAffiche}` },
           { id: newId(), role: "assistant",
             content: "Les pièces jointes ne peuvent pas rejoindre la file d'attente : attendez la fin de la tâche en cours, puis renvoyez le fichier." }])
         return
@@ -926,7 +926,7 @@ ${texteAffiche}`)
     idDerniereQuestionRef.current = idQuestion
     setMessages((prev) => [
       ...prev,
-      { id: idQuestion, role: "user", content: piece ? `📎 ${piece.name}\n${text}` : text },
+      { id: idQuestion, role: "user", content: piece ? `📎 ${piece.name}\n${texteAffiche}` : texteAffiche },
     ])
     setLoading(true)
     setThinkingNode(null)
