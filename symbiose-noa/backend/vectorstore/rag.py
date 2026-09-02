@@ -223,9 +223,18 @@ async def rechercher(
         # On écarte donc l'embedding AVANT de l'envoyer quand sa taille ne
         # correspond pas : inutile de payer un aller-retour SQL voué à l'échec.
         if embedding:
-            from vectorstore.revectorisation import dimension_attendue
-            attendue = await dimension_attendue()
-            if len(embedding) != attendue:
+            # La mesure préalable est une ÉCONOMIE, pas la garantie : elle évite
+            # un aller-retour SQL voué à l'échec. La garantie, c'est le `try`
+            # ci-dessous. L'import reste donc tolérant — il tire la couche base
+            # de données, et une recherche ne doit pas dépendre de sa présence
+            # pour rendre son résultat lexical.
+            attendue = 0
+            try:
+                from vectorstore.revectorisation import dimension_attendue
+                attendue = await dimension_attendue()
+            except Exception:  # noqa: BLE001 — sans mesure, le filet suffit
+                attendue = 0
+            if attendue and len(embedding) != attendue:
                 _avertir_dimension(len(embedding), attendue)
             else:
                 try:
