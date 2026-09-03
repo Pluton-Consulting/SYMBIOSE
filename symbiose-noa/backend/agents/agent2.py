@@ -551,6 +551,15 @@ async def prechiffrage_node(state: AgentState) -> dict:
     # demande ni table, ni état partagé entre deux graphes.
     cle = state.get("attachment_visuel_cle")
     if cle:
+        # EN BLOC, PAS SEULEMENT EN TEXTE (03/09). Une référence écrite entre
+        # accents graves n'est lue ni par `cles_images_du_fil` (qui cherche
+        # `"cle": "…"`) ni par `fichiers_du_fil` (qui cherche des blocs) : au
+        # tour suivant, « montre moi la photo » était pris pour une invention
+        # et effacé. Le bloc `visuel` fait entrer la photo dans l'historique
+        # sous la forme que tous les filets savent lire — et, au passage, la
+        # personne VOIT ce que l'assistant a regardé.
+        summary += ("\n\n```ui\n{\"type\": \"visuel\", \"titre\": \"Photo de départ\", "
+                    "\"images\": [{\"cle\": \"" + str(cle) + "\"}]}\n```")
         summary += (f"\n\n_Photo enregistrée sous la référence `{cle}`. Je peux en "
                     "produire une variante : dites-moi ce que vous voulez changer "
                     "(« remplace la pelouse par une terrasse en bois », « ajoute une "
