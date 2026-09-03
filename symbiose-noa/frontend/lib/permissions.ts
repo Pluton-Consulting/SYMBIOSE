@@ -99,7 +99,8 @@ export const TABS: TabDef[] = [
     // comment l'assistant est utilisé et ce qu'il coûte.
     label: "Pilotage",
     href: "/gestion",
-    roles: ["super_admin", "direction"],
+    // 03/09 (Noa) : « seul le super admin doit voir Pilotage et Connaissances ».
+    roles: ["super_admin"],
   },
   // L'ONGLET « RECHERCHE WEB » A ÉTÉ RETIRÉ DU MENU, ET C'EST UN GAIN.
   //
@@ -175,8 +176,9 @@ export const SECTIONS: TabDef[] = [
   { key: "connaissances", label: "Connaissances",
     // « ce que l'assistant sait faire et ce qu'il apprend » : validations,
     // débrief d'apprentissage, savoir-faire — réunis.
-    href: "/connaissances", roles: MANAGERS },
-  { key: "gestion",       label: "Pilotage",      href: "/gestion",     roles: ["super_admin", "direction"] },
+    // 03/09 (Noa) : Connaissances et Pilotage sont réservés au super_admin.
+    href: "/connaissances", roles: ["super_admin"] },
+  { key: "gestion",       label: "Pilotage",      href: "/gestion",     roles: ["super_admin"] },
   { key: "parametres",    label: "Paramètres",    href: "/parametres",  roles: ALL_ROLES },
   { key: "superviseur",   label: "Développeur",   href: "/superviseur", roles: ["super_admin"], dev: true },
 ]
