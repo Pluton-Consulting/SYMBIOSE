@@ -176,29 +176,64 @@ async def _build_service_pour(identite=None, ecriture: bool = False):
         #    C'est de loin le plus confortable quand le domaine est administré,
         #    et cela évite aussi les refresh tokens révoqués à sept jours.
         courriel = await _courriel_du_compte(identite)
+        raison_delegation = "aucune adresse n'est enregistrée pour votre compte"
         if courriel:
+            raison_delegation = ""
             try:
                 return await asyncio.to_thread(
                     _build_service_delegue, courriel, scopes)
             except NotImplementedError as e:
                 # Pas de compte de service, ou délégation non accordée : ce
-                # n'est pas une panne, c'est l'autre voie qui reste.
+                # n'est pas une panne, c'est l'autre voie qui reste. On garde
+                # la RAISON : c'est elle qui dira quel geste faire.
+                raison_delegation = str(e)
                 logger.info("Délégation de domaine indisponible : %s", e)
 
-        # 3. NI L'UN NI L'AUTRE : on refuse, en nommant les DEUX chemins. Un
-        #    repli silencieux sur le compte de service donnerait à cette
-        #    personne la vue de quelqu'un d'autre — exactement ce que la
-        #    séparation des accès existe pour empêcher.
-        raise DriveRefuse(
-            "Votre compte Google n'est pas encore relié à l'assistant. "
-            "Reliez-le depuis Paramètres > Mon compte Google : l'assistant "
-            "verra alors le Drive avec VOS accès, et rien d'autre. "
-            "(Un administrateur peut aussi activer la délégation de domaine, "
-            "qui relie tout le monde d'un coup, sans aucun clic.)")
+        # 3. NI L'UN NI L'AUTRE : on refuse, en nommant les DEUX chemins ET CE
+        #    QUI MANQUE À CHACUN. Un repli silencieux sur le compte de service
+        #    donnerait à cette personne la vue de quelqu'un d'autre — exactement
+        #    ce que la séparation des accès existe pour empêcher.
+        raise DriveRefuse(_refus_explique(raison_delegation))
     return await asyncio.to_thread(
         _build_service_ecriture if ecriture else _build_service)
 
 
+def _refus_explique(raison_delegation: str) -> str:
+    """Le refus d'accès au Drive, avec le geste qui le lève.
+
+    POURQUOI CE DÉTAIL. Le refus disait « Reliez-le depuis Paramètres > Mon
+    compte Google » — sans vérifier que ce bouton peut faire quelque chose.
+    Relevé le 07/09 (compte `administratif`, 13:43 et 13:45) : sur un serveur où
+    `GOOGLE_OAUTH_CLIENT_ID` n'est pas posé, l'écran n'a RIEN à proposer, et la
+    personne cherche l'erreur de son côté. Même famille que le 429 de Nano
+    Banana (74e51ba) : un refus qui tait sa cause envoie corriger ailleurs.
+
+    Le message nomme donc les deux chemins, dit lequel est ouvert, et à qui est
+    le geste. Il ne cite aucun secret — des noms de variables, rien de plus.
+    """
+    from mail import google_perso
+
+    morceaux = ["Le Drive ne vous est pas accessible : aucun des deux chemins "
+                "n'est ouvert pour votre compte."]
+    if google_perso.configurable():
+        morceaux.append(
+            "1) Reliez votre compte depuis Paramètres > Mon compte Google : "
+            "l'assistant verra alors le Drive avec VOS accès, et rien d'autre. "
+            "C'est le geste le plus rapide, et il vous appartient.")
+    else:
+        morceaux.append(
+            "1) « Paramètres > Mon compte Google » ne peut RIEN relier pour "
+            "l'instant : le client OAuth Google n'est pas configuré sur ce "
+            "serveur (GOOGLE_OAUTH_CLIENT_ID et GOOGLE_OAUTH_CLIENT_SECRET). "
+            "Ce n'est pas votre geste, c'est celui d'un administrateur.")
+    morceaux.append(
+        "2) La délégation de domaine relierait tout le monde d'un coup, sans "
+        "aucun clic — "
+        + (raison_delegation or "elle n'a pas répondu sur ce serveur")
+        + ".")
+    morceaux.append("En attendant, je peux chercher dans les documents déjà "
+                    "importés en mémoire, qui ne dépendent pas du Drive.")
+    return " ".join(morceaux)
 async def _courriel_du_compte(identite) -> str:
     """L'adresse Google à emprunter pour cette session, ou "".
 

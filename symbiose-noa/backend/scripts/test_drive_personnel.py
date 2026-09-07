@@ -153,7 +153,43 @@ verifier("voie 2 : la délégation de domaine emprunte l'identité de la personn
 verifier("son absence n'est pas une panne : on continue vers le refus",
          "Délégation de domaine indisponible" in drv)
 verifier("le refus nomme LES DEUX chemins (relier son compte, ou déléguer)",
-         "délégation de domaine" in drv.split("raise DriveRefuse")[1][:600])
+         "_refus_explique" in drv.split("raise DriveRefuse")[1][:200]
+         and "délégation de domaine" in drv)
+
+# ── LE REFUS DIT SA CAUSE, et il est EXÉCUTÉ ─────────────────────────────
+# Relevé du 07/09 (compte `administratif`, 13:43 et 13:45) : « Reliez-le depuis
+# Paramètres > Mon compte Google » envoyait appuyer sur un bouton qui ne peut
+# rien faire tant que le client OAuth n'est pas posé sur le serveur. Le refus
+# ne disait pas non plus pourquoi la délégation, l'autre chemin, n'avait pas
+# répondu. Personne ne pouvait savoir quel geste faire.
+_src = drv[drv.index("def _refus_explique"):]
+_src = _src[:_src.index("\n\n\nasync def") if "\n\n\nasync def" in _src else len(_src)]
+_perso = types.ModuleType("mail.google_perso")
+_paquet = types.ModuleType("mail")
+_paquet.google_perso = _perso
+sys.modules["mail"] = _paquet
+sys.modules["mail.google_perso"] = _perso
+_espace = {}
+exec(compile(_src, "drive.py", "exec"), _espace)
+_refus = _espace["_refus_explique"]
+
+_perso.configurable = lambda: True
+_ouvert = _refus("aucun compte de service déposé")
+verifier("OAuth configuré → le refus envoie la personne relier SON compte",
+         "Paramètres > Mon compte Google" in _ouvert and "ne peut RIEN relier" not in _ouvert)
+
+_perso.configurable = lambda: False
+_ferme = _refus("aucun compte de service déposé")
+verifier("OAuth NON configuré → le refus dit que le bouton ne peut rien faire",
+         "ne peut RIEN relier" in _ferme
+         and "GOOGLE_OAUTH_CLIENT_ID" in _ferme
+         and "celui d'un administrateur" in _ferme)
+verifier("le refus dit POURQUOI la délégation n'a pas répondu",
+         "aucun compte de service déposé" in _ferme)
+verifier("le refus propose ce qui marche encore (la mémoire des documents)",
+         "documents déjà" in _ferme and "ne dépendent pas du Drive" in _ferme)
+verifier("aucun secret dans le message — des noms de variables, rien de plus",
+         "client_secret" not in _ferme.lower().replace("google_oauth_client_secret", ""))
 verifier("l'adresse empruntée est lue DANS LA BASE, jamais reçue en paramètre",
          "_courriel_du_compte" in drv
          and "SELECT email FROM users WHERE id = $1::uuid" in drv)
