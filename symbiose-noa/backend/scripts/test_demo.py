@@ -971,7 +971,7 @@ async def principal():
              "MAX_PAGES_PDF" in code2 and "doc.load_page(numero)" in code2
              and "doc.load_page(0)" not in code2)
     verifier("les pages retenues partent TOUTES au modèle de vision",
-             '"attachment_pages"' in src2 and "for page in pages" in src2)
+             '"attachment_pages"' in src2 and "for mime, page in images" in src2)
     verifier("le modèle sait combien de pages il voit, et combien il ne voit pas",
              "pages_ignorees" in src2 and "n'ont PAS été analysées" in src2)
     verifier("une page illisible n'interrompt pas l'analyse des autres",
