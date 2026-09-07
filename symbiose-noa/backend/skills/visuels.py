@@ -319,6 +319,14 @@ def _rendu(resultat: dict, titre: str, *, essai: bool, avant: str = "") -> dict:
     bloc = {"type": "visuel",
             "titre": (titre or ("Essai de visuel" if essai else "Visuel d'aménagement"))[:80],
             "images": images}
+    # LE RÉSULTAT EN GRAND, L'AVANT / APRÈS EN DESSOUS (07/09, relevé de Noa :
+    # « il affiche en grand l'image de départ et, en petit dessous, encore
+    # l'image de départ et le rendu final »). Ce qu'on vient de payer, c'est
+    # le rendu : c'est lui qui se lit en premier. La planche à deux images
+    # reste, plus petite, pour la comparaison. `principale` désigne la clé à
+    # montrer en grand ; l'écran l'ignore quand elle manque.
+    if avant and avant not in cles:
+        bloc["principale"] = cles[0]
     # LE NOM DU MODÈLE NE SORT PAS. Il était rendu ici, donc visible du modèle
     # de conversation, qui l'a recopié dans ses textes (« via nano-banana-pro… »).
     # C'est un détail d'infrastructure : il va dans le journal, pas à l'écran.
@@ -457,9 +465,13 @@ async def modifier_visuel(data: dict, user) -> dict:
                       "modifiés, le reste de la scène est conservé. Cela reste une "
                       "ILLUSTRATION d'intention — ni un plan, ni une garantie de rendu "
                       "après travaux.")
+    # SANS LES CHANGEMENTS EN ANGLAIS (07/09) : `changements` est écrit pour le
+    # moteur d'images, dans sa langue. À l'écran, une personne lisait « with
+    # the two olive trees removed » sous sa propre photo. La demande, elle, est
+    # en français dans le fil ; la prose du rédacteur s'en sert.
     sortie["message_final"] = (
-        "Voici l'avant / après : la même scène, avec " + changements[:160] +
-        ". C'est une illustration d'intention, pas une simulation du chantier réel — "
+        "Voici l'avant / après : la même scène, avec les changements demandés. "
+        "C'est une illustration d'intention, pas une simulation du chantier réel — "
         "dites-moi ce qu'on ajuste.")
     return sortie
 

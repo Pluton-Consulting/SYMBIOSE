@@ -1007,6 +1007,15 @@ async def principal():
              f"n'entre pas dans la planche")
     verifier("chaque image porte sa légende", all(i.get("legende") for i in images),
              images)
+    # 07/09 : LE RENDU EN GRAND, l'avant / après en dessous. Le bloc désigne
+    # l'image principale — celle qu'on vient de payer —, jamais la photo de
+    # départ ; et le compte rendu ne recopie pas le brief anglais.
+    verifier("le bloc désigne le RENDU comme image principale (pas la photo de départ)",
+             bloc.get("principale") and bloc["principale"] != cle_photo
+             and any(i.get("cle") == bloc["principale"] for i in images), bloc.get("principale"))
+    verifier("le compte rendu ne recopie pas le brief anglais du moteur d'images",
+             "ipe wood deck" not in str(r.get("message_final") or "")
+             and "changements demandés" in str(r.get("message_final") or ""))
     verifier("le résultat dit que c'est une illustration, pas une simulation",
              "illustration" in (r.get("message_final") or "").lower())
     decl = visuels.SKILLS["modifier_visuel"]
@@ -1045,8 +1054,11 @@ async def principal():
         "Je prépare la variante.")
     verifier("la carte d'accord MONTRE la photo qui va être retouchée",
              cle_photo in apercu and '"type": "visuel"' in apercu, apercu)
-    verifier("elle dit ce qui change, et ce qui ne change pas",
-             "ipe wood deck" in apercu and "conservé à l'identique" in apercu)
+    # 07/09 : les changements sont écrits EN ANGLAIS pour le moteur d'images ;
+    # ils ne s'affichent plus (Noa : « il ne doit pas afficher le texte de
+    # modification anglais »). Ce qui change est dit par le texte du modèle.
+    verifier("elle ne recopie PAS le brief anglais, et dit ce qui ne change pas",
+             "ipe wood deck" not in apercu and "conservé à l'identique" in apercu)
     apercu_plan = espace_apercu["_apercu_avant_accord"](
         "proposer_plan", {"etapes": ["une", "deux"]}, "")
     verifier("la carte d'accord d'un plan montre ses étapes",
