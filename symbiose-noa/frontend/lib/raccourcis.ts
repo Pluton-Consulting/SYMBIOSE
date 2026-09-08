@@ -7,6 +7,12 @@
 // ajuste, on envoie soi-même. 31/08 : les entrées clients et CA ont été
 // retirées à la demande de Noa.
 export const RACCOURCIS: { libelle: string; prompt: string }[] = [
+  // 08/09 : reprendre la présentation d'un document existant
+  // (`reproduire_document`). Sans entrée au menu, la capacité reste
+  // invisible ; le prompt dit la voie, parce que le geste se joue en deux
+  // temps — voir ce que le document porte, puis remplacer.
+  { libelle: "Reprendre la présentation d'un document",
+    prompt: "Reprends la présentation d'un document du Drive pour en faire un nouveau. Retrouve d'abord le fichier (dis-moi où tu l'as trouvé), montre-moi ce qu'il contient et ce que tu comptes remplacer, puis produis le nouveau document en gardant sa mise en page, son logo et ses styles. Le document à reprendre : " },
   { libelle: "Synthèse des mails (7 jours)",
     prompt: "Fais le point sur tous mes mails des 7 derniers jours : une synthèse message par message, et propose une réponse pour chacun de ceux qui en appellent une." },
   { libelle: "Dossiers en attente",
