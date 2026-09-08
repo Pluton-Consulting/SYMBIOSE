@@ -96,3 +96,35 @@ def niveau_de(chemin: str) -> str:
     # Hors de tout périmètre nommé : ce dossier n'est ouvert à personne par le
     # chat, sa description ne l'est donc pas non plus.
     return "admin_only"
+
+# ── L'inventaire (08/09) : lister un dossier, lire un fichier, avec le compte
+# de la PERSONNE (chacun voit le Drive avec son compte, règle du 01/09) et
+# ses périmètres. Rien n'est déposé : le texte seul revient.
+
+async def fichiers_du_dossier(dossier: str, user) -> tuple[str, list]:
+    """(chemin affiché, fichiers directs du dossier) — chaque fichier porte `ref`
+    (ce qu'il faut à `lire_fichier`), `nom`, `octets`, `type`."""
+    from outils import drive as d
+    from skills.outils import _identite, _perimetres
+
+    identite = _identite(user)
+    perimetres = _perimetres(user)
+    service = await d._service(identite)
+    racines = await d._racines(service)
+    vise = await d._resoudre(service, dossier, racines, partout=d._tout_le_drive(perimetres))
+    if not d._tout_le_drive(perimetres):
+        d._garde_perimetre(vise, perimetres)
+    brut = await d._lister(service, vise)
+    _, fichiers = d._classer(brut.get("entrees") or [])
+    return dossier, [{"nom": f.get("name") or "?", "ref": f, "octets": int(f.get("size") or 0),
+                      "type": str(f.get("mimeType") or "")} for f in fichiers]
+
+
+async def lire_fichier(ref, user) -> str:
+    """Le texte d'un fichier (PDF, Word, Excel, Google Docs…), ou une chaîne vide."""
+    from outils import drive as d
+    from skills.outils import _identite
+
+    service = await d._service(_identite(user))
+    texte = await asyncio.to_thread(d._download_text, service, ref)
+    return str(texte or "")
