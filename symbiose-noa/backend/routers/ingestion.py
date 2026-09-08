@@ -133,6 +133,8 @@ _SYNCS: dict[str, dict] = {}
 # `skills/` et `outils/`.
 CONNECTEURS = {
     "outlook": ("Messagerie Microsoft 365", "ingestion.connectors.outlook"),
+    # LA BOÎTE UNIQUE (08/09) : réglée dans Paramètres → Clés API. Socle.
+    "imap": ("Messagerie (boîte unique, mot de passe d'application)", "ingestion.connectors.imap"),
     "google_drive": ("Google Drive", "ingestion.connectors.google_drive"),
     "extrabat": ("Extrabat", "ingestion.connectors.extrabat"),
     "deytime": ("Deytime", "ingestion.connectors.deytime"),
