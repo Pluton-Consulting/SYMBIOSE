@@ -238,8 +238,8 @@ _corps_identite = ast.dump(_n)
 verifier("l'identité vient de la SESSION (l'objet `user`), jamais du modèle",
          "'data'" not in _corps_identite
          and "'getattr'" in _corps_identite and "'user'" in _corps_identite)
-verifier("les huit gestes Drive portent l'identité",
-         outils.count("identite=_identite(user)") == 8)
+verifier("les neuf gestes Drive portent l'identité (le listage compris, 08/09 soir)",
+         outils.count("identite=_identite(user)") == 9)
 verifier("les périmètres passent en NOMMÉ partout (un ajout ne décale plus rien)",
          "_drive(deposer, dossier, nom, contenu,\n                        perimetres="
          in outils)

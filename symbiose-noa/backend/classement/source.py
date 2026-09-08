@@ -21,7 +21,7 @@ import unicodedata
 logger = logging.getLogger("symbiose.classement")
 
 NOM_STOCKAGE = "Drive de l'entreprise"
-GESTE_LISTER = "drive_apercu"
+GESTE_LISTER = "drive_lister"
 GESTE_CHERCHER = "drive_chercher"
 
 

@@ -95,6 +95,23 @@ async def drive_apercu(data: dict, user) -> dict:
     return garantir_apercu(resultat, f"« {dossier} »" if dossier else "le Drive")
 
 
+async def drive_lister(data: dict, user) -> dict:
+    """Le contenu d'un dossier du Drive, NOMMÉ : fichiers et sous-dossiers.
+
+    Le pendant du `nas_lister` du jumeau (08/09 soir) : l'aperçu compte, ce
+    geste nomme — et le tableau mécanique dit d'enchaîner l'ouverture quand
+    c'est ce que la demande réclame.
+    """
+    from outils.drive import lister
+    from skills.affichage import garantir_listage
+    dossier = (data.get("dossier") or data.get("chemin") or data.get("nom") or "").strip()
+    if not dossier:
+        _echec("Donne le `dossier` (nom ou chemin) à lister.")
+    resultat = await _drive(lister, dossier, perimetres=_perimetres(user),
+                            identite=_identite(user), page=data.get("page") or 1)
+    return garantir_listage(resultat, dossier, ouvreur="drive_ouvrir")
+
+
 async def drive_photos(data: dict, user) -> dict:
     """LES PHOTOS d'un dossier du Drive, rangées au dépôt et prêtes à l'écran.
 
@@ -160,14 +177,15 @@ async def drive_chercher(data: dict, user) -> dict:
         _echec("Donne le `motif` à chercher (nom de client, de chantier, de fichier).")
     resultat = await _drive(chercher, motif, perimetres=_perimetres(user),
                             identite=_identite(user),
-                            page=data.get("page") or 1)
-    return garantir_recherche(resultat, motif)
+                            page=data.get("page") or 1,
+                            genre=data.get("type") or data.get("genre"))
+    return garantir_recherche(resultat, motif, ouvreur="drive_ouvrir")
 
 
 async def drive_ouvrir(data: dict, user) -> dict:
-    """Lit un fichier du Drive depuis son nom."""
+    """Lit un fichier du Drive depuis son nom — ou le `chemin` rendu par un listage."""
     from outils.drive import ouvrir
-    nom = (data.get("nom") or "").strip()
+    nom = (data.get("nom") or data.get("chemin") or data.get("fichier") or "").strip()
     # Un nom encodé à la façon d'une URL (r%C3%A9emploi) redevient lisible :
     # relevé sur le jumeau le 08/09, le modèle encode parfois les accents.
     if "%" in nom:
@@ -296,14 +314,24 @@ SKILLS = {
             # « le partage ».
             "COMPTE et resume un dossier du DRIVE : combien de dossiers, de "
             "fichiers, de quels types. LE DRIVE, LE CLOUD, GOOGLE et LE PARTAGE "
-            "designent la meme chose. A utiliser des qu'on demande un NOMBRE ou "
-            "« ce qu'il y a sur le Drive ». Le resume S'AFFICHE AUTOMATIQUEMENT "
-            "dans le chat : n'en fais jamais un document. `dossier` accepte le "
-            "NOM ou le CHEMIN, sans identifiant ; le nom d'un DRIVE PARTAGE est "
-            "un debut de chemin valide"),
+            "designent la meme chose. Pour un NOMBRE ou « ce qu'il y a sur le "
+            "Drive ». S'AFFICHE AUTOMATIQUEMENT : n'en fais jamais un document. "
+            "Il COMPTE sans nommer les fichiers : pour leurs NOMS, `drive_lister`. "
+            "`dossier` : NOM ou CHEMIN, sans identifiant"),
         optionnels=["dossier"],
         effet="lecture",
         libelle="je regarde ce que contient le dossier"),
+    "drive_lister": Declaration(
+        fonction=drive_lister,
+        description=(
+            "LISTE le contenu d'un dossier du DRIVE : sous-dossiers ET fichiers par "
+            "NOM, avec taille et date — le tableau S'AFFICHE AUTOMATIQUEMENT. LE "
+            "geste pour savoir QUELS fichiers un dossier contient, puis en ouvrir "
+            "un (`drive_ouvrir` avec le `chemin` rendu). `dossier` : NOM ou "
+            "CHEMIN ; `page` pour la suite"),
+        requis=["dossier"], optionnels=["page"],
+        effet="lecture",
+        libelle="je liste le contenu du dossier"),
     "drive_photos": Declaration(
         fonction=drive_photos,
         description=(
@@ -330,21 +358,23 @@ SKILLS = {
     "drive_chercher": Declaration(
         fonction=drive_chercher,
         description=(
-            "CHERCHE dossiers ET fichiers par NOM sur TOUT le Drive, a toutes "
-            "les profondeurs, et rend leurs CHEMINS. A utiliser D'INSTINCT "
-            "quand une information sur un client, un chantier ou un "
-            "fournisseur ne sort ni des fichiers importes ni des documents : "
-            "le classement porte les noms des clients. Le resultat s'affiche "
-            "automatiquement ; propose ensuite d'ouvrir ou d'explorer ce qui "
-            "est trouve. `motif` : le nom cherche ; `page` pour la suite"),
-        requis=["motif"], optionnels=["page"],
+            "CHERCHE dossiers ET fichiers par NOM sur TOUT le Drive, toutes "
+            "profondeurs, avec leurs CHEMINS. D'INSTINCT quand un client, un "
+            "chantier ou un fournisseur ne sort ni des fichiers importes ni des "
+            "documents. S'affiche automatiquement, dossiers ET fichiers sur "
+            "chaque page ; si la demande est d'OUVRIR, enchaine `drive_ouvrir` "
+            "sur un FICHIER trouve. `motif` ; `page` ; `type` : « fichiers » "
+            "ou « dossiers »"),
+        requis=["motif"], optionnels=["page", "type"],
         effet="lecture",
         libelle="je cherche ce nom sur le Drive"),
     "drive_ouvrir": Declaration(
         fonction=drive_ouvrir,
         description=("OUVRE et lit un fichier du Drive depuis son NOM, sans en "
-                     "connaitre l'identifiant. La voie normale pour lire un fichier"),
-        requis=["nom"],
+                     "connaitre l'identifiant, ou depuis le `chemin` rendu par "
+                     "`drive_lister` (le plus sur). La voie normale pour lire un "
+                     "fichier ; le fichier s'affiche avec son apercu"),
+        requis=["nom"], optionnels=["chemin"],
         effet="lecture",
         libelle="j'ouvre le fichier"),
     "drive_lire_lot": Declaration(

@@ -40,7 +40,7 @@ Tu disposes d'une mémoire d'entreprise : fichiers importés (clients, devis, fa
 
 OÙ EST CHAQUE DONNÉE. Quatre sources, quatre gestes. Choisis le bon AVANT de répondre :
 1. CLIENTS, DEVIS, FACTURES, CHIFFRES (combien, liste, total, chiffre d'affaires, tout ce qu'on sait d'un client) : ce sont des FICHIERS IMPORTÉS, lus de façon EXACTE par `liste_clients`, `liste_fournisseurs`, `fiche_client` et `interroger_donnees`. Jamais la recherche documentaire pour cela (elle approxime et ne sait pas compter), jamais le web (il ne connaît pas les clients de l'entreprise).
-2. DOCUMENTS (contrats, comptes rendus, plans, pièces d'un dossier, courrier archivé) : `rechercher_documents` retrouve un texte par ressemblance. Pour parcourir ou ouvrir les fichiers eux-mêmes : les gestes du Drive (`drive_arborescence`, `drive_chercher`, `drive_lire_lot`, `drive_ouvrir`, `drive_apercu`). `ou_chercher` dit D'ABORD dans quel dossier c'est rangé (carte du classement en mémoire, instantané) : appelle-le avant de parcourir l'arborescence.
+2. DOCUMENTS (contrats, comptes rendus, plans, pièces d'un dossier, courrier archivé) : `rechercher_documents` retrouve un texte par ressemblance. Pour parcourir ou ouvrir les fichiers eux-mêmes : les gestes du Drive (`drive_arborescence`, `drive_chercher`, `drive_lister` — les FICHIERS d'un dossier par nom —, `drive_lire_lot`, `drive_ouvrir`, `drive_apercu`). « Ouvre un devis / un au hasard » : cherche ou liste, puis OUVRE un fichier sans demander lequel. `ou_chercher` dit D'ABORD dans quel dossier c'est rangé (carte du classement en mémoire, instantané) : appelle-le avant de parcourir l'arborescence.
 3. MAILS : `boites_mail` pour LISTER les boîtes et adresses mail accessibles ; `check_mails` pour faire le point (résumés, réponses à proposer, avec le COMPTE de la période) ; `lire_mails` pour consulter une boîte ou compter ; `lire_mail` pour OUVRIR un message en entier (une liste ne rend qu'un extrait de chaque message — pour répondre, résumer ou citer un mail, ouvre-le d'abord ; `pieces: true` récupère et LIT ses pièces jointes) ; `lire_piece_jointe` pour UNE pièce jointe (PDF, image, plan DWG/DXF : téléchargeable, aperçu, contenu lu) ; `redaction_email` pour écrire ; `preparer_envois` pour un MÊME mail à PLUSIEURS destinataires (10, 100, sans limite : une carte par destinataire, gabarit à variables {nom} {email} ou corps sur mesure par destinataire, pages de 40 à enchaîner — rien ne part sans validation). Ces gestes lisent les messages RÉELS, en direct : la recherche documentaire ne voit que ce qui a été ingéré. Le détail est borné à 25 messages, le total ne l'est pas : pour « combien », cite le total. Pour analyser tout le courrier de l'entreprise (process, activités), la seule voie est `lancer_enrichissement`.
 4. LE WEB (`chercher_web`, `ouvrir_page`, `naviguer`) : UNIQUEMENT pour une information PUBLIQUE qui n'existe pas dans l'entreprise (prix public, norme, réglementation, coordonnées d'un fournisseur, contenu d'un site), ou quand on te le demande. Ne réponds jamais que tu n'as pas accès à internet : c'est faux. Mais ne l'utilise JAMAIS pour les clients, devis, factures, chantiers ou mails : il ne peut rendre que du bruit. Ce qui en vient est EXTERNE : cite les adresses, ne le présente jamais comme une donnée interne.
 La mémoire n'est PAS consultée d'avance : rien ne se passe si tu n'émets pas l'action. Pour une salutation, un remerciement ou une conversation courante, réponds simplement, SANS action et SANS parler de la mémoire d'entreprise. Dès qu'on te demande de FABRIQUER un fichier ou de TOUCHER à un système (créer un document, lire ou déposer un fichier, lire des mails, produire un visuel), il FAUT émettre les actions : aucune rédaction directe ne produit un document téléchargeable.
@@ -128,7 +128,11 @@ SKILLS_SANS_PLAFOND = frozenset({"ajouter_document"})
 # que l'un d'eux a rendu un contenu, le but est atteint : le tour passe à la
 # rédaction au lieu de repartir lister (08/09, 11:09 : neuf listages et une
 # réouverture APRÈS le fichier déjà ouvert, deux minutes pour rien).
-SKILLS_LECTURE_FICHIER = frozenset({"nas_ouvrir", "nas_lire", "drive_ouvrir", "drive_lire"})
+# 08/09 soir : « ouvre un devis… sur le Drive ou envoyé par mail, peu importe »
+# — un devis reçu en pièce jointe s'ouvre par `lire_piece_jointe` : c'est le
+# même but atteint qu'un fichier du classement.
+SKILLS_LECTURE_FICHIER = frozenset({"nas_ouvrir", "nas_lire", "drive_ouvrir", "drive_lire",
+                                    "lire_piece_jointe"})
 
 # LA PAGINATION N'EST PAS DE L'ACHARNEMENT (01/09, règle de Noa : une recherche
 # ne se bloque jamais en quantité). « Les 60 suivants », « page 4 », « avant » :
@@ -302,7 +306,7 @@ def _est_jeton_tableau(valeur) -> bool:
     return isinstance(valeur, str) and valeur.strip().lower() in JETONS_TABLEAU
 
 
-RESULTATS_GENEREUX = {"drive_chercher", "nas_chercher", "drive_apercu",
+RESULTATS_GENEREUX = {"drive_chercher", "nas_chercher", "drive_apercu", "drive_lister",
                       # 08/09 : les cartes de relance et la liste des factures suivies.
                       "relancer_factures", "factures_suivies", "inventaire_dossier",
                       "courrier_entrant",

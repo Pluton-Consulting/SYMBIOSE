@@ -969,6 +969,31 @@ def _rendre_schema(racines: list[dict], profondeur_max: int) -> tuple[str, int]:
     return "", 0
 
 
+def _compter_arbre(racines: list[dict]) -> tuple[int, int]:
+    """(sous-dossiers, fichiers) d'une forêt assemblée — les racines exclues.
+
+    08/09 soir : l'arborescence du dossier « Devis » d'un client affichait
+    « 12 050 dossiers · 13 411 fichiers » — les comptes de TOUT le Drive,
+    recopiés tels quels sous un sous-arbre de deux fichiers. Un nœud déjà
+    détaillé plus haut (`cycle`) n'est pas recompté.
+    """
+    dossiers = fichiers = 0
+
+    def _parcourir(n: dict, racine: bool) -> None:
+        nonlocal dossiers, fichiers
+        if n.get("cycle"):
+            return
+        if not racine:
+            dossiers += 1
+        fichiers += int(n.get("fichiers") or 0)
+        for e in n.get("enfants") or []:
+            _parcourir(e, False)
+
+    for r in racines:
+        _parcourir(r, True)
+    return dossiers, fichiers
+
+
 def _assembler(racines: list[dict], catalogue: dict, comptes: dict) -> int:
     """Monte la forêt depuis le balayage global. Rend le nombre de dossiers.
 
@@ -1084,10 +1109,14 @@ async def arborescence(dossier: Optional[str] = None, profondeur: int = 0,
         schema, rendu = _rendre_schema(racines, profondeur)
         complet = not dossiers_partiels and total <= MAX_DOSSIERS_ARBRE
         total_fichiers = sum(c[0] for c in comptes.values())
+        dossiers_total = len(catalogue)
+        if dossier:
+            # UN SOUS-ARBRE PORTE SES PROPRES COMPTES, pas ceux du Drive entier.
+            dossiers_total, total_fichiers = _compter_arbre(racines)
 
         sortie = {
             "schema": schema,
-            "dossiers_total": len(catalogue),
+            "dossiers_total": dossiers_total,
             "fichiers_total": total_fichiers,
             "profondeur_affichee": rendu,
             "complet": complet,
@@ -1111,6 +1140,12 @@ async def arborescence(dossier: Optional[str] = None, profondeur: int = 0,
             sortie["note"] = ("Arborescence rendue, mais " + " ; ".join(morceaux)
                               + ". Dis-le tel quel : ne présente pas ces "
                                 "nombres comme exhaustifs.")
+        if dossier:
+            # L'arbre ne NOMME pas les fichiers : « ouvre-en un au hasard » y
+            # tournait en rond (08/09 soir). Le geste qui les nomme est dit.
+            sortie["note"] = ((sortie.get("note") or "") + " L'arbre ne nomme pas les "
+                              "FICHIERS : pour leurs noms, tailles et dates, et pour en "
+                              "ouvrir un, appelle `drive_lister` sur ce dossier.").strip()
         return sortie
 
     # ── Périmètres déclarés : descente par niveaux, sans balayage global ──
@@ -1196,6 +1231,65 @@ _EXPORT_NATIF = {
 }
 
 
+LISTAGE_PAR_PAGE = 200  # entrées d'un dossier rendues par appel
+
+
+async def lister(dossier: str, perimetres: Optional[list] = None, identite=None,
+                 page: int = 1) -> dict:
+    """Le CONTENU d'un dossier, NOMMÉ : sous-dossiers et fichiers, taille et date.
+
+    08/09 soir : « il y a quoi dans le dossier ? » → « 1 fichier, pdf ×1 » ;
+    « comment il s'appelle ce pdf ? » → l'assistant ne le savait pas. Aucun
+    geste du Drive ne nommait les fichiers d'un dossier : l'aperçu COMPTE,
+    l'arborescence ne descend que les dossiers. « Ouvre-en un au hasard »
+    finissait donc sur une arborescence sans rien à ouvrir. C'est le pendant
+    du `nas_lister` du jumeau, même forme (`entrees` : nom, chemin, dossier,
+    octets), même tableau mécanique (`garantir_listage`), même consigne
+    d'enchaîner l'ouverture. Paginé (200 par page), jamais coupé.
+    """
+    dossier = (dossier or "").strip().strip("/")
+    if not dossier:
+        raise DriveRefuse("Donne le nom ou le chemin du dossier à lister.")
+    perimetres = perimetres or []
+    if not perimetres:
+        raise DriveRefuse(
+            "Aucun dossier du Drive n'est ouvert à l'assistant pour ce rôle.")
+    service = await _service(identite)
+    racines = ([d for d, _ in perimetres if d]
+               or (await _racines(service) if _tout_le_drive(perimetres) else []))
+    vise = await _resoudre(service, dossier, racines, partout=_tout_le_drive(perimetres))
+    _garde_perimetre(vise, perimetres)
+    brut = await _lister(service, vise)
+    dossiers, fichiers = _classer(brut.get("entrees") or [])
+
+    def _tri(e):
+        return _nu(e.get("name") or "")
+
+    entrees = [{"nom": e.get("name") or "?", "chemin": f"{dossier}/{e.get('name') or '?'}",
+                "dossier": True}
+               for e in sorted(dossiers, key=_tri)]
+    entrees += [{"nom": f.get("name") or "?", "chemin": f"{dossier}/{f.get('name') or '?'}",
+                 "dossier": False, "octets": int(f.get("size") or 0),
+                 "type": str(f.get("mimeType") or ""),
+                 "modifie_le": f.get("modifiedTime")}
+                for f in sorted(fichiers, key=_tri)]
+    page = max(1, int(page or 1))
+    pages = max(1, -(-len(entrees) // LISTAGE_PAR_PAGE))
+    debut = (page - 1) * LISTAGE_PAR_PAGE
+    sortie: dict = {"dossier": dossier, "chemin": dossier, "id": vise,
+                    "dossiers": len(dossiers), "fichiers": len(fichiers),
+                    "page": page, "pages": pages,
+                    "entrees": entrees[debut:debut + LISTAGE_PAR_PAGE],
+                    "tronque": bool(brut.get("tronque"))}
+    if page < pages:
+        sortie["pour_continuer"] = (f"{len(entrees)} entrées au total : rappelle avec "
+                                    f"page={page + 1} pour la suite.")
+    if brut.get("tronque"):
+        sortie["note"] = (f"Le dossier dépasse {MAX_ENTREES} entrées : la liste est "
+                          "partielle, ne présente pas ces comptes comme exacts.")
+    return sortie
+
+
 async def _resoudre_fichier(nom: str, perimetres: Optional[list] = None,
                             identite=None):
     """(fichier, service, autres noms) — LE fichier que ce nom désigne.
@@ -1214,6 +1308,41 @@ async def _resoudre_fichier(nom: str, perimetres: Optional[list] = None,
             "Aucun dossier du Drive n'est ouvert à l'assistant pour ce rôle.")
 
     service = await _service(identite)
+
+    # UN CHEMIN « dossier/sous-dossier/fichier » S'OUVRE À COUP SÛR (08/09 soir).
+    # `drive_lister` rend des chemins ; les rejouer ici évite qu'un nom
+    # commun (« Devis.pdf », « Facture.pdf ») ouvre celui d'un autre client.
+    # Le dossier se résout comme partout (`_resoudre`), le nom se cherche
+    # DEDANS, exact puis approché ; si le chemin ne se résout pas, le nom
+    # seul reprend la voie ordinaire.
+    if "/" in nom.strip("/"):
+        dossier_part, nom_seul = nom.strip("/").rsplit("/", 1)
+        try:
+            racines = ([d for d, _ in perimetres if d]
+                       or (await _racines(service) if _tout_le_drive(perimetres) else []))
+            vise = await _resoudre(service, dossier_part, racines,
+                                   partout=_tout_le_drive(perimetres))
+            _garde_perimetre(vise, perimetres)
+            ech = nom_seul.replace("\\", "\\\\").replace("'", "\\'")
+
+            def _dedans(requete):
+                return service.files().list(
+                    q=requete, spaces="drive",
+                    fields="files(id,name,mimeType,size,modifiedTime)",
+                    corpora="allDrives", includeItemsFromAllDrives=True,
+                    supportsAllDrives=True, pageSize=10,
+                ).execute()
+            for cond in (f"name = '{ech}'", f"name contains '{ech}'"):
+                dedans = (await asyncio.to_thread(
+                    _dedans, f"'{vise}' in parents and trashed=false and {cond}")).get("files", [])
+                dedans = [f for f in dedans if f.get("mimeType") != _MIME_DOSSIER]
+                if dedans:
+                    return dedans[0], service, dedans[1:5]
+        except Exception as e:  # noqa: BLE001 — le nom seul reprend la main
+            logger.info("Drive : le chemin « %s » ne se résout pas (%s), recherche par le nom seul",
+                        nom, str(e)[:120])
+        nom = nom_seul
+
     echappe = nom.replace("\\", "\\\\").replace("'", "\\'")
     trouves = []
 
@@ -1449,8 +1578,39 @@ async def lire_lot(motif: str, dossier: Optional[str] = None,
 MAX_TROUVAILLES = 40               # dossiers ou fichiers rendus par recherche
 
 
+def _paginer_mixte(dossiers: list, fichiers: list, taille: int, page: int) -> tuple[list, int]:
+    """(entrées de la page, nombre de pages) — dossiers ET fichiers sur CHAQUE page.
+
+    08/09 soir : « devis » sur le Drive rend 993 noms, dont des centaines de
+    dossiers appelés « Devis » ; triés dossiers d'abord, ils remplissaient
+    vingt-cinq pages avant le premier FICHIER. « Ouvre un devis » n'avait
+    rien à ouvrir. Chaque page prend jusqu'à la moitié de chaque sorte ; si
+    une sorte manque, l'autre remplit — 95 dossiers font toujours 3 pages.
+    """
+    taille = max(2, int(taille or 2))
+    moitie = taille // 2
+    pages: list[list] = []
+    i = j = 0
+    while i < len(dossiers) or j < len(fichiers):
+        d = dossiers[i:i + moitie]
+        f = fichiers[j:j + moitie]
+        reste = taille - len(d) - len(f)
+        if reste > 0:
+            if len(d) < moitie:
+                f = fichiers[j:j + len(f) + reste]
+            elif len(f) < moitie:
+                d = dossiers[i:i + len(d) + reste]
+        i += len(d)
+        j += len(f)
+        pages.append(d + f)
+    if not pages:
+        return [], 1
+    page = max(1, int(page or 1))
+    return (pages[page - 1] if page <= len(pages) else []), len(pages)
+
+
 async def chercher(motif: str, perimetres: Optional[list] = None,
-                   page: int = 1, identite=None) -> dict:
+                   page: int = 1, identite=None, genre: Optional[str] = None) -> dict:
     """Dossiers ET fichiers dont le NOM porte le motif, à TOUTES les profondeurs.
 
     Demande de Noa du 01/09 : quand une information sur un client n'est pas en
@@ -1598,19 +1758,31 @@ async def chercher(motif: str, perimetres: Optional[list] = None,
     # L'exact d'abord, puis le chemin court : le dossier « Davy SAINT LAURENT »
     # doit précéder « Anciens clients/2019/SAINT LAURENT ancien devis ».
     trouves.sort(key=lambda t: (0 if _nu(t.get("nom")) == cible else 1,
-                                not t.get("dossier"),
                                 len(t.get("chemin") or ""),
                                 _nu(t.get("nom"))))
+    # DOSSIERS ET FICHIERS SE PARTAGENT CHAQUE PAGE (08/09 soir) : triés
+    # dossiers d'abord, « devis » cachait tous les fichiers derrière des
+    # centaines de dossiers « Devis ». `genre` (« fichiers » / « dossiers »)
+    # ne garde qu'une sorte quand la demande le dit.
+    dossiers = [t for t in trouves if t.get("dossier")]
+    fichiers = [t for t in trouves if not t.get("dossier")]
+    genre = (genre or "").strip().lower()
+    if genre.startswith("fichier"):
+        dossiers = []
+    elif genre.startswith("dossier"):
+        fichiers = []
     # PAGINÉ, JAMAIS COUPÉ (01/09, règle de Noa : une recherche ne se bloque
     # pas en quantité) : la page demandée est rendue, le compte total est dit,
     # et la suite s'obtient en rappelant avec `page` suivante.
-    nombre = len(trouves)
+    nombre = len(dossiers) + len(fichiers)
     page = max(1, int(page or 1))
-    pages = max(1, -(-nombre // MAX_TROUVAILLES))
-    debut = (page - 1) * MAX_TROUVAILLES
+    resultats, pages = _paginer_mixte(dossiers, fichiers, MAX_TROUVAILLES, page)
     sortie: dict = {"motif": motif, "nombre": nombre, "page": page,
                     "pages": pages,
-                    "resultats": trouves[debut:debut + MAX_TROUVAILLES]}
+                    "dossiers_total": len(dossiers), "fichiers_total": len(fichiers),
+                    "resultats": resultats}
+    if genre:
+        sortie["type"] = "fichiers" if genre.startswith("fichier") else "dossiers"
     if page < pages:
         sortie["pour_continuer"] = (f"{nombre} correspondances au total : "
                                     f"rappelle avec page={page + 1} pour la suite.")
