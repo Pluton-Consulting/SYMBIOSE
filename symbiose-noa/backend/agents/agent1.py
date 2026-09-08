@@ -2812,10 +2812,34 @@ def _consigne_plan(state: AgentState) -> str:
             "poursuis les suivantes.")
 
 
+def _retouche_disponible() -> bool:
+    """Le skill de retouche d'image est-il livré ici ?
+
+    La consigne ci-dessous ordonnait d'appeler `modifier_visuel` des deux
+    côtés, alors que ce skill n'existe que chez le client qui a l'offre
+    visuelle : ailleurs, le modèle promettait une retouche qu'aucun geste ne
+    pouvait faire (08/09). Le registre fait foi, pas un drapeau.
+    """
+    try:
+        from skills.registre import fonction
+        return fonction("modifier_visuel") is not None
+    except Exception:  # noqa: BLE001 — registre indisponible : on n'en parle pas
+        return False
+
+
 def _consigne_images(state: AgentState) -> str:
     cles = cles_images_du_fil(state)
     if not cles:
         return ""
+    if not _retouche_disponible():
+        # Sans moteur d'images : les références servent à REMONTRER une photo
+        # (bloc `visuel`) ou à la joindre, jamais à la modifier — et la
+        # consigne ne doit pas laisser croire le contraire.
+        return ("\n\nIMAGES DE CETTE CONVERSATION (références, la plus récente en dernier) : "
+                + ", ".join(cles) + ". Sans autre précision, « cette image » désigne la "
+                "dernière. Pour la remontrer, écris un bloc ```ui `visuel` avec cette "
+                "référence recopiée telle quelle. Aucune retouche ni génération d'image "
+                "n'est possible ici : ne le propose jamais.")
     return ("\n\nIMAGES DE CETTE CONVERSATION (références, la plus récente en dernier) : "
             + ", ".join(cles) + ". Pour en RETOUCHER une (changer un détail, une couleur, "
             "ajouter ou retirer un élément en gardant tout le reste identique), appelle "
