@@ -168,6 +168,13 @@ async def drive_ouvrir(data: dict, user) -> dict:
     """Lit un fichier du Drive depuis son nom."""
     from outils.drive import ouvrir
     nom = (data.get("nom") or "").strip()
+    # Un nom encodé à la façon d'une URL (r%C3%A9emploi) redevient lisible :
+    # relevé sur le jumeau le 08/09, le modèle encode parfois les accents.
+    if "%" in nom:
+        import re as _re
+        from urllib.parse import unquote
+        if _re.search(r"%[0-9A-Fa-f]{2}", nom):
+            nom = unquote(nom)
     if not nom:
         _echec("Donne le `nom` du fichier à ouvrir.")
     return await _drive(ouvrir, nom, perimetres=_perimetres(user),
