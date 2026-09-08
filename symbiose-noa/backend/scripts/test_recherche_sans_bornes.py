@@ -119,12 +119,17 @@ if not nas_cote:
     async def _balaye(service):
         return dict(CATALOGUE), False
 
+    async def _catalogue_double(service, identite=None):
+        d, p = await _balaye(service)
+        return d, p, {}, False
+
     async def _drives(service):
         return [{"id": "dr1", "name": "Drive"}]
 
     espace_d = {
         "DriveRefuse": _Refus, "logger": logging.getLogger("banc"),
         "_service": _srv, "_balayer_dossiers": _balaye, "_drives_nommes": _drives,
+        "_catalogue": _catalogue_double,
         "_tout_le_drive": lambda p: True, "_enfants_par_lots": None,
         "Optional": __import__("typing").Optional,
         "_MIME_DOSSIER": "application/vnd.google-apps.folder",

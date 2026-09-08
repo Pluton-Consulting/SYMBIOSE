@@ -765,6 +765,64 @@ async def _balayer_dossiers(service) -> tuple[dict, bool]:
     return dossiers, bool(jeton)
 
 
+# LE CATALOGUE DU DRIVE EST GARDÉ (08/09 soir). Export du 08/09 : « liste-moi
+# les dossiers » → 60,3 s, « ouvre le premier PDF » → un nouveau balayage ;
+# chaque geste repayait les trente pages de mille dossiers. Le balayage est
+# désormais gardé UNE HEURE par identité (même clé que le client Drive : le
+# Drive de la première personne ne sert jamais la suivante), servi périmé
+# pendant sa reconstruction de fond, et chauffé au démarrage par la carte du
+# classement (`classement.carte`) pour le compte de service.
+CATALOGUE_DRIVE_DUREE_S = 3600
+_CATALOGUES: dict = {}                  # clé -> {"dossiers", "partiel", "comptes", "fichiers_partiels", "construit_le", "en_cours"}
+
+
+def _copie_catalogue(c: dict) -> tuple[dict, bool, dict, bool]:
+    # Les appelants MODIFIENT les parents (rattachement des orphelins) : chaque
+    # entrée est recopiée pour que le catalogue gardé reste intact.
+    return ({k: dict(v) for k, v in c["dossiers"].items()}, bool(c["partiel"]),
+            c["comptes"], bool(c["fichiers_partiels"]))
+
+
+async def _construire_catalogue(service, cle: str) -> None:
+    entree = _CATALOGUES.setdefault(cle, {"dossiers": {}, "partiel": True, "comptes": {},
+                                          "fichiers_partiels": True, "construit_le": 0.0,
+                                          "en_cours": False})
+    if entree["en_cours"]:
+        return
+    entree["en_cours"] = True
+    try:
+        import time as _t
+        debut = _t.monotonic()
+        dossiers, partiel = await _balayer_dossiers(service)
+        comptes, fichiers_partiels = await _compter_fichiers(service)
+        entree.update({"dossiers": dossiers, "partiel": partiel, "comptes": comptes,
+                       "fichiers_partiels": fichiers_partiels, "construit_le": _t.monotonic()})
+        logger.info("Drive : catalogue (%s) — %d dossiers en %.0f s", cle, len(dossiers),
+                    _t.monotonic() - debut)
+    finally:
+        entree["en_cours"] = False
+
+
+async def _catalogue(service, identite=None) -> tuple[dict, bool, dict, bool]:
+    """(dossiers, partiel, comptes, fichiers_partiels) du Drive de cette identité,
+    depuis le cache quand il est frais ; un cache périmé est servi pendant que
+    la reconstruction part en fond ; sans cache, on construit (une fois par heure)."""
+    import time as _t
+    cle = _cle_client(identite)
+    c = _CATALOGUES.get(cle)
+    if c and c["construit_le"] and _t.monotonic() - c["construit_le"] < CATALOGUE_DRIVE_DUREE_S:
+        return _copie_catalogue(c)
+    if c and c["construit_le"]:
+        if not c["en_cours"]:
+            try:
+                asyncio.get_running_loop().create_task(_construire_catalogue(service, cle))
+            except RuntimeError:
+                pass
+        return _copie_catalogue(c)
+    await _construire_catalogue(service, cle)
+    return _copie_catalogue(_CATALOGUES[cle])
+
+
 async def _compter_fichiers(service) -> tuple[dict, bool]:
     """Nombre de fichiers et octets PAR dossier parent, en quelques requêtes.
 
@@ -781,19 +839,33 @@ async def _compter_fichiers(service) -> tuple[dict, bool]:
                 q=f"mimeType != '{_MIME_DOSSIER}' and trashed = false",
                 spaces="drive", corpora="allDrives",
                 includeItemsFromAllDrives=True, supportsAllDrives=True,
-                fields="nextPageToken, files(parents,size)",
+                fields="nextPageToken, files(parents,size,name,mimeType)",
                 pageSize=1000, pageToken=jeton,
             ).execute()
         resp = await asyncio.to_thread(_appel)
         for f in resp.get("files", []):
+            ext = _type_de_fichier(f.get("name") or "", f.get("mimeType") or "")
             for p in (f.get("parents") or []):
-                c = comptes.setdefault(p, [0, 0])
+                c = comptes.setdefault(p, [0, 0, {}])
                 c[0] += 1
                 c[1] += int(f.get("size") or 0)
+                c[2][ext] = c[2].get(ext, 0) + 1
         jeton = resp.get("nextPageToken")
         if not jeton:
             break
     return comptes, bool(jeton)
+
+
+def _type_de_fichier(nom: str, mime: str) -> str:
+    """« pdf », « docx », « gdoc »… : le type qu'on dira dans la carte du classement."""
+    if mime.startswith("application/vnd.google-apps."):
+        return {"document": "gdoc", "spreadsheet": "gsheet", "presentation": "gslides",
+                "shortcut": "raccourci"}.get(mime.rsplit(".", 1)[-1], "google")
+    if "." in nom:
+        ext = nom.rsplit(".", 1)[-1].lower()
+        if 0 < len(ext) <= 6:
+            return ext
+    return "sans extension"
 
 
 async def _enfants_par_lots(service, parents: list[str]) -> dict:
@@ -967,8 +1039,7 @@ async def arborescence(dossier: Optional[str] = None, profondeur: int = 0,
     profondeur = max(1, profondeur)
 
     if _tout_le_drive(perimetres):
-        catalogue, dossiers_partiels = await _balayer_dossiers(service)
-        comptes, fichiers_partiels = await _compter_fichiers(service)
+        catalogue, dossiers_partiels, comptes, fichiers_partiels = await _catalogue(service, identite)
 
         # Les racines : Mon Drive (id réel, pas l'alias) et chaque Drive partagé.
         def _racine_reelle():
@@ -1421,7 +1492,7 @@ async def chercher(motif: str, perimetres: Optional[list] = None,
     partiel = False
 
     if _tout_le_drive(perimetres):
-        catalogue, partiel = await _balayer_dossiers(service)
+        catalogue, partiel, _comptes, _fp = await _catalogue(service, identite)
         drives = {d["id"]: d.get("name") for d in await _drives_nommes(service)}
 
         def _chemin(did: Optional[str]) -> str:
