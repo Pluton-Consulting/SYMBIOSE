@@ -171,7 +171,7 @@ async def drive_ouvrir(data: dict, user) -> dict:
     if not nom:
         _echec("Donne le `nom` du fichier à ouvrir.")
     return await _drive(ouvrir, nom, perimetres=_perimetres(user),
-                        identite=_identite(user))
+                        identite=_identite(user), proprietaire=_proprietaire(user))
 
 
 async def drive_lire_lot(data: dict, user) -> dict:

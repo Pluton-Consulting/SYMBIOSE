@@ -1213,6 +1213,12 @@ async def octets(nom: str, perimetres: Optional[list] = None, identite=None) -> 
             f"« {vrai_nom} » pèse trop lourd pour un message. Envoie plutôt "
             "le lien de partage.")
 
+    return await _binaire(fichier, service, vrai_nom, mime)
+
+
+async def _binaire(fichier: dict, service, vrai_nom: str, mime: str) -> tuple:
+    """(octets, nom, mime) d'un fichier résolu — partagé par `octets()` (joindre
+    à un mail) et `ouvrir()` (afficher dans le chat, 08/09)."""
     export = _EXPORT_NATIF.get(mime)
     if export:
         # Un Google Doc n'est pas un fichier : il s'exporte. Sans ce chemin,
@@ -1239,7 +1245,28 @@ async def octets(nom: str, perimetres: Optional[list] = None, identite=None) -> 
     return binaire, vrai_nom, mime or "application/octet-stream"
 
 
-async def ouvrir(nom: str, perimetres: Optional[list] = None, identite=None) -> dict:
+async def _deposer_pour(fichier: dict, service, proprietaire: str | None, resultat: dict) -> dict:
+    """Le fichier ouvert s'AFFICHE (carte, aperçu, téléchargement) pour la
+    personne qui l'a demandé. Relevé sur le projet jumeau le 08/09 : ouvrir
+    un fichier du serveur ne montrait rien, seul le texte extrait partait au
+    modèle. Un échec de dépôt (trop lourd, élément Google non exportable) ne
+    fait pas tomber la lecture."""
+    if not proprietaire:
+        return resultat
+    try:
+        if int(fichier.get("size") or 0) > MAX_OCTETS_PIECE:
+            return resultat
+        binaire, vrai_nom, mime = await _binaire(
+            fichier, service, fichier.get("name") or "fichier", fichier.get("mimeType") or "")
+        from skills.affichage import garantir_fichier_lu
+        return garantir_fichier_lu(resultat, vrai_nom, binaire, proprietaire, mime)
+    except Exception as e:  # noqa: BLE001
+        logger.info("Dépôt du fichier ouvert impossible : %s", str(e)[:120])
+        return resultat
+
+
+async def ouvrir(nom: str, perimetres: Optional[list] = None, identite=None,
+                 proprietaire: str | None = None) -> dict:
     """Lit un fichier depuis son NOM, sans en connaître l'identifiant.
 
     La voie normale pour lire un fichier : personne ne connaît par cœur un
@@ -1249,18 +1276,19 @@ async def ouvrir(nom: str, perimetres: Optional[list] = None, identite=None) -> 
     from ingestion.connectors.google_drive import _download_text
     texte = await asyncio.to_thread(_download_text, service, fichier)
     if texte is None:
-        return {"nom": fichier.get("name"), "id": fichier["id"],
+        return await _deposer_pour(fichier, service, proprietaire, {
+                "nom": fichier.get("name"), "id": fichier["id"],
                 "type": fichier.get("mimeType"),
                 "note": ("Ce format ne se lit pas ici (image, docx, tableur "
                          "propriétaire). Le fichier existe, son contenu n'a pas "
-                         "pu être extrait.")}
-    return {
+                         "pu être extrait.")})
+    return await _deposer_pour(fichier, service, proprietaire, {
         "nom": fichier.get("name"), "id": fichier["id"],
         "modifie_le": fichier.get("modifiedTime"),
         "contenu": texte[:20000],
         "tronque": len(texte) > 20000,
         "autres_correspondances": [f.get("name") for f in autres] or None,
-    }
+    })
 
 
 async def lire_lot(motif: str, dossier: Optional[str] = None,

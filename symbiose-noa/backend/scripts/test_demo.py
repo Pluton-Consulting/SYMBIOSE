@@ -1027,8 +1027,11 @@ async def principal():
     # jardin, au moment même où l'utilisateur montre le sien.
     espace5 = {"AgentState": dict}
     extraire("agents/agent1.py",
-             {"cles_images_du_fil", "_CLE_IMAGE_RE", "_re_images", "_consigne_images"},
+             {"cles_images_du_fil", "_CLE_IMAGE_RE", "_re_images", "_consigne_images",
+              "_retouche_disponible"},
              espace5)
+    # L'offre visuelle EXISTE ici : le registre doublé du banc ne la connaît pas.
+    espace5["_retouche_disponible"] = lambda: True
     etat_photo = {"attachment_visuel_cle": cle_photo, "messages": [], "tool_results": []}
     verifier("la photo tout juste envoyée est une image connue du fil",
              espace5["cles_images_du_fil"](etat_photo) == [cle_photo],
