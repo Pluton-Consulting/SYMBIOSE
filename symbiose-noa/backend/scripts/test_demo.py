@@ -301,6 +301,8 @@ _module("fastapi", HTTPException=HTTPException,
                                      HTTP_422_UNPROCESSABLE_ENTITY=422))
 _module("database.connection", get_db=lambda: FauxContexte())
 _module("security.acces", niveaux_visibles=lambda role: {"all", "direction", "public"})
+# 08/09 : la colonne « Accès au mail » — tout le monde l'a dans ce jeu d'essai.
+_module("security.rbac", has_permission=lambda role, feature: True)
 _module("security.anonymizer",
         anonymizer=types.SimpleNamespace(anonymize=lambda t: (t, {}),
                                          rehydrate=lambda t, c: t))
