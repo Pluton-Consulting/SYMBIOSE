@@ -140,8 +140,36 @@ def ouverts(proprietaire: str) -> list[dict]:
     return sortie
 
 
+# CE QUI COMPTE COMME PRODUIT. Une fiche sans origine vient de `ouvrir` (le
+# modèle a rédigé le document) ; « trame » et « reproduction » sont fabriqués
+# à partir d'un modèle, pour la personne. Tout le reste est REÇU (pièce jointe
+# d'un mail, « piece_jointe ») ou LU sur le serveur de fichiers (« serveur »,
+# 08/09) : rangé à l'atelier pour être téléchargeable et prévisualisable, il
+# n'a PAS été rédigé — et le compter parmi les documents produits mène le
+# modèle à le présenter comme un livrable. Relevé le 09/09 : un PDF de paie
+# (« DSN_082026.pdf ») ouvert la veille sur le Drive pendant un essai était
+# rendu « dans le dossier » du client à CHAQUE conversation, avec les vrais
+# livrables, parce que la liste des documents terminés le portait.
+ORIGINES_PRODUITES = frozenset({"", "trame", "reproduction"})
+# Le DÉBUT réel d'un document, glissé dans sa fiche pour que le modèle décrive
+# ce qu'il contient au lieu de le deviner d'après le titre.
+LONGUEUR_CONTENU = 240
+
+
+def produit(fiche: dict) -> bool:
+    """Ce document a-t-il été RÉDIGÉ ici (et non reçu d'un mail ou lu sur le serveur) ?"""
+    return str((fiche or {}).get("origine") or "") in ORIGINES_PRODUITES
+
+
 def termines(proprietaire: str) -> list[dict]:
     """Les documents FINIS de cette personne — encore téléchargeables.
+
+    PRODUITS seulement (`produit`) : un fichier reçu ou lu ailleurs reste
+    téléchargeable par son jeton, mais il ne figure pas dans la liste que le
+    modèle lit comme « tes documents ». Chaque entrée porte `contenu`, le
+    début réel du document (09/09 : « l'inventaire Excel reprend le détail
+    chiffré des fournitures » — faux, c'était la liste des fichiers d'un
+    dossier ; le modèle n'avait que le titre pour en parler).
 
     UN DOCUMENT TERMINÉ NE DOIT PAS DISPARAÎTRE DE LA VUE. Relevé en
     production (projet jumeau) : « test 2 » venait d'être finalisé (38 Ko,
@@ -163,14 +191,18 @@ def termines(proprietaire: str) -> list[dict]:
         f = _lire_fiche(jeton)
         if not f or f.get("proprietaire") != proprietaire or not f.get("fini"):
             continue
-        if f.get("origine") == "piece_jointe":
-            continue          # reçu, pas produit
+        if not produit(f):
+            continue          # reçu ou lu sur le serveur : pas produit
         entete = f.get("entete") or {}
-        sortie.append({"document_id": jeton, "titre": entete.get("titre"),
-                       "format": entete.get("format"),
-                       "elements": int(f.get("elements") or 0),
-                       "octets": int(f.get("octets") or 0),
-                       "pages_estimees": f.get("pages_estimees")})
+        entree = {"document_id": jeton, "titre": entete.get("titre"),
+                  "format": entete.get("format"),
+                  "elements": int(f.get("elements") or 0),
+                  "octets": int(f.get("octets") or 0),
+                  "pages_estimees": f.get("pages_estimees")}
+        debut = " ".join(str(f.get("extrait") or "").split())
+        if debut:
+            entree["contenu"] = (debut[:LONGUEUR_CONTENU] + "…") if len(debut) > LONGUEUR_CONTENU else debut
+        sortie.append(entree)
     # Les plus récents d'abord : c'est d'eux qu'on parle dans la conversation.
     sortie.sort(key=lambda d: (_lire_fiche(d["document_id"]) or {}).get("termine", 0),
                 reverse=True)

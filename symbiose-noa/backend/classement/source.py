@@ -120,15 +120,25 @@ async def fichiers_du_dossier(dossier: str, user) -> tuple[str, list]:
                       "type": str(f.get("mimeType") or "")} for f in fichiers]
 
 
-async def lire_fichier(ref, user) -> str:
-    """Le texte d'un fichier (PDF, Word, Excel, Google Docs…), ou une chaîne vide."""
+async def lire_fichier(ref, user) -> dict:
+    """{texte, methode} d'un fichier du Drive — lu PAR TYPE comme une pièce
+    jointe (`mail/pieces.lire_sans_deposer`, 09/09) : PDF avec OCR si scanné,
+    Word, Excel, Google Docs exportés, DXF, et les IMAGES décrites par la
+    vision. L'extracteur de l'ingestion (`_download_text`) rendait None pour
+    toute photo : les quatre photos et le plan du dossier Camp étaient « sans
+    texte lisible », et l'inventaire ne disait rien du dossier. Le binaire
+    vient de `_binaire` (exports natifs compris) ; un élément Google non
+    téléchargeable lève une raison lisible, rendue telle quelle."""
+    from mail.pieces import CONSIGNE_FICHIER, MAX_OCTETS_PIECE, lire_sans_deposer
     from outils import drive as d
     from skills.outils import _identite
 
-    # `outils.drive` importe `_download_text` DANS ses fonctions, jamais au
-    # niveau du module : `d._download_text` n'existait pas (09/09 : les onze
-    # fichiers du dossier Camp « illisibles », et l'erreur Python à l'écran).
-    from ingestion.connectors.google_drive import _download_text
+    fichier = ref if isinstance(ref, dict) else {}
+    nom = str(fichier.get("name") or "fichier")
+    mime = str(fichier.get("mimeType") or "")
+    taille = int(fichier.get("size") or 0)
+    if taille > MAX_OCTETS_PIECE:
+        return {"texte": "", "methode": f"trop lourd pour être lu ({taille // (1024 * 1024)} Mo)"}
     service = await d._service(_identite(user))
-    texte = await asyncio.to_thread(_download_text, service, ref)
-    return str(texte or "")
+    brut, vrai_nom, mime = await d._binaire(fichier, service, nom, mime)
+    return await lire_sans_deposer(vrai_nom, mime, brut, consigne_vision=CONSIGNE_FICHIER)
