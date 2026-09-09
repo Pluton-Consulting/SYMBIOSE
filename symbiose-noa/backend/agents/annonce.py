@@ -131,7 +131,12 @@ _PAS_UNE_PROMESSE = re.compile(
     # tableau », et les deux ne demandent pas le même traitement : la première
     # porte déjà son résultat. Un marqueur de livraison — ci-dessous, ci-joint,
     # voici — dit que le contenu est LÀ, donc qu'il n'y a rien à forcer.
-    r"|\bci-dessous\b|\bci-joint|\bvoici\b|\bvoila\b",
+    r"|\bci-dessous\b|\bci-joint|\bvoici\b|\bvoila\b"
+    # 09/09 : une réponse qui ATTEND quelque chose de la personne n'est pas
+    # une promesse non tenue — « dès que vous me donnez la photo, je m'en
+    # occupe » a été forcée, puis remplacée par « le traitement n'a pas abouti ».
+    r"|\bdes que vous\b|\bquand vous\b|\blorsque vous\b|\bune fois que vous\b"
+    r"|\bsi vous me\b|\benvoyez[- ]|\brenvoyez[- ]|\btransmettez[- ]",
     re.IGNORECASE,
 )
 

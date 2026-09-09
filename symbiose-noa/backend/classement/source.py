@@ -125,6 +125,10 @@ async def lire_fichier(ref, user) -> str:
     from outils import drive as d
     from skills.outils import _identite
 
+    # `outils.drive` importe `_download_text` DANS ses fonctions, jamais au
+    # niveau du module : `d._download_text` n'existait pas (09/09 : les onze
+    # fichiers du dossier Camp « illisibles », et l'erreur Python à l'écran).
+    from ingestion.connectors.google_drive import _download_text
     service = await d._service(_identite(user))
-    texte = await asyncio.to_thread(d._download_text, service, ref)
+    texte = await asyncio.to_thread(_download_text, service, ref)
     return str(texte or "")

@@ -103,7 +103,7 @@ if (BACKEND / "skills" / "visuels.py").exists():
     nano = (BACKEND / "visuels" / "nano_banana.py").read_text(encoding="utf-8")
     verifier("un statut transitoire (500/502/503/504) se réessaie avant d'abandonner",
              "in (500, 502, 503, 504)" in nano
-             and re.search(r"for essai, pause_s in enumerate\(\(0, 5, 15\)\)", nano)
+             and re.search(r"for essai, pause_s in enumerate\(\(0, 5, 15, 30, 45\)\)", nano)
              and "await asyncio.sleep(pause_s)" in nano)
     verifier("la cause est DITE : surcharge passagère, pas un problème de crédit",
              "surcharge" in nano and "pas un problème de crédit" in nano)

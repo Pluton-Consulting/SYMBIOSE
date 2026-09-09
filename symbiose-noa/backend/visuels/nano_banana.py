@@ -168,7 +168,11 @@ async def generer(prompt: str, *,
             # avant de passer au modèle suivant ou d'abandonner. Le 429 garde
             # son traitement à part : c'est un état de QUOTA, pas une panne.
             rep = None
-            for essai, pause_s in enumerate((0, 5, 15)):
+            # 09/09 : deux tirages validés morts sur 503 après trois essais en
+            # vingt secondes — une surcharge Google dure souvent plus. Cinq
+            # essais, une minute et demie d'attente au plus : un rendu qu'on a
+            # approuvé vaut cette patience.
+            for essai, pause_s in enumerate((0, 5, 15, 30, 45)):
                 if pause_s:
                     await asyncio.sleep(pause_s)
                 try:
@@ -228,7 +232,7 @@ async def generer(prompt: str, *,
             f"Le tirage final exige le meilleur moteur d'images, qui n'a pas répondu ({derniere}). "
             "Aucun repli n'est tenté à dessein : un rendu montré au client ne doit pas "
             "sortir d'un modèle plus faible sans que personne ne le sache. "
-            "Réessayez, ou repassez par `tester_visuel` en attendant.")
+            "Réessayez dans quelques minutes.")
     raise NanoBananaIndisponible(f"Aucun modèle image n'a répondu ({derniere}).")
 
 
