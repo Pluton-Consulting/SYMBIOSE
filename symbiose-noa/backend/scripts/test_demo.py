@@ -781,7 +781,7 @@ async def principal():
     # et le présenter comme une donnée de l'entreprise.
     espace = {"AgentState": dict}
     extraire("agents/agent1.py",
-             {"should_use_browser", "_MOTS_INTERNES", "_MOTS_EXTERNES", "_POSSESSIFS"}, espace)
+             {"should_use_browser", "_MOTS_INTERNES", "_MOTS_EXTERNES", "_POSSESSIFS", "_CARACTERISTIQUES_PUBLIQUES"}, espace)
     for demande in ("Quel est le numéro de SIRET du fournisseur Ets Lasserre ?",
                     "L'assurance décennale de Ets Lasserre ?",
                     "Le SIRET de Ets Lasserre"):
