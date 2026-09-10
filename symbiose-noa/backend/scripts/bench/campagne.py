@@ -91,9 +91,13 @@ FUITE_JETON = re.compile(r"\[(?:PER|LOC|ORG|MONTANT|TEL|EMAIL|IBAN|DATE|SIRET)_\
 # visible, ou syntaxe d'outil NATIVE d'un modèle de la cascade. Observé en
 # production : une réponse entière réduite à du XML `<longcat_tool_call>`.
 # Aucun contrôle ne l'attrapait — la réponse n'était ni vide, ni interdite.
+# 10/09 : une SIXIÈME forme, la balise XML — « <action>{"skill":…}</action> » et
+# « <interroger_donnees>{}</interroger_donnees> », quatre tours de production
+# perdus. Le banc doit la voir fuir comme les autres.
 FUITE_MECANIQUE = re.compile(
     r"<\/?(?:longcat_tool_call|longcat_arg_key|longcat_arg_value|tool_call|"
-    r"function_call|tool_use)[^>]*>|```action", re.I)
+    r"function_call|tool_use|action)[^>]*>|```action"
+    r"|<([a-z][a-z0-9_]*)\s*>\s*\{[\s\S]*?\}\s*</\1\s*>", re.I)
 
 
 # ── Analyse d'une réponse ────────────────────────────────────────────
