@@ -21,7 +21,7 @@ import urllib.parse
 import urllib.error
 
 GRAPH = "https://graph.microsoft.com/v1.0"
-DEFAULT_MAILBOX = "contact@symbiose-paysage.fr"
+DEFAULT_MAILBOX = "contact@exemple-paysage.fr"
 
 
 # ── Utilitaires ───────────────────────────────────────────────────────

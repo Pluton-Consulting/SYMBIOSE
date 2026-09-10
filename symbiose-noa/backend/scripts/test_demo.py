@@ -327,7 +327,7 @@ class Declaration:
 
 _module("skills.registre", Declaration=Declaration)
 _module("config", settings=types.SimpleNamespace(
-    browser_enabled=True, ms_domain="symbiose-paysage.fr", gmail_domain=None,
+    browser_enabled=True, ms_domain="exemple-paysage.fr", gmail_domain=None,
     ms_mailbox=None, ms_extra_mailboxes=None, gmail_extra_mailboxes=None,
     documents_dir="/tmp", model_google_vision="gemini-flash-latest"))
 
@@ -493,7 +493,7 @@ async def _dossier(chemin):
 _module("optim.tokens", trim_chunks=lambda c: c)
 
 
-async def _boites_par_id(uid): return ["contact@symbiose-paysage.fr"]
+async def _boites_par_id(uid): return ["contact@exemple-paysage.fr"]
 
 
 # Les consignes retenues : le vrai module en écrit une ligne en base, on garde
@@ -578,14 +578,14 @@ protocol_src = (racine / "skills" / "protocol.py").read_text(encoding="utf-8")
 class User:
     role = "direction"
     id = "00000000-0000-0000-0000-000000000001"
-    email = "noa@symbiose-paysage.fr"
+    email = "noa@exemple-paysage.fr"
 
 
 class UserSansBoite(User):
     """Le cas de la démo : on colle un mail dans le chat, aucune boîte n'est
     nommée, et le compte n'est pas administrateur."""
     role = "commercial"
-    email = "commercial@symbiose-paysage.fr"
+    email = "commercial@exemple-paysage.fr"
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -816,7 +816,7 @@ async def principal():
     # Le même geste, boîte nommée : le contrôle de droits doit rester entier.
     try:
         await mail_skills.triage_email_entrant(
-            {"objet": OBJET, "corps": CORPS, "mailbox": "patron@symbiose-paysage.fr"},
+            {"objet": OBJET, "corps": CORPS, "mailbox": "patron@exemple-paysage.fr"},
             UserSansBoite())
         refuse = False
     except Exception:  # noqa: BLE001
