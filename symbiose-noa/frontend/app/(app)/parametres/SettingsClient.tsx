@@ -928,6 +928,20 @@ export default function SettingsClient({ initialUsers, backendToken, currentRole
   // Le premier onglet VISIBLE pour ce rôle : « utilisateurs » en dur laissait
   // un rôle sans cet onglet atterrir sur un écran vide (01/09).
   const [activeTab, setActiveTab] = useState<SubTab>(subTabs[0]?.key ?? "google")
+  // AU RETOUR DE GOOGLE, L'ONGLET D'OÙ L'ON EST PARTI (11/09). Relier l'agenda
+  // de la boîte de l'entreprise part de « Clés API » ; Google renvoie sur
+  // /parametres, qui s'ouvrait sur Utilisateurs — l'issue n'était lue par
+  // personne. Posé après le montage : le serveur ne connaît pas la session.
+  useEffect(() => {
+    try {
+      const voulu = sessionStorage.getItem("parametres_retour_google") as SubTab | null
+      if (!voulu) return
+      sessionStorage.removeItem("parametres_retour_google")
+      if (new URLSearchParams(window.location.search).get("google") && subTabs.some((t) => t.key === voulu))
+        setActiveTab(voulu)
+    } catch { /* stockage indisponible : l'onglet par défaut */ }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   return (
     <div className="sym-page" style={{ padding: 32, maxWidth: 1300, margin: "0 auto" }}>
