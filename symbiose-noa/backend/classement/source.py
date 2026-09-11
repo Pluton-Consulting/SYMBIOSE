@@ -23,6 +23,12 @@ logger = logging.getLogger("symbiose.classement")
 NOM_STOCKAGE = "Drive de l'entreprise"
 GESTE_LISTER = "drive_lister"
 GESTE_CHERCHER = "drive_chercher"
+# Le connecteur de synchronisation de ce stockage (clé de
+# `routers.ingestion.CONNECTEURS`). La campagne « Enrichir les documents »
+# le lance d'abord : elle ouvre chaque fichier de le Drive AVANT d'en tirer le
+# savoir, au lieu de ne relire que ce qu'une synchronisation passée aurait
+# laissé en mémoire (11/09).
+CONNECTEUR = "google_drive"
 
 
 def _nu(texte: str) -> str:
