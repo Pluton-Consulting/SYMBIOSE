@@ -654,6 +654,9 @@ def _build_service_delegue(courriel: str, scopes=None):
     dans `skills/outils.py`, et elle n'a pas d'exception.
     """
     from google.oauth2 import service_account
+    # `build` n'était importé que dans les autres constructeurs (14/09) : la
+    # délégation de domaine aurait levé au premier compte de service déposé.
+    from googleapiclient.discovery import build
 
     scopes = scopes or _SCOPES
     adresse = (courriel or "").strip().lower()
