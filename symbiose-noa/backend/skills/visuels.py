@@ -98,6 +98,10 @@ GABARIT = (
 # L'ordre importe aussi : l'identité D'ABORD, les changements ENSUITE, la
 # qualité en dernier. Ce qui vient en tête d'une consigne pèse plus lourd, et
 # ce qu'on veut ici c'est la même maison avant d'être une belle image.
+# La demande d'origine jointe à la retouche : assez pour une consigne détaillée
+# et ses deux demandes précédentes, sans noyer le préréglage.
+MAX_DEMANDE = 1500
+
 PRESET_FIDELITE = (
     "Photorealistic architectural edit of the SUPPLIED photograph. "
 
@@ -111,6 +115,13 @@ PRESET_FIDELITE = (
     "length and softness, the same weather and sky. "
 
     "CHANGE ONLY WHAT IS LISTED HERE: {changements}. "
+
+    "{demande}"
+
+    "APPLY EVERY REQUESTED CHANGE FULLY: each one must be clearly visible in the result, even "
+    "when it changes a large area of ground, paving or planting; place each change exactly where "
+    "it is described, using the visible landmarks (building faces, garage door, fence, drawn "
+    "marks) to locate it. A partial or timid edit is a failure. "
 
     "Everything not listed must remain faithful to the source photograph, pixel for pixel where "
     "possible. Do not re-imagine the scene, do not re-frame it, do not re-light it, do not "
@@ -464,7 +475,15 @@ async def modifier_visuel(data: dict, user) -> dict:
             "(ex. « replace the lawn with an ipe wood deck; add a low stone wall "
             "along the left boundary »).")
 
-    prompt = PRESET_FIDELITE.format(changements=changements[:MAX_CHANGEMENTS])
+    # LA DEMANDE D'ORIGINE, EN FRANÇAIS (15/09). `changements` est une traduction
+    # écrite par un modèle qui n'a pas vu la photo ; le moteur d'images la voit,
+    # lui, et lit le français. Posée par le serveur (`_demande_de_retouche`).
+    demande = re.sub(r"\s+", " ", str(data.get("demande") or "")).strip()[:MAX_DEMANDE]
+    prompt = PRESET_FIDELITE.format(
+        changements=changements[:MAX_CHANGEMENTS],
+        demande=(f"CLIENT'S OWN WORDS (French, verbatim) — this is the authority; where the list "
+                 f"above is vague or contradicts it, follow these words: « {demande} ». "
+                 if demande else ""))
     octets, mime = source
     entrees = [(octets, mime)]
 
