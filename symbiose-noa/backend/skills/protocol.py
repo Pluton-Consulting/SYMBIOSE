@@ -622,7 +622,7 @@ CATALOGUE_AGENT1: dict[str, tuple[str, list[str], list[str]]] = {
         # 15/09 : « je ne le trouve pas dans les brouillons de ma boite mail »
         # (11/09) — aucun geste ne savait l'y mettre, et l'assistant l'a
         # pretendu. Rien ne part : effet interne.
-        "POSE un brouillon dans le dossier Brouillons de la boite mail (Outlook), "
+        "POSE un brouillon dans le dossier Brouillons de la boite mail, "
         "SANS l'envoyer : la personne le relit et l'envoie elle-meme. Sans `corps`, "
         "c'est le DERNIER brouillon redige dans cette conversation qui est depose, "
         "tel quel. `ref` : la ref du mail auquel on repond (le brouillon devient "
