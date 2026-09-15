@@ -126,17 +126,20 @@ if FITZ:
 # ── 2. Le plafond est celui de l'appelant ───────────────────────────────────
 print("2. La résolution d'une pièce")
 vus = {}
-drive = types.ModuleType("outils.drive")
+# Le socle documentaire diverge par client : le Drive chez Symbiose, le NAS chez
+# Duret. Le banc double celui qui existe, le contrôle est le même.
+COTE_DRIVE = (BACKEND / "outils/drive.py").exists()
+stockage = types.ModuleType("outils.drive" if COTE_DRIVE else "outils.nas")
 
 
 async def _octets(nom, perimetres=None, identite=None, plafond=20 * 1024 * 1024):
     vus["plafond"] = plafond
     return b"%PDF" + b"0" * (25 * 1024 * 1024), "Dossier Lavèze.pdf", "application/pdf"
-drive.octets = _octets
-drive.perimetres_visibles = lambda role: [("racine", "all")]
+stockage.octets = _octets
+stockage.perimetres_visibles = lambda role: [("racine", "all")]
 outils_pkg = types.ModuleType("outils")
 outils_pkg.__path__ = []
-sys.modules["outils"], sys.modules["outils.drive"] = outils_pkg, drive
+sys.modules["outils"], sys.modules[stockage.__name__] = outils_pkg, stockage
 skills_outils = types.ModuleType("skills.outils")
 skills_outils._identite = lambda user: str(user.id)
 sys.modules["skills.outils"] = skills_outils
@@ -151,12 +154,12 @@ verifier("pour une TRAME : 25 Mo acceptés, et le plafond est transmis au Drive"
          pretes and vus.get("plafond") == 60 * 1024 * 1024, (refus, vus))
 pretes, refus = asyncio.run(attaches.resoudre(["Dossier Lavèze.pdf"], user, "x", plafond=10 * 1024 * 1024))
 verifier("hors mail, un refus ne parle pas de mail", refus and "mail" not in refus[0]["raison"], refus)
-for m in ("outils", "outils.drive", "skills.outils"):
+for m in ("outils", "outils.drive", "outils.nas", "skills.outils"):
     sys.modules.pop(m, None)
 
 # ── 3. L'identifiant d'un fichier déjà ouvert ───────────────────────────────
-print("3. L'identifiant rendu par drive_ouvrir")
-src_drive = (BACKEND / "outils/drive.py").read_text(encoding="utf-8")
+print("3. L'identifiant rendu par drive_ouvrir" + ("" if COTE_DRIVE else " — sans objet ici (le NAS désigne par chemin)"))
+src_drive = (BACKEND / "outils/drive.py").read_text(encoding="utf-8") if COTE_DRIVE else ""
 arbre = ast.parse(src_drive)
 espace = {"re": __import__("re"), "Optional": __import__("typing").Optional}
 for n in arbre.body:
@@ -165,7 +168,10 @@ for n in arbre.body:
             isinstance(t, ast.Name) and t.id in ("_RESOLUS", "_DUREE_RESOLU_S", "_MAX_RESOLUS", "RE_ID_DRIVE")
             for t in cibles):
         exec(compile(ast.Module(body=[n], type_ignores=[]), "drive", "exec"), espace)
-if "fichier_resolu" not in espace:
+if not COTE_DRIVE:
+    nas_src = (BACKEND / "outils/nas.py").read_text(encoding="utf-8")
+    verifier("le NAS prend aussi le plafond de l'appelant", "async def octets(nom_ou_chemin: str, plafond" in nas_src)
+elif "fichier_resolu" not in espace:
     verifier("outils/drive.py retient les fichiers résolus", False, "fichier_resolu absent")
 else:
     ID = "1kX3oLMd-6x22bfLZLM_zlSGg9Bg44YWm"
