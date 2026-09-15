@@ -362,6 +362,12 @@ async def _consigne_style(boite): return ""
 
 
 _module("mail.style", consigne_style=_consigne_style)
+# 15/09 : la rédaction retient son dernier brouillon (module pur, le vrai).
+import importlib.util as _ilu_br  # noqa: E402
+_spec_br = _ilu_br.spec_from_file_location("mail.brouillons", racine / "mail" / "brouillons.py")
+_brouillons = _ilu_br.module_from_spec(_spec_br)
+_spec_br.loader.exec_module(_brouillons)
+_module("mail.brouillons", **{k: v for k, v in vars(_brouillons).items() if not k.startswith("__")})
 
 # Le dépôt de visuels : en mémoire, la clé est un hachage du contenu.
 DEPOT = {}
