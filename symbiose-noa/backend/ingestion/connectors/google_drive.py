@@ -548,17 +548,17 @@ async def sync(folder_id: Optional[str] = None, avancer=None) -> dict:
             # 100 % d'un cœur, et l'ingestion ne s'en est jamais remise : elle
             # est restée bloquée sur ce fichier jusqu'au redémarrage.
             #
-            # RÉSERVE ASSUMÉE : `to_thread` ne se tue pas. Le thread continue
-            # de tourner après l'expiration — on ne peut pas l'interrompre sans
-            # passer par un processus séparé. Ce qu'on gagne, c'est que
-            # l'ingestion AVANCE et que la boucle d'événements reste libre.
-            # C'est pour ça qu'on compte les dépassements et qu'on s'arrête
-            # au-delà de quelques-uns : plusieurs threads pendus, c'est un
-            # problème de fond, pas un fichier tordu.
+            # (15/09) `to_thread` ne se tue pas : avec `wait_for`, le thread
+            # continuait après l'expiration, et chez Duret ces lectures fantômes
+            # ont empli la réserve de threads de TOUT le backend (dix OCR, charge
+            # 38, l'application qui décroche). `en_lecture` pose une échéance que
+            # l'OCR respecte entre les pages et attend la vraie fin du thread,
+            # dans une réserve à part. Le téléchargement lui-même garde les délais
+            # du client Google.
             try:
-                text = await asyncio.wait_for(
-                    asyncio.to_thread(_download_text, service, f),
-                    timeout=DELAI_PAR_DOCUMENT_S)
+                from ingestion.parsers import en_lecture
+                text = await en_lecture(_download_text, service, f,
+                                        delai=DELAI_PAR_DOCUMENT_S)
             except (asyncio.TimeoutError, TimeoutError):
                 total_lents += 1
                 lents[f["id"]] = f.get("modifiedTime") or ""
