@@ -120,7 +120,7 @@ async def _d_un_mail(ref: str, boite: str) -> tuple:
     return octets, nom, info.get("type") or _mime_du_nom(nom)
 
 
-async def _du_drive(nom: str, user) -> tuple:
+async def _du_drive(nom: str, user, plafond: int = MAX_PIECE) -> tuple:
     """(octets, nom réel, mime) d'un fichier du Drive, dans le périmètre.
 
     Le périmètre est RECALCULÉ ici à partir du rôle réel, comme le fait
@@ -130,17 +130,25 @@ async def _du_drive(nom: str, user) -> tuple:
     from outils.drive import octets, perimetres_visibles
     from skills.outils import _identite
     return await octets(nom, perimetres_visibles(getattr(user, "role", None)),
-                        identite=_identite(user))
+                        identite=_identite(user), plafond=plafond)
 
 
-async def resoudre(brut, user, boite: str) -> tuple:
+async def resoudre(brut, user, boite: str, plafond: int | None = None) -> tuple:
     """(pièces prêtes, refusées). Ne lève JAMAIS.
 
     Une pièce prête est `{nom, mime, octets}` — exactement ce qu'attendent les
     constructeurs de `mail/expedition.py`. Une refusée est `{nom, raison}`, et
     la raison est écrite pour la personne : ce qu'elle peut faire au tour
     suivant, pas ce qui a planté.
+
+    `plafond` : ce qu'UNE pièce peut peser POUR L'APPELANT. Sans lui, c'est la
+    limite d'un mail. Une trame (14/09) passait par ici et héritait de « pèse
+    trop lourd pour un message. Envoie plutôt le lien de partage » — une raison
+    fausse pour qui ne voulait rien envoyer, que le modèle a recopiée. Hors
+    mail, pas de total de message non plus.
     """
+    pour_un_mail = plafond is None
+    plafond = MAX_PIECE if pour_un_mail else int(plafond)
     entrees = _designations(brut)
     if not entrees:
         return [], []
@@ -174,7 +182,7 @@ async def resoudre(brut, user, boite: str) -> tuple:
                 # Dernier recours : un NOM de fichier du Drive. Volontairement
                 # en dernier — une référence technique doit gagner sur un nom,
                 # sinon « ab…24hexa » partirait chercher un fichier nommé ainsi.
-                octets, nom, mime = await _du_drive(ref, user)
+                octets, nom, mime = await _du_drive(ref, user, plafond)
         except Exception as e:  # noqa: BLE001 — un refus est une donnée, pas un plantage
             logger.info("Pièce « %s » non résolue : %s", etiquette[:60], e)
             refusees.append({"nom": etiquette, "raison": str(e)[:200]})
@@ -186,15 +194,18 @@ async def resoudre(brut, user, boite: str) -> tuple:
                 "raison": "introuvable — un document produit ne vit que 24 h ; "
                           "reproduis-le, ou ouvre d'abord la pièce à joindre"})
             continue
-        if len(octets) > MAX_PIECE:
+        if len(octets) > plafond:
             refusees.append({
                 "nom": renom or nom,
-                "raison": f"{len(octets) // (1024 * 1024)} Mo : au-delà de "
-                          f"{MAX_PIECE // (1024 * 1024)} Mo un mail ne passe "
-                          "pas — dépose le fichier sur le Drive et envoie le lien"})
+                "raison": (f"{len(octets) // (1024 * 1024)} Mo : au-delà de "
+                           f"{MAX_PIECE // (1024 * 1024)} Mo un mail ne passe "
+                           "pas — dépose le fichier sur le Drive et envoie le lien"
+                           if pour_un_mail else
+                           f"{len(octets) // (1024 * 1024)} Mo : au-delà des "
+                           f"{plafond // (1024 * 1024)} Mo admis ici")})
             continue
         total += len(octets)
-        if total > MAX_TOTAL:
+        if pour_un_mail and total > MAX_TOTAL:
             refusees.append({
                 "nom": renom or nom,
                 "raison": f"le message dépasserait {MAX_TOTAL // (1024 * 1024)} Mo "

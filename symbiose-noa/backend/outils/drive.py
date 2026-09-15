@@ -30,6 +30,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import posixpath
+import re
 from typing import Optional
 
 logger = logging.getLogger("symbiose.outils.drive")
@@ -1290,8 +1291,55 @@ async def lister(dossier: str, perimetres: Optional[list] = None, identite=None,
     return sortie
 
 
+# LES FICHIERS DÉJÀ RÉSOLUS SE DÉSIGNENT AUSSI PAR LEUR IDENTIFIANT (15/09).
+#
+# `drive_ouvrir` rend l'`id` du fichier ; le 14/09, le modèle l'a repris tel
+# quel pour `enregistrer_trame` — « Aucun fichier nommé
+# « 1kX3oLMd-6x22bfLZLM_zlSGg9Bg44YWm » » : seul le NOM se résolvait. Accepter
+# n'importe quel identifiant ouvrirait tout le Drive à qui en connaît un (ils
+# circulent dans les liens partagés). On n'accepte donc QUE les identifiants
+# qu'une résolution a déjà rendus À CETTE IDENTITÉ, dans son périmètre — même
+# règle que la `ref` d'une pièce de mail, liée à sa boîte.
+_RESOLUS: dict = {}
+_DUREE_RESOLU_S = 6 * 3600
+_MAX_RESOLUS = 2000
+RE_ID_DRIVE = re.compile(r"^(?:drive:)?([A-Za-z0-9_-]{25,80})$")
+
+
+def _retenir_resolu(identite, fichier: dict) -> None:
+    import time
+    if not isinstance(fichier, dict) or not fichier.get("id"):
+        return
+    if len(_RESOLUS) > _MAX_RESOLUS:
+        for cle in sorted(_RESOLUS, key=lambda k: _RESOLUS[k][1])[: _MAX_RESOLUS // 2]:
+            _RESOLUS.pop(cle, None)
+    _RESOLUS[(_cle_client(identite), fichier["id"])] = (dict(fichier), time.monotonic())
+
+
+def fichier_resolu(reference: str, identite=None) -> Optional[dict]:
+    """Le fichier qu'un identifiant désigne, s'il a déjà été résolu pour cette identité."""
+    import time
+    m = RE_ID_DRIVE.match((reference or "").strip())
+    if not m:
+        return None
+    garde = _RESOLUS.get((_cle_client(identite), m.group(1)))
+    if not garde or time.monotonic() - garde[1] > _DUREE_RESOLU_S:
+        return None
+    return dict(garde[0])
+
+
 async def _resoudre_fichier(nom: str, perimetres: Optional[list] = None,
                             identite=None):
+    deja = fichier_resolu(nom, identite)
+    if deja:
+        return deja, await _service(identite), []
+    fichier, service, autres = await _resoudre_fichier_par_nom(nom, perimetres, identite)
+    _retenir_resolu(identite, fichier)
+    return fichier, service, autres
+
+
+async def _resoudre_fichier_par_nom(nom: str, perimetres: Optional[list] = None,
+                                   identite=None):
     """(fichier, service, autres noms) — LE fichier que ce nom désigne.
 
     Extrait de `ouvrir()` le 01/09 pour être partagé avec `octets()` : lire un
@@ -1393,7 +1441,8 @@ async def _resoudre_fichier(nom: str, perimetres: Optional[list] = None,
     return trouves[0], service, trouves[1:5]
 
 
-async def octets(nom: str, perimetres: Optional[list] = None, identite=None) -> tuple:
+async def octets(nom: str, perimetres: Optional[list] = None, identite=None,
+                 plafond: int = MAX_OCTETS_PIECE) -> tuple:
     """(octets, nom réel, mime) d'un fichier du Drive, par son NOM.
 
     Même résolution que `ouvrir()` — la recherche reste DANS le périmètre
@@ -1408,10 +1457,16 @@ async def octets(nom: str, perimetres: Optional[list] = None, identite=None) -> 
     vrai_nom = fichier.get("name") or nom
     mime = fichier.get("mimeType") or ""
 
-    if int(fichier.get("size") or 0) > MAX_OCTETS_PIECE:
+    taille = int(fichier.get("size") or 0)
+    if taille > plafond:
+        # La raison dépend de l'appelant : un MAIL ne passe pas, une trame a
+        # son propre plafond. « Envoie plutôt le lien de partage » à qui voulait
+        # retenir une trame (14/09) était faux, et le modèle l'a répété.
         raise DriveRefuse(
-            f"« {vrai_nom} » pèse trop lourd pour un message. Envoie plutôt "
-            "le lien de partage.")
+            (f"« {vrai_nom} » pèse trop lourd pour un message. Envoie plutôt "
+             "le lien de partage.") if plafond == MAX_OCTETS_PIECE else
+            (f"« {vrai_nom} » pèse {taille // (1024 * 1024)} Mo, au-delà des "
+             f"{plafond // (1024 * 1024)} Mo admis pour ce geste."))
 
     return await _binaire(fichier, service, vrai_nom, mime)
 
@@ -1445,6 +1500,14 @@ async def _binaire(fichier: dict, service, vrai_nom: str, mime: str) -> tuple:
     return binaire, vrai_nom, mime or "application/octet-stream"
 
 
+# CE QUE L'ON AFFICHE D'UN FICHIER OUVERT. Le plafond d'une pièce de mail
+# (20 Mo) empêchait la carte d'un dossier de présentation — photos pleine page
+# — de paraître : le 14/09 à 12:50, « Dossier de conception paysagère » ouvert
+# et lu, mais sans carte, sans aperçu, et sans jeton à reprendre pour le
+# retenir comme trame.
+MAX_OCTETS_AFFICHAGE = 60 * 1024 * 1024
+
+
 async def _deposer_pour(fichier: dict, service, proprietaire: str | None, resultat: dict) -> dict:
     """Le fichier ouvert s'AFFICHE (carte, aperçu, téléchargement) pour la
     personne qui l'a demandé. Relevé sur le projet jumeau le 08/09 : ouvrir
@@ -1454,7 +1517,7 @@ async def _deposer_pour(fichier: dict, service, proprietaire: str | None, result
     if not proprietaire:
         return resultat
     try:
-        if int(fichier.get("size") or 0) > MAX_OCTETS_PIECE:
+        if int(fichier.get("size") or 0) > MAX_OCTETS_AFFICHAGE:
             return resultat
         binaire, vrai_nom, mime = await _binaire(
             fichier, service, fichier.get("name") or "fichier", fichier.get("mimeType") or "")
