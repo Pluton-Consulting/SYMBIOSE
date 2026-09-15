@@ -380,8 +380,11 @@ def _deposer(octets, mime="image/png"):
     return cle
 
 
+ORIGINES = {}
 _module("visuels.depot", deposer_octets=_deposer,
-        lire=lambda cle: DEPOT.get(cle))
+        lire=lambda cle: DEPOT.get(cle),
+        noter_origine=lambda cle, origine: ORIGINES.__setitem__(cle, origine),
+        origine_de=lambda cle: ORIGINES.get(cle, ""))
 
 
 class NanoBananaIndisponible(RuntimeError):
@@ -1026,6 +1029,25 @@ async def principal():
              and "changements demandés" in str(r.get("message_final") or ""))
     verifier("le résultat dit que c'est une illustration, pas une simulation",
              "illustration" in (r.get("message_final") or "").lower())
+    # 15/09 (Symbiose, fil d4864cdc) : « mets le pied de la berlinoise au niveau
+    # du TRAIT BLEU », sur la troisième retouche. Le trait n'existe que sur la
+    # photo du client : la retouche d'une retouche qui cite un repère reçoit la
+    # photo d'origine en seconde image ; sans repère cité, une seule image.
+    rendu1 = bloc.get("principale")
+    verifier("la filiation du rendu est notée (il descend de la photo)", ORIGINES.get(rendu1) == cle_photo, ORIGINES)
+    await visuels.modifier_visuel({"image": rendu1, "changements": "make the grasses smaller"}, User())
+    verifier("retouche d'une retouche sans repère cité : une seule image", APPELS_IMAGE[-1]["entrees"] == 1)
+    rendu2 = [c for c in ORIGINES if c not in (rendu1,)][-1]
+    verifier("… et la filiation remonte à la PHOTO, pas à la retouche", ORIGINES.get(rendu2) == cle_photo, ORIGINES)
+    r3 = await visuels.modifier_visuel(
+        {"image": rendu2, "changements": "align the foot of the wall with the blue line"}, User())
+    verifier("« the blue line » sur une retouche : la photo d'origine part en seconde image",
+             APPELS_IMAGE[-1]["entrees"] == 2 and "IMAGE 2" in APPELS_IMAGE[-1]["prompt"], APPELS_IMAGE[-1])
+    verifier("l'avant d'une retouche de retouche n'est plus légendé « photo d'origine »",
+             any(i.get("legende") == "Avant (retouche précédente)" for i in (r3.get("bloc_ui") or {}).get("images", [])),
+             (r3.get("bloc_ui") or {}).get("images"))
+    await visuels.modifier_visuel({"image": cle_photo, "changements": "follow the blue line"}, User())
+    verifier("sur la photo d'origine elle-même, rien à joindre", APPELS_IMAGE[-1]["entrees"] == 1)
     decl = visuels.SKILLS["modifier_visuel"]
     verifier("la retouche exige un accord humain (effet externe)", decl.effet == "externe")
     verifier("elle est créditée à l'expert plans & visuels", decl.expert == "agent2")

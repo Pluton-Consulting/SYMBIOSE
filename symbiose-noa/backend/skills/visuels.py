@@ -45,6 +45,7 @@ lui, parle français : c'est le modèle qui fait le pont.
 from __future__ import annotations
 
 import logging
+import re
 
 logger = logging.getLogger("symbiose.skills.visuels")
 
@@ -132,6 +133,25 @@ PRESET_FIDELITE = (
 
 # Ce qui s'ajoute au brief du TIRAGE FINAL seulement. L'essai n'en a pas
 # besoin : on y règle la composition, pas la finition.
+# LA PHOTO D'ORIGINE EN REPÈRE (15/09). Envoyée en SECONDE image quand la
+# retouche part d'un rendu précédent et que la demande cite un repère tracé
+# (« le trait bleu ») : le repère n'existe plus que là.
+PRESET_REPERE = (
+    " Two images are supplied. IMAGE 1 (the first) is the photograph to edit and "
+    "return. IMAGE 2 is the client's ORIGINAL photograph of the same scene, which may "
+    "carry hand-drawn marks (coloured lines, arrows, outlines) locating the requested "
+    "changes: use IMAGE 2 ONLY to find where those marks are, then apply the changes to "
+    "IMAGE 1 at exactly that place. Never copy the marks, never revert IMAGE 1 to "
+    "IMAGE 2, and keep every change already made in IMAGE 1 unless listed above."
+)
+
+# Un repère TRACÉ cité par la demande (écrite en anglais pour le moteur, parfois
+# restée en français).
+_CITE_UN_REPERE = re.compile(
+    r"\b(?:lines?|arrows?|marks?|marking|marked|outlined?|circled?|drawn|dotted|dashed"
+    r"|strokes?|traits?|lignes?|fl[eè]ches?|rep[eè]res?|pointill\w*|entour\w*)\b",
+    re.IGNORECASE)
+
 FINITION = (
     ". Final client-facing render: maximum detail, {resolution} level of detail, immaculate "
     "material rendering, refined composition, perfectly natural light, no artefacts, no "
@@ -285,7 +305,8 @@ async def preparer_visuel(data: dict, user) -> dict:
     }
 
 
-def _rendu(resultat: dict, titre: str, *, essai: bool, avant: str = "") -> dict:
+def _rendu(resultat: dict, titre: str, *, essai: bool, avant: str = "",
+           legende_avant: str = "Avant (photo d'origine)") -> dict:
     """Dépose les images et fabrique le bloc ```ui. Commun aux trois gestes.
 
     Le dépôt local n'est pas une commodité : l'image ne vit QUE dans la
@@ -312,7 +333,7 @@ def _rendu(resultat: dict, titre: str, *, essai: bool, avant: str = "") -> dict:
     # Les légendes ne sont posées QUE dans ce cas : sur un essai ou un tirage
     # simple, une légende « Après » ne voudrait rien dire.
     if avant and avant not in cles:
-        images = ([{"cle": avant, "legende": "Avant (photo d'origine)"}]
+        images = ([{"cle": avant, "legende": legende_avant}]
                   + [{"cle": c, "legende": "Après (projet)"} for c in cles])
     else:
         images = [{"cle": c} for c in cles]
@@ -445,9 +466,26 @@ async def modifier_visuel(data: dict, user) -> dict:
 
     prompt = PRESET_FIDELITE.format(changements=changements[:MAX_CHANGEMENTS])
     octets, mime = source
+    entrees = [(octets, mime)]
+
+    # La photo d'où la chaîne de retouches est partie : c'est elle qui porte
+    # les repères tracés par le client. Donnée explicitement, ou retrouvée par
+    # la filiation quand la demande cite un repère (« the blue line »).
+    from visuels.depot import origine_de, noter_origine
+    racine = origine_de(reference) or reference
+    originale = str(data.get("photo_originale") or "").strip()
+    if not originale and racine != reference and _CITE_UN_REPERE.search(changements):
+        originale = racine
+    if originale and originale != reference:
+        repere = lire(originale)
+        if repere:
+            entrees.append(repere)
+            prompt += PRESET_REPERE
+        else:
+            logger.info("Photo d'origine %s introuvable : retouche sans repère", originale[:12])
 
     try:
-        resultat = await generer(prompt, images_entree=[(octets, mime)],
+        resultat = await generer(prompt, images_entree=entrees,
                                  qualite=(data.get("qualite") or "finale"))
     except NanoBananaIndisponible as e:
         logger.info("Retouche impossible : %s", e)
@@ -456,10 +494,19 @@ async def modifier_visuel(data: dict, user) -> dict:
                              "skill dans ce tour. Ce refus ne vaut QUE pour ce tour.")}
 
     sortie = _rendu(resultat, data.get("titre") or "Avant / après",
-                    essai=False, avant=reference)
+                    essai=False, avant=reference,
+                    # Une image de départ qui est déjà une retouche n'est pas
+                    # « la photo d'origine » : l'écran le disait à tort.
+                    legende_avant=("Avant (photo d'origine)" if racine == reference
+                                   else "Avant (retouche précédente)"))
     if not sortie.get("genere"):
         return sortie
+    for c in sortie.get("cles") or []:
+        noter_origine(c, racine)
     sortie["source"] = reference
+    if len(entrees) > 1:
+        sortie["repere"] = "photo d'origine jointe pour situer les repères tracés"
+
     sortie["changements"] = changements
     sortie["note"] = ("Retouche de l'image fournie : seuls les points demandés ont été "
                       "modifiés, le reste de la scène est conservé. Cela reste une "
@@ -573,9 +620,12 @@ SKILLS = {
             "simple, liste courte separee par des points-virgules (ex. "
             "« replace the lawn with an ipe wood deck; add three olive trees "
             "on the right »). Ne demande QUE ce que l'utilisateur a demande : "
-            "tout le reste doit rester tel quel. Le resultat donne un bloc "
+            "tout le reste doit rester tel quel. `photo_originale` (option) : la "
+            "reference de la photo du client quand `image` est deja une retouche "
+            "et que la demande cite un repere trace sur l'original (« le trait "
+            "bleu ») — le serveur la joint seul s'il la retrouve. Le resultat donne un bloc "
             "```ui a inserer TEL QUEL pour AFFICHER la variante"),
-        requis=["image", "changements"], optionnels=["titre", "qualite"],
+        requis=["image", "changements"], optionnels=["titre", "qualite", "photo_originale"],
         # Un rendu qu'on montrera au client : meme porte que le tirage final.
         effet="externe",
         expert="agent2",
