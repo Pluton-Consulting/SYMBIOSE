@@ -136,7 +136,7 @@ if not nas_cote:
         "MAX_DOSSIERS_ARBRE": 3000,
     }
     extraire(BACKEND / "outils" / "drive.py",
-             {"chercher", "_paginer_mixte", "_nu", "_echappe", "_ACCENTS",
+             {"chercher", "_paginer_mixte", "_nu", "_echappe", "_ACCENTS", "_parasite",
               "MAX_TROUVAILLES", "MAX_PROFONDEUR", "asyncio"}, espace_d)
     r1 = asyncio.run(espace_d["chercher"]("durand", [(None, "all")]))
     r3 = asyncio.run(espace_d["chercher"]("durand", [(None, "all")], page=3))

@@ -108,7 +108,7 @@ if not nas_cote:
         "_MIME_DOSSIER": "application/vnd.google-apps.folder",
         "MAX_DOSSIERS_ARBRE": 3000,
     }
-    extraire(drive_py, {"chercher", "_paginer_mixte", "_nu", "_echappe", "_ACCENTS",
+    extraire(drive_py, {"chercher", "_paginer_mixte", "_nu", "_echappe", "_ACCENTS", "_parasite",
                         "MAX_TROUVAILLES", "MAX_PROFONDEUR", "asyncio"}, espace_d)
     chercher = espace_d["chercher"]
     peri = [(None, "all")]

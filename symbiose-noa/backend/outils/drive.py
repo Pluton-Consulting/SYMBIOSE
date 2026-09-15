@@ -650,8 +650,19 @@ async def _lister(service, dossier: str, limite: int = MAX_ENTREES) -> dict:
     }
 
 
+# LES FICHIERS PARASITES D'UN MAC OU DE WINDOWS (15/09). « ._SYMBIOSE-Paysage_rvb.png »
+# (176 octets, métadonnées macOS), « __MACOSX », « .DS_Store » : listés en tête,
+# le modèle les prenait pour le logo, et « ouvrir le logo » rendait un fichier
+# vide ou une autre variante. Ils ne sont ni listés, ni cherchés, ni ouverts.
+def _parasite(nom) -> bool:
+    n = str(nom or "").strip()
+    return (n.startswith("._") or n in (".DS_Store", "__MACOSX", "Thumbs.db", "desktop.ini")
+            or n.lower() in ("thumbs.db", "desktop.ini"))
+
+
 def _classer(entrees: list[dict]) -> tuple[list[dict], list[dict]]:
     """Sépare dossiers et fichiers. Les raccourcis comptent pour des fichiers."""
+    entrees = [e for e in entrees if not _parasite(e.get("name"))]
     dossiers = [e for e in entrees if e.get("mimeType") == _MIME_DOSSIER]
     fichiers = [e for e in entrees if e.get("mimeType") != _MIME_DOSSIER]
     return dossiers, fichiers
@@ -1383,7 +1394,9 @@ async def _resoudre_fichier_par_nom(nom: str, perimetres: Optional[list] = None,
             for cond in (f"name = '{ech}'", f"name contains '{ech}'"):
                 dedans = (await asyncio.to_thread(
                     _dedans, f"'{vise}' in parents and trashed=false and {cond}")).get("files", [])
-                dedans = [f for f in dedans if f.get("mimeType") != _MIME_DOSSIER]
+                dedans = [f for f in dedans if f.get("mimeType") != _MIME_DOSSIER
+                          and not _parasite(f.get("name"))]
+                dedans.sort(key=lambda f: 0 if _nu(f.get("name") or "") == _nu(nom_seul) else 1)
                 if dedans:
                     return dedans[0], service, dedans[1:5]
         except Exception as e:  # noqa: BLE001 — le nom seul reprend la main
@@ -1431,7 +1444,12 @@ async def _resoudre_fichier_par_nom(nom: str, perimetres: Optional[list] = None,
                 logger.warning("Drive : recherche de « %s » dans %s échouée : %s",
                                nom, d, e)
 
-    trouves = [f for f in trouves if f.get("mimeType") != _MIME_DOSSIER]
+    trouves = [f for f in trouves if f.get("mimeType") != _MIME_DOSSIER
+               and not _parasite(f.get("name"))]
+    # LE NOM EXACT D'ABORD (15/09) : « SYMBIOSE-Paysage_rvb.png » ouvrait
+    # « SYMBIOSE-Paysage_rvb-reserve.png », rendu en premier par `contains`.
+    trouves.sort(key=lambda f: (0 if _nu(f.get("name") or "") == _nu(nom) else 1,
+                                len(f.get("name") or "")))
     if not trouves:
         raise DriveRefuse(
             f"Aucun fichier nommé « {nom} » dans les dossiers ouverts. "
@@ -1818,6 +1836,7 @@ async def chercher(motif: str, perimetres: Optional[list] = None,
             except Exception as e:  # noqa: BLE001
                 logger.warning("Drive : recherche cloisonnée « %s » échouée : %s", motif, e)
 
+    trouves = [t for t in trouves if not _parasite(t.get("nom"))]
     # L'exact d'abord, puis le chemin court : le dossier « Davy SAINT LAURENT »
     # doit précéder « Anciens clients/2019/SAINT LAURENT ancien devis ».
     trouves.sort(key=lambda t: (0 if _nu(t.get("nom")) == cible else 1,
