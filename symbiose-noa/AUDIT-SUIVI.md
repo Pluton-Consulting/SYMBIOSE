@@ -15,6 +15,8 @@ poussées sur benit seulement.
 | Fiche | Sujet | État |
 |---|---|---|
 | S-02 | Styles Word conservés au remplacement, contrôle du fichier produit | fait (bancs réels) |
+| S-05 | Échecs métier jamais présentés comme réussis | étape 1 faite (normaliseur, exécuteur, boucle, reprise) ; reçus avant « créé/envoyé » et preuves par requête : lot suivant |
+| S-06 | Secours lexical quand les embeddings tombent | étape 1 faite (embedding et voie vectorielle isolés, diagnostic, panne ≠ absence) ; orchestrateur de sources et comparables Drive : lot 2 |
 
 ## Journal
 
@@ -27,3 +29,11 @@ poussées sur benit seulement.
 - 16/09 — hors fiche (trouvé par la suite de bancs) : relances de facturation comptées au
   jour UTC — entre minuit et 2 h « relancée à l'instant » devenait « il y a 1 jour ». Le
   jour se compte à Paris (`aujourd_hui_local`, `_jour_local`).
+- 16/09 — S-05 (étape 1) : `skills/resultats.py` (outcome, ok, effect_status, evidence_refs,
+  warnings, retryable) ; `execute_skill` rend `ok` métier + les champs d'avant, l'audit
+  enregistre l'échec ; `tools_node` et la reprise après accord suivent `ok` au lieu de
+  « le skill n'a pas levé ». Banc `test_resultats_normalises` (20).
+- 16/09 — S-06 (étape 1) : `vectorstore/rag.py` calcule le vecteur HORS du `try` de la
+  recherche — une panne d'embedding ne vidait plus seulement la voie vectorielle, elle
+  renvoyait « aucun document ». La voie plein texte répond seule, la raison est dite, et
+  une panne n'est plus présentée comme une absence. Banc `test_recherche_documents`.
