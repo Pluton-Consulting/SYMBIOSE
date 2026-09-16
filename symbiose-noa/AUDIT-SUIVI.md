@@ -43,7 +43,7 @@ poussées sur benit seulement.
 | S-21 | Secrets et navigateur | étape 1 faite (SSRF : résolution DNS, IPv6, adresses internes) ; secrets du worker et route interne : à faire avec le serveur |
 | S-25 | Mesurer les usages et prouver l'absence de régression | fait (`scripts/recette_usages.py` : PASS/FAIL/SKIP, rapport daté par commit) |
 | S-19 | Sessions et connexions Google | étape 1 faite (jetons au coffre, état OAuth à usage unique, essais bornés par origine, capacités par scope, lien jamais imprimé sur un serveur) ; réauthentification renforcée des gestes sensibles : lot suivant |
-| S-24 | Vision cohérente avec la demande | à faire |
+| S-24 | Vision cohérente avec la demande | étape 1 faite (pages choisies d'après la question, pages lues dites, suite du tour nommée et confrontée au registre) ; recadrage des cotes et mesures reliées à leur zone : lot suivant |
 | S-20 | Cloisonnement PostgreSQL effectif | script de contrôle en lecture + procédure ; bascule du rôle applicatif : à faire par Noa sur le serveur |
 
 ## Journal
@@ -175,3 +175,15 @@ poussées sur benit seulement.
   empreinte : plus de doublon, et plus de « existe déjà, donne un autre nom » pour un dépôt
   qui avait réussi. Bancs `test_drive_complet` (nouveau, 27), `test_tableau_joint` (+5),
   `test_depot_drive`, `test_drive_increment` verts.
+- 16/09 — S-24 (étape 1, socle des deux côtés) : on rendait les CINQ PREMIÈRES pages d'un
+  PDF, toujours. Sur un dossier de quarante pages, la cote demandée est page 8 et le
+  quantitatif page 23 : l'assistant répondait « non visible » après avoir lu la page de
+  garde et trois pages de clauses — sans dire qu'il n'en avait lu que cinq. La couche
+  texte se lit en quelques millisecondes : elle sert à CLASSER les pages par rapport à la
+  question, la page 1 restant toujours lue (cartouche, échelle, affaire). Sans question
+  utile, sans couche texte ou sur un document court, rien ne change. L'en-tête dit
+  désormais les NUMÉROS des pages montrées et demande d'en réclamer une plutôt que de
+  l'estimer. Enfin la suite du tour est NOMMÉE (`vision_suite` : document, retouche,
+  retouche_indisponible, aucune) et confrontée au registre réel des capacités — chez le
+  jumeau, sans moteur de retouche, une demande de photomontage ne passe plus la main.
+  Banc `test_pages_et_suite` (25, le même fichier des deux côtés).
