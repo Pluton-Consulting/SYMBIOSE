@@ -257,7 +257,8 @@ verifier("l'impression du lien dépend de l'ENVIRONNEMENT, pas du seul drapeau d
          'environnement in ("development", "dev", "local", "test")' in source
          and source.index("environnement =") < source.index("MAGIC LINK (dev)"))
 verifier("la demande de lien est bornée par origine",
-         "tentatives.saturee(origine)" in source and "tentatives.origine_de" in source)
+         "tentatives.saturee(origine)" in source
+         and ("tentatives.origine_de" in source or "_origine(request)" in source))
 verifier("la borne ne change pas la réponse (elle n'apprend rien à qui insiste)",
          source.count('return {"ok": True}') >= 2)
 verifier("la vérification compte ses échecs et oublie après une entrée réussie",

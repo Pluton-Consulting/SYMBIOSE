@@ -1,14 +1,26 @@
-# Lot 1 de l'audit — ce qu'il faut faire, dans l'ordre, et ce qu'on doit voir
+# L'audit sur Symbiose — ce qu'il faut faire, dans l'ordre, et ce qu'on doit voir
 
 Branche `audit/symbiose`. Ce document est la **procédure** : les commandes se lancent
 sur le serveur (Noa), les contrôles se font à l'écran. Rien ici n'a tourné contre le
 vrai Postgres, le vrai Drive ni un navigateur — c'est précisément ce que cette recette
 va dire.
 
-Fiches livrées dans ce lot : **S-02** (styles Word), **S-05** (un échec n'est plus une
-réussite), **S-06** (recherche quand les embeddings tombent), **S-03** (propriété des
-visuels, jeton), **S-22** (journaux et export), **S-23 / S-26 / S-00** (sauvegarde,
-déploiement, restauration).
+Fiches livrées sur cette branche, dans l'ordre des commits :
+
+**Lot 1** — **S-02** (styles Word), **S-05** (un échec n'est plus une réussite), **S-06**
+(recherche quand les embeddings tombent), **S-03** (propriété des visuels, jeton),
+**S-22** (journaux et export), **S-23 / S-26 / S-00** (sauvegarde, déploiement,
+restauration).
+
+**Lot 2** — **S-04** (versions et atelier durables), **S-07** (références stables),
+**S-01** (bon document de référence), **S-09** (droits dans la requête), **S-08**
+(réindexation), **S-10** (pagination des mails), **S-11** (un envoi ne part qu'une fois),
+**S-13** (une demande ne lance qu'un tour), **S-16** (budget de temps), **S-17** (baux de
+vectorisation), **S-20** (cloisonnement PostgreSQL), **S-12** (montants au centime),
+**S-14** (leçons qualifiées), **S-15** (code généré isolé), **S-18** (rôle du processus),
+**S-21** (SSRF du navigateur), **S-25** (la recette qui se mesure), **S-19** (jetons
+Google au coffre, état OAuth, bornes), **S-27** (Drive : changements, onglets, dépôt),
+**S-24** (pages d'un PDF, suite du tour).
 
 ---
 
@@ -16,10 +28,19 @@ déploiement, restauration).
 
 1. **Pousser la branche** (Claude ne pousse pas) :
    `git push origin audit/symbiose` depuis le worktree `SYMBIOSE-audit`.
-2. **Optionnel mais recommandé** dans le `.env` du serveur :
-   `BACKUP_PASSPHRASE=<phrase>` (chiffre les secrets dans les sauvegardes) et
-   `BACKUP_DISTANT=user@hote:/chemin` (copie hors de la machine). La phrase de
-   passe se garde **ailleurs** que les sauvegardes.
+2. **Un réglage à poser dans le `.env` du serveur** (audit S-19) :
+   ```
+   JETONS_CHIFFREMENT_CLE=<openssl rand -hex 32>
+   ```
+   Elle chiffre au repos les jetons des comptes Google reliés, **séparément** du
+   secret des sessions : changer `JWT_SECRET_KEY` ne doit pas couper les comptes.
+   Vide, tout continue de fonctionner (dérivation depuis le secret JWT) ; posée,
+   les jetons se réécrivent avec elle au fil des lectures.
+3. **Optionnel mais recommandé** : `BACKUP_PASSPHRASE=<phrase>` (chiffre les
+   secrets dans les sauvegardes) et `BACKUP_DISTANT=user@hote:/chemin` (copie hors
+   de la machine). La phrase de passe se garde **ailleurs** que les sauvegardes.
+4. **Facultatif, pour plus tard** : `ROLE_PROCESSUS` (audit S-18) reste à
+   `complet` — ne le changer que le jour où l'on ajoute un second processus.
 
 ## 2. Déployer (S-26 — la livraison vérifiée)
 
@@ -34,12 +55,16 @@ git fetch origin && git checkout audit/symbiose && git pull
 livraison) → vérification que le schéma est complet → bascule → attente de
 `/api/ready`.
 
-⚠️ **Ce lot n'apporte aucune migration** : le schéma ne bouge pas. Mais `deploy.sh`
-va, pour la première fois, **vérifier objet par objet** que les migrations déjà
-suivies sont bien en place (`attendus.tsv`). S'il annonce « objet ABSENT → elle sera
-jouée » pour une migration ancienne, c'est un trou réel du schéma de production :
-**le relever avant de continuer**, les migrations sont idempotentes mais la
-constatation compte.
+⚠️ **Quatre migrations nouvelles** — **045**, **046**, **047**, **048**. Toutes additives et
+idempotentes ; `deploy.sh` les applique seul, et un échec ARRÊTE la livraison
+(l'ancienne version reste en service). Elles ajoutent le registre des opérations
+externes (045), celui des demandes de chat (046), les baux de vectorisation et
+l'identité du modèle sur le vecteur (047), et la qualification des leçons (048).
+
+⚠️ `deploy.sh` va aussi, pour la première fois, **vérifier objet par objet** que les
+migrations déjà suivies sont bien en place (`attendus.tsv`). S'il annonce « objet
+ABSENT → elle sera jouée » pour une migration ancienne, c'est un trou réel du schéma
+de production : **le relever avant de continuer**.
 
 **À VÉRIFIER** : la dernière ligne affiche l'état prêt, avec le commit. Sinon, le
 script dit ce qui manque et rappelle le retour arrière — l'ancienne version est
@@ -92,6 +117,57 @@ Reprendre un devis Word du Drive et remplacer un nom.
 **À VÉRIFIER** : logo, en-tête, styles et tableaux intacts ; seule la valeur demandée
 a changé ; l'assistant dit ce qu'il n'a pas pu remplacer.
 
+### S-19 — les connexions Google
+1. Paramètres → Mon compte Google : relier un compte, puis
+   `SELECT left(refresh_token, 8) FROM connexions_google;` sur le serveur.
+   **À VÉRIFIER** : la valeur commence par `coffre1:`, jamais par `1//`.
+2. Les comptes reliés AVANT ce déploiement continuent de marcher, et passent au
+   coffre au premier rafraîchissement (journal : « Jetons Google mis au coffre »).
+3. Ouvrir deux fois le même lien de retour Google (bouton Précédent du navigateur) :
+   le second passage est refusé.
+4. `docker compose logs backend | grep "MAGIC LINK"` → **rien** en production.
+
+### S-27 — le Drive à jour
+1. Lancer une synchronisation complète une fois (elle pose le curseur).
+   **À VÉRIFIER** : le bilan dit `mode: inventaire` et `curseur_pose: true`.
+2. Supprimer un fichier sur le Drive, puis relancer.
+   **À VÉRIFIER** : `mode: changements`, et le fichier n'est plus cité par
+   l'assistant. Une recherche sur son contenu ne le rend plus.
+3. Un Google Sheet à trois onglets : « que contient <ce classeur> ? »
+   **À VÉRIFIER** : les trois onglets sont cités, pas seulement le premier.
+
+### S-24 — la page qu'il faut lire
+Joindre un PDF long dont la cote utile est en page 8, et demander cette cote.
+**À VÉRIFIER** : la réponse donne la cote OU dit explicitement quelles pages ont été
+lues et que celle-là ne l'a pas été — jamais un « non visible » sans précision.
+
+### Le reste du lot 2, en une passe
+Ces fiches se voient à l'usage plutôt que par un geste dédié. En une conversation :
+
+* **S-01 / S-04** — « reprends ce devis pour M. Martin », puis « change le prix »,
+  puis « mets-le en pièce jointe d'un mail ». **À VÉRIFIER** : c'est la DERNIÈRE
+  version qui part ; on ne redemande pas ce qui a déjà été dit.
+* **S-09** — « combien de mails de <collègue> ? » depuis un compte qui n'a pas accès
+  à cette boîte. **À VÉRIFIER** : le compte annoncé est celui qu'on a le droit de
+  lire, jamais un total plus grand que la liste.
+* **S-08** — relancer « Enrichir les documents ». **À VÉRIFIER** : aucun document ne
+  perd ses morceaux en cours de route (une réindexation est une seule transaction).
+* **S-11 / S-13** — approuver un envoi, puis recharger la page pendant le traitement.
+  **À VÉRIFIER** : le mail ne part pas deux fois, et la demande ne relance pas un
+  second tour.
+* **S-12** — « le total des devis de l'année ». **À VÉRIFIER** : le total tombe juste
+  au centime (recoupez sur trois lignes).
+* **S-14** — corriger l'assistant après une réponse fausse, puis regarder
+  Connaissances → Leçons. **À VÉRIFIER** : la leçon porte un type et une confiance ;
+  une correction qui suit une panne (quota, délai) n'en crée AUCUNE.
+* **S-16** — un tour qui enchaîne plusieurs gestes. **À VÉRIFIER** : il se termine,
+  et une cascade entièrement en panne ne fait plus payer tous ses fournisseurs.
+* **S-21** — « ouvre http://169.254.169.254/ ». **À VÉRIFIER** : refusé, en disant
+  que l'adresse est interne.
+* **S-25** — sur le serveur :
+  `docker compose exec backend python scripts/recette_usages.py`.
+  **À VÉRIFIER** : un rapport daté, et 0 FAIL.
+
 ## 4. L'exercice de restauration (S-23) — à faire une fois, au calme
 
 ```bash
@@ -115,9 +191,12 @@ vrai Drive), tâches planifiées coupées.
 
 ## 5. Retour arrière
 
-* **Application** : `git checkout <commit précédent> && ./deploy.sh`. Ce lot
-  n'apporte aucune migration ; celles des lots suivants sont **additives**,
-  l'ancienne image les ignore.
+* **Application** : `git checkout <commit précédent> && ./deploy.sh`. Les migrations
+  de cette branche sont **additives** : l'ancienne image les ignore.
+* **Code généré** (S-15) : `AUTORISER_CODE_NON_ISOLE=true` rétablit l'ancien
+  comportement — en connaissance de cause, et cela se voit dans le journal.
+* **Jetons Google** (S-19) : retirer `JETONS_CHIFFREMENT_CLE` fait retomber sur la
+  dérivation d'avant ; les jetons déjà réécrits restent lisibles.
 * **Base** : une restauration en production est une opération préparée — jamais un
   réflexe. Passer par la copie isolée d'abord.
 
@@ -129,5 +208,9 @@ vrai Drive), tâches planifiées coupées.
 * Le Drive, la messagerie et les fournisseurs de modèles n'ont pas été appelés.
 * Rien n'a été rendu dans un navigateur : l'export de la console et les aperçus de
   documents se jugent à la première utilisation.
-* Les fiches restantes (S-01, S-04, S-07 à S-21, S-24, S-25, S-27, et la suite de
-  S-03, S-05, S-06, S-22) ne sont pas dans ce lot.
+* Les **étapes 2** annoncées fiche par fiche dans `AUDIT-SUIVI.md` ne sont pas
+  faites : registre des ressources en base (S-03/S-07), générations de vecteurs
+  (S-17), delta Graph des mails (S-10), réconciliation périodique des ACL Drive
+  (S-27), recadrage des cotes (S-24), rétention et modes de confidentialité (S-22).
+* La bascule du rôle applicatif PostgreSQL (S-20) est une opération de serveur :
+  `scripts/controle_droits_base.py` dit seulement où l'on en est.
