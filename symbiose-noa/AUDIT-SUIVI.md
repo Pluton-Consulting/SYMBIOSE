@@ -29,6 +29,14 @@ poussées sur benit seulement.
 | S-04 | Versions de documents et atelier durables | fait (verrou, écriture atomique, compteur réconcilié, lignée et manifeste, purge par groupe, quota qui refuse au lieu d'effacer) |
 | S-07 | Références de sources stables | étape 1 faite (registre durable des messages et pièces, relu après redémarrage) ; couverture des recherches et registre en base : lots suivants |
 | S-01 | Choisir et réutiliser le bon document de référence | fait (référence du travail mémorisée, remplacements déjà donnés repris, original modifié signalé) |
+| S-09 | Droits appliqués avant les résultats et les comptes | étape 1 faite (boîtes dans la requête, comptes alignés, post-filtre gardé en défense) ; versions d'ACL et dérivés : lot suivant |
+| S-08 | Réindexer sans effacer prématurément | étape 1 faite (bascule en une transaction, texte vide sans effet) ; générations et provenance fine : lot suivant |
+| S-10 | Lire complètement les mails | étape 1 faite (pagination `@odata.nextLink`, plafond dit) ; delta, capacités métier, brouillons serveur : lot suivant |
+| S-11 | Envois et approbations sans doublons | étape 1 faite (registre des opérations, réclamation avant l'appel, effet inconnu jamais relancé) ; figement des pièces par révision : lot suivant |
+| S-13 | Fil de travail, pas de double demande | étape 1 faite (request_id des deux transports, résumé périmé écarté, mode du checkpointer dans la readiness) ; état de travail structuré : lot suivant |
+| S-16 | Latence bornée, fournisseurs utilisables | étape 1 faite (budget de demande, pannes classées, demi-ouverture) ; propagation du budget à tous les étages : lot suivant |
+| S-17 | Embeddings et files fiables | étape 1 faite (bail des jobs, identité du modèle sur le vecteur) ; générations de vecteurs : lot suivant |
+| S-20 | Cloisonnement PostgreSQL effectif | script de contrôle en lecture + procédure ; bascule du rôle applicatif : à faire par Noa sur le serveur |
 
 ## Journal
 
@@ -101,3 +109,20 @@ poussées sur benit seulement.
   on ne redemande plus ce qui a été dit —, et un original modifié depuis le choix est
   SIGNALÉ. Bancs `test_livrable`, `test_compte_rendu`, `test_livrables_pertinents`,
   `test_reproduire_du_serveur` verts.
+- 16/09 — S-09 / S-08 / S-10 / S-11 / S-13 / S-16 / S-17 / S-20 : les boîtes autorisées
+  entrent DANS la requête SQL (en paramètre) au lieu d'un post-filtre appliqué après coup —
+  le compte suivait l'un et la liste l'autre ; liste vide = fail-closed. Une réindexation
+  supprime et réinsère dans LA MÊME transaction, et un texte vide ne remplace plus une
+  version valide. La synchronisation Outlook suit `@odata.nextLink` et DIT quand elle
+  s'arrête sur son plafond. `skills/operations.py` + migration **045** : un effet externe
+  s'inscrit avec sa décision et son empreinte, se RÉCLAME une fois (UPDATE conditionnel),
+  et une réponse perdue devient « effet inconnu » — jamais une relance. `agents/requetes.py`
+  + migration **046** : un `request_id` réclamé une seule fois, quel que soit le transport
+  (WS puis HTTP ne lancent plus deux tours). `llm/budget.py` : le temps de la DEMANDE se
+  compte une fois, les pannes sont classées (configuration / quota / réseau) et la cascade
+  entièrement écartée ne rouvre qu'UN candidat. Migration **047** : un job de vectorisation
+  porte son bail (`FOR UPDATE SKIP LOCKED`) et le vecteur porte le modèle qui l'a produit.
+  `scripts/controle_droits_base.py` : contrôle en LECTURE du cloisonnement PostgreSQL.
+  Bancs `test_droits_et_reindexation` (nouveau), `test_budget_et_baux` (nouveau),
+  `test_disjoncteur`, `test_resume_en_fond`, `test_vitesse_tour`, `test_recherche_documents`,
+  `test_graphe_routeurs`, `test_accord_et_fil` verts.
