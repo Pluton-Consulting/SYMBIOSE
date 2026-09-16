@@ -153,8 +153,15 @@ verifier("voie 2 : la délégation de domaine emprunte l'identité de la personn
 verifier("son absence n'est pas une panne : on continue vers le refus",
          "Délégation de domaine indisponible" in drv)
 verifier("le refus nomme LES DEUX chemins (relier son compte, ou déléguer)",
-         "_refus_explique" in drv.split("raise DriveRefuse")[1][:200]
+         # Le refus de FIN de parcours, celui qui conclut « ni l'un ni l'autre ».
+         # (Depuis l'audit S-19, un premier `DriveRefuse` peut tomber plus haut
+         # quand le compte relié n'a pas le droit d'ÉCRIRE : il dit autre chose,
+         # et c'est voulu — d'où l'ancre sur la fonction, pas sur un rang.)
+         "raise DriveRefuse(_refus_explique(" in drv
          and "délégation de domaine" in drv)
+verifier("un compte relié en LECTURE seule ne part pas écrire (audit S-19)",
+         'peut(compte, "drive_ecriture")' in drv
+         and _avant(drv, 'peut(compte, "drive_ecriture")', "_build_service_perso, creds, scopes"))
 
 # ── LE REFUS DIT SA CAUSE, et il est EXÉCUTÉ ─────────────────────────────
 # Relevé du 07/09 (compte `administratif`, 13:43 et 13:45) : « Reliez-le depuis
@@ -255,8 +262,13 @@ verifier("joindre un fichier du Drive à un mail suit la MÊME identité",
 gp = (BACKEND / "mail" / "google_perso.py").read_text(encoding="utf-8")
 verifier("le scope demandé est `drive` COMPLET (le dépôt écrit dans un dossier "
          "existant)", '"https://www.googleapis.com/auth/drive",' in gp)
+# CE QU'ON DEMANDE ≠ CE QU'ON SAIT LIRE. Depuis l'audit S-19, le module porte
+# une table des CAPACITÉS (ce qu'un compte relié permet, d'après les droits que
+# Google a rendus), Gmail compris — elle sert à refuser proprement. Ce qui
+# compte ici est ce qu'on RÉCLAME au consentement.
+_demandes = gp.split("SCOPES = [", 1)[1].split("]", 1)[0] if "SCOPES = [" in gp else gp
 verifier("aucun scope Gmail n'est réclamé : Symbiose est sur Microsoft 365",
-         "gmail." not in gp)
+         "gmail." not in _demandes, _demandes[:200])
 verifier("le cache porte DEUX index — par boîte et par personne",
          "_PAR_USER" in gp and "_CACHE" in gp)
 verifier("les deux index sont remplis en une passe, depuis la même requête",

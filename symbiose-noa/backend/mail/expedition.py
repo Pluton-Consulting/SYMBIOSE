@@ -415,6 +415,17 @@ async def deposer_brouillon(boite: str, destinataire: str, objet: str, corps: st
                 pass
         service.users().drafts().create(userId="me", body=corps_api).execute()
 
+    # LE DROIT DE COMPOSER SE VÉRIFIE AVANT L'APPEL (16/09, audit S-19). Lire sa
+    # boîte n'est pas y écrire : un compte relié sans `gmail.compose` partait
+    # quand même, et l'on apprenait le refus par un 403 d'API. On le dit avant,
+    # avec le geste qui le lève.
+    try:
+        from mail import google_perso
+        if google_perso.capacites(boite) is not None \
+                and not google_perso.peut(boite, "gmail_brouillon"):
+            raise RuntimeError(google_perso.refus_de_capacite(boite, "gmail_brouillon"))
+    except ImportError:  # pragma: no cover — socle sans connexion personnelle
+        pass
     try:
         await asyncio.to_thread(_travail)
     except RuntimeError:

@@ -305,6 +305,13 @@ class Settings(BaseSettings):
     # refusé à l'écriture. Changer de modèle d'embedding impose donc de
     # re-vectoriser tout le corpus, parce que des vecteurs de modèles
     # différents ne se comparent pas — même à dimension égale.
+    # LA CLÉ DES SECRETS AU REPOS (16/09, audit S-19). Séparée du secret des
+    # sessions : les deux n'ont ni le même usage ni la même vie — changer le
+    # secret JWT ne doit pas couper tous les comptes Google reliés, et une
+    # fuite de l'un ne doit pas donner l'autre. Vide = dérivation depuis
+    # JWT_SECRET_KEY (rien n'est perdu) ; dès qu'elle est posée, tout jeton relu
+    # est réécrit avec elle — la rotation se fait à l'usage, sans migration.
+    jetons_chiffrement_cle: str = ""
     # LE CODE GÉNÉRÉ NE TOURNE PAS DANS LE BACKEND (16/09, audit S-15). Sans
     # exécuteur isolé configuré, un skill généré est REFUSÉ : le sous-processus
     # partagerait les fichiers, les clés et le réseau du serveur. Ce drapeau

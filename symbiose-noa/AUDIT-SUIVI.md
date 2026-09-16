@@ -42,7 +42,7 @@ poussées sur benit seulement.
 | S-18 | Travaux lourds séparés | étape 1 faite (rôle de processus, requalification seulement sans signe de vie) ; baux durables par job long : lot suivant |
 | S-21 | Secrets et navigateur | étape 1 faite (SSRF : résolution DNS, IPv6, adresses internes) ; secrets du worker et route interne : à faire avec le serveur |
 | S-25 | Mesurer les usages et prouver l'absence de régression | fait (`scripts/recette_usages.py` : PASS/FAIL/SKIP, rapport daté par commit) |
-| S-19 | Sessions et connexions Google | à faire (propre à Symbiose : liens de connexion, JWT, refresh tokens, scopes) |
+| S-19 | Sessions et connexions Google | étape 1 faite (jetons au coffre, état OAuth à usage unique, essais bornés par origine, capacités par scope, lien jamais imprimé sur un serveur) ; réauthentification renforcée des gestes sensibles : lot suivant |
 | S-24 | Vision cohérente avec la demande | à faire |
 | S-20 | Cloisonnement PostgreSQL effectif | script de contrôle en lecture + procédure ; bascule du rôle applicatif : à faire par Noa sur le serveur |
 
@@ -148,3 +148,16 @@ poussées sur benit seulement.
   `scripts/recette_usages.py` joue tous les bancs et rend un rapport daté PASS/FAIL/SKIP
   par commit : **138 PASS · 0 FAIL · 3 SKIP** sur cette branche. Banc
   `test_chiffres_et_isolement` (22).
+- 16/09 — S-19 (étape 1, propre à Symbiose) : le jeton de rafraîchissement d'un compte
+  Google — une clé PERMANENTE vers son Drive et sa boîte — était écrit en clair.
+  `security/coffre.py` le chiffre au repos avec une clé SÉPARÉE du secret des sessions
+  (`JETONS_CHIFFREMENT_CLE`) ; les lignes d'avant restent lisibles et sont remises au
+  coffre à l'usage, sans migration ; une clé changée rend « illisible », jamais une
+  chaîne inutilisable. L'état OAuth, signé et daté, était REJOUABLE dix minutes : il
+  porte désormais une marque consommée à la vérification. Les demandes de lien de
+  connexion et les essais de vérification sont bornés par ORIGINE (`security/tentatives.py`)
+  — et la réponse ne change pas quand la borne mord, sinon elle apprendrait quelles
+  adresses existent. Les CAPACITÉS suivent les droits rendus par Google : lire le Drive
+  ne donne plus le droit d'y écrire ni de poser un brouillon Gmail, et le refus dit quoi
+  faire au lieu d'un 403 d'API. Enfin le lien de connexion ne s'imprime plus dès que
+  `DEBUG` est vrai : l'ENVIRONNEMENT fait foi. Banc `test_connexions_google` (36).

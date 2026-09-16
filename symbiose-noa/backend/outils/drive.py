@@ -169,6 +169,15 @@ async def _build_service_pour(identite=None, ecriture: bool = False):
         await google_perso.rafraichir()      # une boucle asyncio tourne ICI
         creds = google_perso.credentials_pour_utilisateur(str(identite))
         if creds is not None:
+            # LE DROIT D'ÉCRIRE SE VÉRIFIE AVANT D'ÉCRIRE (16/09, audit S-19).
+            # Un compte relié en LECTURE seule partait quand même, et Google
+            # rendait un 403 d'API que personne ne savait lire. Un compte relié
+            # dont on ne connaît pas les droits (ligne d'avant, colonne vide)
+            # garde le bénéfice du doute : il avait tout ce qu'on demandait à
+            # l'époque.
+            compte = google_perso.compte_connecte(str(identite))
+            if ecriture and compte and not google_perso.peut(compte, "drive_ecriture"):
+                raise DriveRefuse(google_perso.refus_de_capacite(compte, "drive_ecriture"))
             return await asyncio.to_thread(_build_service_perso, creds, scopes)
 
         # 2. LA DÉLÉGATION DE DOMAINE, si l'entreprise en a une. Elle donne le
