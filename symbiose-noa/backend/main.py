@@ -15,7 +15,7 @@ from config import settings
 # logger racine. Un enregistrement émis par `logging.getLogger("duret.mail")`
 # ne passe pas par les filtres de la racine — il remonte vers ses handlers.
 # Posé sur la racine seule, le filtre ne voyait donc presque rien (16/09,
-# audit D-22). Il est reposé au démarrage, après qu'uvicorn a installé les
+# audit S-22). Il est reposé au démarrage, après qu'uvicorn a installé les
 # siens. httpx et httpcore restent à WARNING : leur ligne par requête n'apprend
 # rien en exploitation, et c'est une source de fuite en moins.
 from security.secrets import poser_filtre as _poser_filtre_secrets
@@ -32,7 +32,7 @@ _poser_filtre_secrets()
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Les handlers d'uvicorn existent maintenant : le filtre des secrets les
-    # couvre aussi (audit D-22).
+    # couvre aussi (audit S-22).
     _poser_filtre_secrets()
     await init_db()
     try:

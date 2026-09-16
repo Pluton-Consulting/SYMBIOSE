@@ -1,5 +1,5 @@
 """
-Banc « SAUVEGARDER, LIVRER, RESTAURER » — audit du 15/09, fiches D-23, D-26, D-00.
+Banc « SAUVEGARDER, LIVRER, RESTAURER » — audit du 15/09, fiches S-23, S-26, S-00.
 
 CE QUI ÉTAIT FAUX :
   · `backup.sh` ne sauvait que la base et le `.env`. Les Word et Excel rendus,
@@ -298,8 +298,8 @@ if recette.exists():
     texte = recette.read_text(encoding="utf-8")
     verifier("elle donne les commandes du serveur (sauvegarde, migration, déploiement, restauration)",
              all(c in texte for c in ("./backup.sh", "./deploy.sh", "./restaurer.sh", "044")))
-    verifier("elle couvre les fiches du lot (D-02, D-03, D-05, D-06, D-19, D-22, D-27)",
-             all(f in texte for f in ("D-02", "D-03", "D-05", "D-06", "D-19", "D-22", "D-27")))
+    verifier("elle couvre les fiches du lot (S-02, S-03, S-05, S-06, S-19, S-22, S-27)",
+             all(f in texte for f in ("S-02", "S-03", "S-05", "S-06", "S-19", "S-22", "S-27")))
     verifier("elle dit ce qu'on regarde à l'écran, pas seulement ce qu'on tape",
              "À VÉRIFIER" in texte.upper() and "retour arrière" in texte.lower())
 

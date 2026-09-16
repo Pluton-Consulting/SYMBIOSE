@@ -41,7 +41,7 @@ def _mask_pii(data: Any) -> Any:
     """
     Ce qui part vers Langfuse, masqué autant que le permet le réglage du jour.
 
-    ⚠️ DIT TEL QUEL (16/09, audit D-22). Ce masque promettait qu'« AUCUNE PII ne
+    ⚠️ DIT TEL QUEL (16/09, audit S-22). Ce masque promettait qu'« AUCUNE PII ne
     quitte le système » : c'est FAUX depuis le 31/08, où l'anonymisation est
     désactivée par défaut (décision de Noa, `anonymisation`). Quand elle est
     coupée, l'anonymiseur rend le texte tel quel : noms, adresses et montants
@@ -104,7 +104,7 @@ def _get_client() -> Optional[Any]:
             host=_host(),
             # Masque : les clés TOUJOURS, les données personnelles selon le
             # réglage `anonymisation` (coupé par défaut depuis le 31/08 — dit
-            # dans `_mask_pii`, audit D-22).
+            # dans `_mask_pii`, audit S-22).
             mask=_mask_pii,
             environment=settings.environment,
         )

@@ -1,4 +1,4 @@
-# LA LIGNE DE BASE VÉRIFIÉE (16/09, audit D-26).
+# LA LIGNE DE BASE VÉRIFIÉE (16/09, audit S-26).
 #
 # `deploy.sh` marquait TOUTES les migrations comme appliquées dès que la table
 # `users` existait : « la base tourne, donc tout est en place ». Une base qui

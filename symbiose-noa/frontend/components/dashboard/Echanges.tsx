@@ -141,7 +141,7 @@ export default function Echanges({ apiUrl, token, C }: Props) {
   /** TOUT L'HISTORIQUE, DEPUIS LE PREMIER ÉCHANGE (15/09). La période affichée
    *  ne compte pas ; la personne et la recherche choisies, si.
    *
-   *  (16/09, audit D-22) Le fichier ne passe plus par la mémoire du navigateur :
+   *  (16/09, audit S-22) Le fichier ne passe plus par la mémoire du navigateur :
    *  un export de plusieurs centaines de milliers de lignes tenait dans un Blob
    *  avant d'atteindre le disque. On demande un TICKET court (à usage unique,
    *  lié à cette personne et à cet export), puis on suit l'adresse : le

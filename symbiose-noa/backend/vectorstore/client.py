@@ -253,7 +253,7 @@ class VectorStoreClient:
     async def copier_source(self, source_id_origine: str, source_type: str, source_id: str,
                             source_filename: Optional[str] = None, access_level: str = "all") -> int:
         """Reprend les morceaux d'une source au contenu IDENTIQUE sous une autre
-        source (16/09, audit D-27) : même texte et mêmes vecteurs, mais le nom
+        source (16/09, audit S-27) : même texte et mêmes vecteurs, mais le nom
         de fichier et le NIVEAU D'ACCÈS de la copie — un même CCTP dans deux
         affaires ne fusionne pas leurs droits. Un morceau pas encore vectorisé
         reçoit son job. Rend le nombre de morceaux repris ; 0 si l'original n'en

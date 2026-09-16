@@ -112,7 +112,7 @@ async def copier_document(source_id_origine: str, source_type: str, source_id: s
     """Une copie RECONNUE À SON CONTENU (même empreinte que `source_id_origine`)
     reprend les morceaux de l'original sous sa propre source, son nom et son
     niveau d'accès : ni relecture ni OCR, ni nouvel appel d'embedding quand
-    l'original est vectorisé (16/09, audit D-27). Rend le nombre de morceaux
+    l'original est vectorisé (16/09, audit S-27). Rend le nombre de morceaux
     repris, 0 si l'original n'en a plus. Ne lève pas."""
     try:
         return await vectorstore.copier_source(source_id_origine, source_type, source_id,

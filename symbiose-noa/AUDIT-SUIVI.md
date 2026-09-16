@@ -22,6 +22,14 @@ poussées sur benit seulement.
 | S-27 | Drive complet et à jour | socle fait (une copie reconnue à son contenu reprend les morceaux de l'original) ; suivi `changes`, export XLSX multifeuille, dépôt réconcilié : lot propre à Symbiose |
 | S-06 | Secours lexical quand les embeddings tombent | étape 1 faite (embedding et voie vectorielle isolés, diagnostic, panne ≠ absence) ; orchestrateur de sources et comparables Drive : lot 2 |
 
+## Lot 2 — documents durables, sources retrouvables, droits et recherche
+
+| Fiche | Sujet | État |
+|---|---|---|
+| S-04 | Versions de documents et atelier durables | fait (verrou, écriture atomique, compteur réconcilié, lignée et manifeste, purge par groupe, quota qui refuse au lieu d'effacer) |
+| S-07 | Références de sources stables | étape 1 faite (registre durable des messages et pièces, relu après redémarrage) ; couverture des recherches et registre en base : lots suivants |
+| S-01 | Choisir et réutiliser le bon document de référence | fait (référence du travail mémorisée, remplacements déjà donnés repris, original modifié signalé) |
+
 ## Journal
 
 - 16/09 — S-02 : `bureautique/trame.py` réécrit le remplacement Word nœud `w:t` par nœud
@@ -76,3 +84,20 @@ poussées sur benit seulement.
   `psql -c`, donc une seule transaction, l'échec annulait aussi le `DELETE FROM cles_api`.
   Une copie restaurée gardait ses clés. Coupures séparées, et les comptes Google reliés
   (refresh tokens vers le vrai Drive) sont effacés eux aussi. **Corrigé des deux côtés.**
+- 16/09 — S-04 : `bureautique/atelier.py` — fiche et contenu étaient deux écritures
+  séparées : une interruption ou deux ajouts simultanés désynchronisaient le compteur et
+  le texte. Verrou par document, écriture par fichier temporaire puis `os.replace`,
+  compteur RÉCONCILIÉ depuis le contenu réel. Chaque document porte sa lignée
+  (`document_id`, `revision_id`, `parent_revision_id`, `thread_id`) et un manifeste
+  (format, source, substitutions, images, ce qui reste à compléter) ; la purge se fait par
+  GROUPE après vérification des références, et le quota refuse au lieu d'effacer un
+  brouillon. Banc `test_versions_documents`.
+- 16/09 — S-07 (étape 1) : `ressources/registre.py` — un registre DURABLE (JSON atomique
+  dans DOCUMENTS_DIR, borné, jamais le contenu) : après un redémarrage, la `ref` d'un mail
+  ou d'une pièce jointe se retrouve encore. Avant, elle vivait dans un dictionnaire de
+  processus et « ouvre la pièce jointe » tombait sur un mail au hasard.
+- 16/09 — S-01 : la référence choisie pour un travail est mémorisée (source, empreinte,
+  raison) ; les remplacements déjà donnés sont repris dès que l'inspection les confirme —
+  on ne redemande plus ce qui a été dit —, et un original modifié depuis le choix est
+  SIGNALÉ. Bancs `test_livrable`, `test_compte_rendu`, `test_livrables_pertinents`,
+  `test_reproduire_du_serveur` verts.
