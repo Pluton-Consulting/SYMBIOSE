@@ -63,7 +63,13 @@ _SCOPES_ECRITURE = ["https://www.googleapis.com/auth/drive"]
 # Documents natifs Google → export vers un format texte lisible.
 _EXPORTABLE = {
     "application/vnd.google-apps.document": "text/plain",
-    "application/vnd.google-apps.spreadsheet": "text/csv",
+    # UN CLASSEUR S'EXPORTE EN XLSX, PAS EN CSV (16/09, audit S-27). Un CSV ne
+    # porte QU'UNE feuille : un Google Sheet de trois onglets entrait en mémoire
+    # amputé des deux tiers, sans que rien ne le dise. Le XLSX passe ensuite par
+    # `ingestion.parsers`, qui lit toutes les feuilles et garde leur nom —
+    # exactement ce que fait déjà la lecture directe (`outils/drive._binaire`).
+    "application/vnd.google-apps.spreadsheet":
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     "application/vnd.google-apps.presentation": "text/plain",
 }
 
@@ -203,7 +209,20 @@ def _download_text(service, f) -> Optional[str]:
     mime, name = f["mimeType"], f["name"]
     try:
         if mime in _EXPORTABLE:
-            data = service.files().export(fileId=f["id"], mimeType=_EXPORTABLE[mime]).execute()
+            cible = _EXPORTABLE[mime]
+            data = service.files().export(fileId=f["id"], mimeType=cible).execute()
+            if cible.endswith("spreadsheetml.sheet"):
+                # Un classeur exporté est BINAIRE : il passe par le lecteur
+                # tabulaire commun, qui rend toutes ses feuilles.
+                from ingestion.parsers import (FichierNonSupporte, analyser,
+                                               ligne_en_texte)
+                try:
+                    structure = analyser(name + ".xlsx", data)
+                except FichierNonSupporte as e:
+                    logger.info("Drive : classeur « %s » illisible (%s)", name, e)
+                    return None
+                lignes = (structure.get("rows") or [])[:MAX_LIGNES_TABLEUR]
+                return "\n\n".join(ligne_en_texte(l) for l in lignes)
             return data.decode("utf-8", "replace") if isinstance(data, bytes) else str(data)
 
         if mime == "application/pdf" or name.lower().endswith(".pdf"):
@@ -489,7 +508,7 @@ async def _lister(service, folder: Optional[str],
     return fichiers, rapport
 
 
-async def sync(folder_id: Optional[str] = None, avancer=None) -> dict:
+async def sync(folder_id: Optional[str] = None, avancer=None, incremental: bool = True) -> dict:
     """Ingère chaque périmètre déclaré, avec le niveau d'accès de son dossier.
 
     Un dossier passé en argument l'emporte sur la configuration : c'est ce qui
@@ -513,6 +532,43 @@ async def sync(folder_id: Optional[str] = None, avancer=None) -> dict:
     # Les dossiers qui ont leur PROPRE périmètre ne doivent pas être avalés par
     # le parcours d'un autre : ils seront ingérés avec leur niveau à eux.
     declares = frozenset(d for d, _ in cibles if d)
+
+    async def _prevenir_simple(rapporteur, bilan):
+        if rapporteur is None:
+            return
+        try:
+            await rapporteur(bilan.get("reingeres", 0), bilan.get("changements", 0),
+                             "j'applique les changements du Drive")
+        except Exception as e:  # noqa: BLE001 — un compteur ne casse pas une ingestion
+            logger.debug("Drive : avancement non enregistré : %s", e)
+
+    # ── LE JOURNAL DES CHANGEMENTS D'ABORD (16/09, audit S-27) ──────────────
+    # Un inventaire complet parcourt des dizaines de milliers de fichiers pour
+    # découvrir que trois ont bougé — et il ne voit toujours pas ce qui a été
+    # SUPPRIMÉ ni ce dont l'accès a été retiré, puisque ces fichiers ne sont
+    # simplement plus listés. Avec un curseur, on lit ce que Google a noté.
+    from ingestion import drive_changes
+    if incremental and not folder_id and drive_changes.lire_curseur().get("token"):
+        niveaux = {d: n for d, n in cibles if d}
+        bilan = await drive_changes.appliquer(service, niveaux,
+                                              (settings.google_drive_access_level or "all").strip())
+        if bilan.get("applique"):
+            await _prevenir_simple(avancer, bilan)
+            logger.info("Drive : %d changement(s) appliqué(s) — %d réingéré(s), %d retiré(s)",
+                        bilan.get("changements", 0), bilan.get("reingeres", 0),
+                        bilan.get("retires", 0))
+            return {"mode": "changements", **bilan}
+        # Curseur périmé, trop de changements, ou pas de curseur : on retombe
+        # sur l'inventaire — en DISANT pourquoi, pour que l'écran ne présente
+        # pas une relecture complète comme un caprice.
+        logger.info("Drive : inventaire complet (%s)", bilan.get("raison", "sans curseur"))
+        raison_inventaire = bilan.get("raison")
+    else:
+        raison_inventaire = None
+
+    # LE CURSEUR SE PREND AVANT L'INVENTAIRE, jamais après : ce qui change
+    # PENDANT la lecture doit être rattrapé au passage suivant.
+    depart = await drive_changes.poser_depart(service)
 
     async def _prevenir(traites, total, etape):
         if avancer is None:
@@ -593,7 +649,21 @@ async def sync(folder_id: Optional[str] = None, avancer=None) -> dict:
     # vérifier qu'un dossier sensible est bien arrivé au niveau qu'on croit,
     # sans avoir à relire un fichier de configuration sur le serveur.
     sortie = {"fichiers": total_vus, "ingérés": total_ingeres, "périmètres": detail,
-              "inchangés": inchanges, "lents_ignorés": lents_sautes, "trop_gros": trop_gros}
+              "inchangés": inchanges, "lents_ignorés": lents_sautes, "trop_gros": trop_gros,
+              "mode": "inventaire"}
+    if raison_inventaire:
+        sortie["inventaire_parce_que"] = raison_inventaire
+    # LE CURSEUR NE S'ÉCRIT QUE SI L'INVENTAIRE EST ALLÉ AU BOUT. Le poser
+    # après un parcours tronqué reviendrait à déclarer à jour ce qu'on n'a
+    # jamais lu : les fichiers non examinés ne reviendraient plus jamais.
+    complet = all(d.get("parcours_complet") for d in detail) and not non_examines
+    if depart and complet:
+        drive_changes.ecrire_curseur(
+            depart, inventaire_le=__import__("datetime").datetime.now(
+                __import__("datetime").timezone.utc).isoformat(timespec="seconds"))
+        sortie["curseur_pose"] = True
+    elif depart:
+        sortie["curseur_pose"] = False
     if total_lents:
         sortie["abandonnés_trop_lents"] = total_lents
     if non_examines:

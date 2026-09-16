@@ -2121,8 +2121,18 @@ async def deposer(dossier: str, nom: str, contenu: bytes,
         media = MediaIoBaseUpload(io.BytesIO(contenu), mimetype=mime)
         return ecriture.files().create(
             body={"name": nom, "parents": [cible]}, media_body=media,
-            fields="id,name,webViewLink", supportsAllDrives=True,
+            fields="id,name,webViewLink,size", supportsAllDrives=True,
         ).execute()
+
+    def _retrouver():
+        """Le fichier est-il arrivé malgré tout ? (réconciliation, audit S-27)"""
+        return ecriture.files().list(
+            q=(f"'{cible}' in parents and trashed=false and name='{_echappe(nom)}'"),
+            spaces="drive", fields="files(id,name,webViewLink,size)", corpora="allDrives",
+            includeItemsFromAllDrives=True, supportsAllDrives=True, pageSize=1,
+        ).execute()
+
+    reconcilie = False
     try:
         cree = await asyncio.to_thread(_envoi)
     except Exception as e:  # noqa: BLE001 — l'API Google lève ses propres types
@@ -2133,9 +2143,33 @@ async def deposer(dossier: str, nom: str, contenu: bytes,
                 "seule. Un administrateur doit rejouer le consentement Google "
                 "(scripts/google_consentement.py) ou donner au compte de "
                 "service le rôle « Gestionnaire de contenu » sur ce Drive.") from e
-        raise DriveRefuse(f"Le dépôt a échoué : {texte[:200]}") from e
+        # ON RÉCONCILIE AVANT DE CONCLURE (16/09, audit S-27). Une réponse
+        # perdue en route (délai dépassé, coupure, 502) ne dit PAS que le
+        # fichier n'est pas arrivé : Google a pu le créer et perdre la réponse.
+        # Conclure « échec » invitait à réessayer — et le second envoi aurait
+        # fait un doublon, ou aurait été refusé par la garde du nom avec un
+        # message faux (« existe déjà, donne un autre nom ») pour un dépôt qui
+        # avait RÉUSSI.
+        if _reponse_perdue(e):
+            try:
+                trouves = (await asyncio.to_thread(_retrouver)).get("files") or []
+            except Exception:  # noqa: BLE001 — le Drive ne répond plus du tout
+                trouves = []
+            if trouves and str(trouves[0].get("size") or len(contenu)) == str(len(contenu)):
+                cree, reconcilie = trouves[0], True
+                logger.warning("Drive : réponse perdue pour « %s », mais le fichier EST "
+                               "arrivé — réconcilié sans second envoi", nom)
+            else:
+                raise DriveRefuse(
+                    f"Le dépôt de « {nom} » n'a pas abouti et le fichier n'est pas "
+                    "sur le Drive : rien n'a été déposé, on peut réessayer.") from e
+        else:
+            raise DriveRefuse(f"Le dépôt a échoué : {texte[:200]}") from e
 
-    logger.info("Drive : « %s » déposé dans %s (%d octets)", nom, cible, len(contenu))
+    import hashlib
+    empreinte = hashlib.sha256(contenu).hexdigest()[:16]
+    logger.info("Drive : « %s » déposé dans %s (%d octets, empreinte %s)",
+                nom, cible, len(contenu), empreinte)
     return {
         "depose": True,
         "nom": cree.get("name") or nom,
@@ -2143,8 +2177,28 @@ async def deposer(dossier: str, nom: str, contenu: bytes,
         "dossier": dossier,
         "lien": cree.get("webViewLink"),
         "octets": len(contenu),
-        "message_final": f"« {nom} » est déposé dans « {dossier} » sur le Drive.",
+        # L'EMPREINTE DE CE QU'ON A DÉPOSÉ (audit S-27) : elle relie la révision
+        # produite chez nous au fichier qui vit là-bas. Sans elle, « est-ce bien
+        # cette version ? » n'a pas de réponse.
+        "empreinte": empreinte,
+        "reconcilie": reconcilie,
+        "message_final": (
+            f"« {nom} » est déposé dans « {dossier} » sur le Drive."
+            + (" (La réponse du Drive s'était perdue : le fichier avait bien été "
+               "créé, il n'a pas été envoyé deux fois.)" if reconcilie else "")),
     }
+
+
+def _reponse_perdue(e: Exception) -> bool:
+    """L'envoi est-il ARRIVÉ ou non ? On ne sait pas — et c'est le cas qui
+    compte : délai dépassé, connexion coupée, erreur passagère du serveur. Un
+    refus explicite (403, 404, quota) n'est pas ambigu : rien n'a été écrit."""
+    texte = f"{type(e).__name__}: {e}".lower()
+    if any(m in texte for m in ("403", "404", "insufficient", "notfound", "quota")):
+        return False
+    return any(m in texte for m in ("timeout", "timed out", "connection", "connexion",
+                                    "broken pipe", "reset", "502", "503", "504",
+                                    "incomplete", "ssl"))
 
 
 async def deposer_document(document_id: str, dossier: str, proprietaire: str,

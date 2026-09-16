@@ -443,8 +443,14 @@ CONNECTEUR_NAS = BACKEND / "ingestion" / "connectors" / "synology.py"
 if not CONNECTEUR_NAS.exists():
     print("\n5. Synchronisation du NAS — sans objet ici (le stockage est le Drive)")
     drive = (BACKEND / "ingestion" / "connectors" / "google_drive.py").read_text(encoding="utf-8")
+    # LA SIGNATURE PEUT S'ÉTOFFER (l'audit S-27 y a ajouté le mode incrémental) :
+    # ce qui compte est que le rapporteur d'avancement soit accepté.
+    import ast as _ast
+    _sync = next(n for n in _ast.walk(_ast.parse(drive))
+                 if isinstance(n, _ast.AsyncFunctionDef) and n.name == "sync")
+    _params = [a.arg for a in _sync.args.args] + [a.arg for a in _sync.args.kwonlyargs]
     verifier("la synchronisation du Drive rend compte de son avancement (`avancer`)",
-             "async def sync(folder_id: Optional[str] = None, avancer=None)" in drive)
+             "avancer" in _params and "folder_id" in _params, _params)
 else:
     print("\n5. La synchronisation du NAS part du catalogue, pagine, et ne relit pas l'inchangé")
     ARBRE = {"/home": [("Drive", True), ("#recycle", True)],

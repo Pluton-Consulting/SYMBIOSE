@@ -19,7 +19,7 @@ poussées sur benit seulement.
 | S-03 | Bearer jamais envoyé à une origine externe ; propriété des visuels | étape 1 faite (jeton par origine, propriétaire noté au dépôt, route et pièces jointes contrôlées, pièce de mail résolue dans sa boîte, script de rattachement des anciens) ; registre PostgreSQL des ressources, médias DOCX, résultat structuré d'image manquante : lot suivant |
 | S-22 | Export CSV neutralisé, export borné, secrets dans les traces | étape 1 faite (cellules inertes, fin bornée + pagination par clé + manifeste, ticket de téléchargement, filtre des secrets sur les handlers et les traces) ; carte des sorties, modes de confidentialité et rétention par type : lot 4 |
 | S-23 / S-26 / S-00 | Scripts de sauvegarde, de déploiement vérifié et procédure de recette | fait (backup.sh complet et vérifié, restaurer.sh isolé, deploy.sh réordonné avec ligne de base vérifiée, readiness séparée de la liveness, RECETTE-LOT1.md) ; exercice de restauration réel : à jouer par Noa |
-| S-27 | Drive complet et à jour | socle fait (une copie reconnue à son contenu reprend les morceaux de l'original) ; suivi `changes`, export XLSX multifeuille, dépôt réconcilié : lot propre à Symbiose |
+| S-27 | Drive complet et à jour | étape 1 faite (journal `changes` avec curseur, suppressions et sorties de périmètre appliquées, classeurs multifeuilles, dépôt réconcilié, copie reconnue au contenu) ; réconciliation périodique des ACL, octets natifs aux trames, écran des curseurs : lot suivant |
 | S-06 | Secours lexical quand les embeddings tombent | étape 1 faite (embedding et voie vectorielle isolés, diagnostic, panne ≠ absence) ; orchestrateur de sources et comparables Drive : lot 2 |
 
 ## Lot 2 — documents durables, sources retrouvables, droits et recherche
@@ -161,3 +161,17 @@ poussées sur benit seulement.
   ne donne plus le droit d'y écrire ni de poser un brouillon Gmail, et le refus dit quoi
   faire au lieu d'un 403 d'API. Enfin le lien de connexion ne s'imprime plus dès que
   `DEBUG` est vrai : l'ENVIRONNEMENT fait foi. Banc `test_connexions_google` (36).
+- 16/09 — S-27 (étape 1, propre à Symbiose) : la synchronisation comparait des DATES —
+  or un fichier supprimé, mis à la corbeille, déplacé hors périmètre ou dont l'accès a été
+  retiré n'en change aucune : il disparaissait du listage et restait en mémoire.
+  `ingestion/drive_changes.py` lit le JOURNAL de Google (`changes.list`) depuis un curseur,
+  retire ce qui a disparu ou est sorti du périmètre, réingère ce qui a changé — et le
+  curseur ne s'écrit qu'APRÈS le traitement (une panne fait rejouer, elle ne fait jamais
+  sauter). Un curseur périmé renvoie à un inventaire, en le disant ; un inventaire TRONQUÉ
+  n'en pose pas. Un Google Sheet s'exporte désormais en XLSX et non en CSV, et
+  `parsers.lire_excel` lit TOUTES les feuilles en gardant leur nom — un classeur de trois
+  onglets n'entre plus amputé des deux tiers. Enfin un dépôt dont la réponse réseau se perd
+  est RÉCONCILIÉ (on regarde si le fichier est arrivé avant de conclure) et rend son
+  empreinte : plus de doublon, et plus de « existe déjà, donne un autre nom » pour un dépôt
+  qui avait réussi. Bancs `test_drive_complet` (nouveau, 27), `test_tableau_joint` (+5),
+  `test_depot_drive`, `test_drive_increment` verts.

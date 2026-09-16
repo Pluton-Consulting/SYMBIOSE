@@ -58,21 +58,28 @@ LIGNES = [ENTETES] + [_ancienne(i) for i in range(1, 51)] + [_collee(i) for i in
 LIGNES.append([None] * 49)          # une ligne vide en fin de fichier : ignorée
 
 class _Feuille:
+    def __init__(self, lignes=None, titre="Feuil1"):
+        self._lignes = LIGNES if lignes is None else lignes
+        self.title = titre
+        self.max_row = len(self._lignes)
     def iter_rows(self, values_only=True):
-        for l in LIGNES:
+        for l in self._lignes:
             yield tuple(l)
 class _Classeur:
-    active = _Feuille()
+    def __init__(self, feuilles=None):
+        self.worksheets = feuilles or [_Feuille()]
+        self.active = self.worksheets[0]
     def close(self): pass
+CLASSEUR = {"courant": None}
 mod_openpyxl = types.ModuleType("openpyxl")
-mod_openpyxl.load_workbook = lambda *a, **k: _Classeur()
+mod_openpyxl.load_workbook = lambda *a, **k: (CLASSEUR["courant"] or _Classeur())
 sys.modules["openpyxl"] = mod_openpyxl
 
 # ── 1. LA LECTURE EXCEL DU MODULE LIVRÉ ───────────────────────────────────
 src_parsers = (BACKEND / "ingestion" / "parsers.py").read_text(encoding="utf-8")
 arbre = ast.parse(src_parsers)
-voulu = {"lire_excel", "_lettre_colonne", "MAX_LIGNES", "MAX_COLONNES", "FichierNonSupporte",
-         "ligne_en_texte"}
+voulu = {"lire_excel", "_feuille_excel", "_lettre_colonne", "MAX_LIGNES", "MAX_COLONNES",
+         "FichierNonSupporte", "ligne_en_texte"}
 gardes = [n for n in arbre.body
           if (isinstance(n, (ast.FunctionDef, ast.ClassDef)) and n.name in voulu)
           or (isinstance(n, ast.Assign) and any(isinstance(c, ast.Name) and c.id in voulu for c in n.targets))]
@@ -88,6 +95,29 @@ entetes, lignes = espace["lire_excel"](b"peu importe")
 verifier("TOUTES les lignes sont lues (95, pas 40, pas 30)", len(lignes) == 95, str(len(lignes)))
 verifier("les cellules sous un en-tête VIDE ne sont plus jetées",
          any("Colonne AG" in l for l in lignes))
+verifier("un classeur à UNE feuille ne gagne pas de colonne « Feuille »",
+         "Feuille" not in entetes and not any("Feuille" in l for l in lignes))
+
+# ── TROIS ONGLETS (16/09, audit S-27) ─────────────────────────────────────
+# Un Google Sheet de trois onglets n'entrait en mémoire que par le premier :
+# les deux autres n'existaient pas pour l'assistant, sans que rien le dise.
+DEVIS = [["Client", "Montant"], ["DULUGAT", "12000"], ["CAMP", "8400"]]
+CHANTIERS = [["Chantier", "Ville"], ["Terrasse bois", "ARCACHON"]]
+MATERIEL = [["Article", "Stock"], ["Graminées", "120"], ["Pavés", "40"]]
+CLASSEUR["courant"] = _Classeur([_Feuille(DEVIS, "Devis"), _Feuille(CHANTIERS, "Chantiers"),
+                                 _Feuille(MATERIEL, "Matériel")])
+e3, l3 = espace["lire_excel"](b"peu importe")
+CLASSEUR["courant"] = None
+verifier("les TROIS feuilles sont lues, pas seulement la première", len(l3) == 5, str(len(l3)))
+verifier("chaque ligne dit de quelle feuille elle vient",
+         {l.get("Feuille") for l in l3} == {"Devis", "Chantiers", "Matériel"},
+         {l.get("Feuille") for l in l3})
+verifier("les colonnes des trois feuilles sont réunies, « Feuille » en tête",
+         e3[0] == "Feuille" and {"Client", "Montant", "Chantier", "Ville", "Article", "Stock"} <= set(e3),
+         e3)
+verifier("une valeur reste rattachée à SA feuille (un total de Devis n'emporte "
+         "pas le stock de Matériel)",
+         [l for l in l3 if l.get("Article") == "Pavés"][0]["Feuille"] == "Matériel")
 collee = next(l for l in lignes if l.get("Nom ?") == "COLLE1")
 verifier("le client « collé » garde son adresse, en colonne AG",
          collee.get("Colonne AG") == "herve1@gmail.com", str(collee))

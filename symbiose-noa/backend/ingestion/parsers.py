@@ -387,13 +387,59 @@ def lire_xls(brut: bytes) -> tuple[list[str], list[dict]]:
 
 
 def lire_excel(brut: bytes) -> tuple[list[str], list[dict]]:
+    """Toutes les feuilles d'un classeur, et pas seulement la première.
+
+    CE QUI ÉTAIT FAUX (16/09, audit S-27). On ne lisait que `wb.active`. Un
+    Google Sheet de trois onglets — « Devis », « Chantiers », « Matériel » —
+    n'entrait donc en mémoire que par son premier, et rien ne le disait : les
+    deux autres n'existaient pas pour l'assistant, qui répondait « je n'ai pas
+    cette information » avec aplomb.
+
+    UNE COLONNE « Feuille » EN PLUS, SEULEMENT S'IL Y A PLUSIEURS FEUILLES : sur
+    un export à un seul onglet — le cas courant — rien ne change, et les
+    traitements qui comptent les colonnes (publipostage, agrégations) ne voient
+    pas apparaître une colonne fantôme.
+    """
     try:
         from openpyxl import load_workbook
     except ImportError as e:
         raise FichierNonSupporte("Lecture Excel indisponible (openpyxl absent)") from e
 
     wb = load_workbook(io.BytesIO(brut), read_only=True, data_only=True)
-    ws = wb.active                      # 1re feuille — la plus courante pour un export
+    feuilles = [f for f in wb.worksheets if f.max_row]
+    if not feuilles:
+        feuilles = list(wb.worksheets)[:1]
+    plusieurs = len(feuilles) > 1
+
+    entetes: list[str] = []
+    lignes: list[dict] = []
+    tronque = False
+    for feuille in feuilles:
+        colonnes, contenu, coupe = _feuille_excel(feuille)
+        tronque = tronque or coupe
+        for nom in colonnes:
+            if nom and nom not in entetes:
+                entetes.append(nom)
+        for ligne in contenu:
+            if plusieurs:
+                # Le nom de l'onglet reste attaché à SA ligne : sans lui, trois
+                # feuilles fondues en une liste ne se distinguent plus, et un
+                # total de « Devis » emporterait les lignes de « Matériel ».
+                ligne = {"Feuille": feuille.title, **ligne}
+            lignes.append(ligne)
+        if len(lignes) >= MAX_LIGNES:
+            logger.warning("Classeur tronqué à %d lignes (toutes feuilles)", MAX_LIGNES)
+            lignes = lignes[:MAX_LIGNES]
+            break
+    wb.close()
+    if plusieurs and "Feuille" not in entetes:
+        entetes.insert(0, "Feuille")
+    return [e for e in entetes if e], lignes
+
+
+def _feuille_excel(ws) -> tuple[list[str], list[dict], bool]:
+    """(colonnes, lignes, tronquée) d'UNE feuille. La lecture d'un classeur
+    passe par ici, feuille après feuille."""
     iterateur = ws.iter_rows(values_only=True)
 
     entetes: list[str] = []
@@ -416,9 +462,11 @@ def lire_excel(brut: bytes) -> tuple[list[str], list[dict]]:
         vues.add(entetes[i])
 
     lignes = []
+    tronque = False
     for i, ligne in enumerate(iterateur):
         if i >= MAX_LIGNES:
-            logger.warning("Excel tronqué à %d lignes", MAX_LIGNES)
+            logger.warning("Feuille « %s » tronquée à %d lignes", ws.title, MAX_LIGNES)
+            tronque = True
             break
         if not ligne or not any(c is not None and str(c).strip() for c in ligne):
             continue
@@ -434,8 +482,7 @@ def lire_excel(brut: bytes) -> tuple[list[str], list[dict]]:
             d[entete] = str(valeur).strip()
         if d:
             lignes.append(d)
-    wb.close()
-    return [e for e in entetes if e], lignes
+    return [e for e in entetes if e], lignes, tronque
 
 
 def _lettre_colonne(indice: int) -> str:
