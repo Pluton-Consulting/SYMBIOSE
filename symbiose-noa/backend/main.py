@@ -1,6 +1,5 @@
 import asyncio
 import logging
-import re as _re_logs
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
@@ -11,69 +10,30 @@ from config import settings
 
 # ── AUCUNE CLÉ NE DOIT SE RETROUVER DANS LES JOURNAUX ────────────────────
 #
-# Relevé le 27/08 en lisant `docker compose logs backend` : httpx journalise en
-# INFO chaque requête avec son URL COMPLÈTE, et les API Google portent la clé
-# dans la query string. La clé s'affichait donc en clair, lisible par quiconque
-# ouvre les journaux ou en poste une capture d'écran. Aucune ligne de code ne
-# l'écrivait : c'est la bibliothèque HTTP qui la recopiait.
-#
-# Deux protections, dans cet ordre :
-#   1. un FILTRE sur la racine, qui masque le secret quel que soit le logger —
-#      httpx aujourd'hui, une autre bibliothèque demain ;
-#   2. httpx et httpcore remontés à WARNING : leur ligne par requête n'apprend
-#      rien en exploitation, et c'est une source de fuite en moins.
-#
-# Le filtre garde les SIX DERNIERS caractères : c'est ce qui permet de dire
-# « c'est bien la clé du fichier de configuration, pas celle de la base » sans
-# jamais livrer la clé elle-même.
-_SECRETS = _re_logs.compile(
-    r"(?i)\b(key|api[_-]?key|access[_-]?token|token|apikey|password|secret)"
-    r"(=|%3D|\"?\s*:\s*\"?)([A-Za-z0-9._\-]{12,})")
-
-
-def _masquer(texte: str) -> str:
-    def _remplacer(m):
-        valeur = m.group(3)
-        return f"{m.group(1)}{m.group(2)}***{valeur[-6:]}"
-    return _SECRETS.sub(_remplacer, texte)
-
-
-class _FiltreSecrets(logging.Filter):
-    """Masque toute valeur qui ressemble à une clé, message ET arguments.
-
-    On réécrit `msg` et `args` plutôt que le message formaté : le formatage
-    n'a pas encore eu lieu quand le filtre passe, et une clé arrivée par `%s`
-    échapperait à un filtre qui ne regarderait que `msg`.
-    """
-
-    def filter(self, record: logging.LogRecord) -> bool:
-        try:
-            if isinstance(record.msg, str) and "=" in record.msg or ":" in str(record.msg):
-                record.msg = _masquer(str(record.msg))
-            if record.args:
-                if isinstance(record.args, dict):
-                    record.args = {k: _masquer(v) if isinstance(v, str) else v
-                                   for k, v in record.args.items()}
-                else:
-                    record.args = tuple(_masquer(a) if isinstance(a, str) else a
-                                        for a in record.args)
-        except Exception:  # noqa: BLE001 — un journal ne fait jamais tomber l'app
-            pass
-        return True
-
+# Le masquage vit dans `security/secrets.py` (le banc l'exécute). Ce qui se
+# décide ICI, c'est OÙ il est posé : sur les HANDLERS, et pas seulement sur le
+# logger racine. Un enregistrement émis par `logging.getLogger("duret.mail")`
+# ne passe pas par les filtres de la racine — il remonte vers ses handlers.
+# Posé sur la racine seule, le filtre ne voyait donc presque rien (16/09,
+# audit D-22). Il est reposé au démarrage, après qu'uvicorn a installé les
+# siens. httpx et httpcore restent à WARNING : leur ligne par requête n'apprend
+# rien en exploitation, et c'est une source de fuite en moins.
+from security.secrets import poser_filtre as _poser_filtre_secrets
 
 logging.basicConfig(
     level=logging.DEBUG if settings.debug else logging.INFO,
     format="%(asctime)s %(levelname)s %(name)s — %(message)s",
 )
-logging.getLogger().addFilter(_FiltreSecrets())
 for _bavard in ("httpx", "httpcore"):
     logging.getLogger(_bavard).setLevel(logging.WARNING)
-    logging.getLogger(_bavard).addFilter(_FiltreSecrets())
+_poser_filtre_secrets()
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # Les handlers d'uvicorn existent maintenant : le filtre des secrets les
+    # couvre aussi (audit D-22).
+    _poser_filtre_secrets()
     await init_db()
     try:
         from security.rbac import reload_permissions
@@ -252,6 +212,65 @@ except ImportError:
     pass
 
 
+# ── VIVANT N'EST PAS PRÊT (16/09, audit S-26) ──────────────────────────────
+# `/api/health` disait « ok » dès que le processus répondait : il disait donc
+# « ok » avec un schéma incomplet, une base injoignable ou la mémoire des
+# conversations en mode volatil. On sépare :
+#   · /api/health  — LIVENESS : le processus vit (c'est tout, et c'est voulu) ;
+#   · /api/ready   — READINESS : base joignable, migrations du disque toutes
+#                    suivies, checkpointer durable — et le COMMIT livré.
+# Une source facultative en panne (Drive, mail, modèle) ne rend pas le site
+# inutilisable : elle est DITE dégradée, elle n'empêche pas d'être prêt.
+def version_livree() -> dict:
+    """Le commit réellement en service, écrit par `deploy.sh` (backend/.version)."""
+    fiche = {}
+    try:
+        import pathlib as _pathlib
+        for ligne in (_pathlib.Path(__file__).with_name(".version")).read_text(encoding="utf-8").splitlines():
+            if "=" in ligne:
+                cle, valeur = ligne.split("=", 1)
+                fiche[cle.strip()] = valeur.strip()
+    except Exception:  # noqa: BLE001 — hors déploiement (poste de dev), on ne sait pas
+        pass
+    return fiche
+
+
+async def _etat_du_service() -> dict:
+    """Ce qui doit être vrai pour servir : base, schéma, mémoire durable."""
+    from pathlib import Path as _Path
+    etat = {"base": False, "schema": False, "checkpointer": False, "manquantes": [],
+            "version": version_livree()}
+    try:
+        from database.connection import get_db
+        async with get_db() as conn:
+            await conn.fetchval("SELECT 1")
+            etat["base"] = True
+            suivies = {r["filename"] for r in await conn.fetch("SELECT filename FROM schema_migrations")}
+        fichiers = {f.name for f in (_Path(__file__).parent / "database" / "migrations").glob("[0-9]*.sql")}
+        etat["manquantes"] = sorted(fichiers - suivies)
+        etat["schema"] = not etat["manquantes"]
+    except Exception as e:  # noqa: BLE001 — une base muette n'est pas « prête »
+        etat["erreur_base"] = str(e)[:200]
+    try:
+        from agents.checkpointer import get_checkpointer
+        saver = await get_checkpointer()
+        etat["checkpointer"] = type(saver).__name__ != "MemorySaver"
+        etat["checkpointer_type"] = type(saver).__name__
+    except Exception as e:  # noqa: BLE001
+        etat["erreur_checkpointer"] = str(e)[:200]
+    etat["pret"] = bool(etat["base"] and etat["schema"] and etat["checkpointer"])
+    return etat
+
+
 @app.get("/api/health")
 async def health():
-    return {"status": "ok", "service": "symbiose-pluton"}
+    """LIVENESS : le processus répond. Ne dit RIEN de la base ni du schéma."""
+    return {"status": "ok", "service": "symbiose-pluton", **version_livree()}
+
+
+@app.get("/api/ready")
+async def ready():
+    """READINESS : ce qu'il faut pour servir vraiment. 503 tant que ça manque."""
+    from fastapi.responses import JSONResponse
+    etat = await _etat_du_service()
+    return JSONResponse(status_code=200 if etat["pret"] else 503, content=etat)

@@ -43,3 +43,8 @@ graphify-out/
 
 # Cache incremental de TypeScript
 *.tsbuildinfo
+
+# La version livrée, écrite par deploy.sh sur le serveur (jamais versionnée).
+symbiose-noa/backend/.version
+# Environnement de restauration isolée, produit par restaurer.sh.
+symbiose-noa/.restauration/
