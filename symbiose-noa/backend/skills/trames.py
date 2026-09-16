@@ -431,7 +431,7 @@ async def utiliser_trame(parametres: dict, utilisateur) -> dict:
 # ── Reproduire : le document d'un autre, avec notre contenu ──────────────
 
 def _dire_limites(detail: dict) -> str:
-    """Ce que le remplacement n'a PAS touché, dit à la personne (audit D-02) :
+    """Ce que le remplacement n'a PAS touché, dit à la personne (audit S-02) :
     ne jamais laisser croire à un document « identique » sur une zone non contrôlée."""
     limites = (detail or {}).get("limites") or []
     return (" À savoir : " + " ; ".join(limites) + ".") if limites else ""

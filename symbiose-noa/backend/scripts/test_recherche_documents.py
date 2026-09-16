@@ -169,7 +169,7 @@ if fusion and "async def rechercher(" in rag:
         verifier("sans embedding : la voie lexicale seule, et un résultat quand même", [a[0] for a in appels] == ["texte"] and r["documents"] and r["embedding"] is False)
         r = asyncio.run(rechercher("", "terrain"))
         verifier("requête vide : résultat vide, sans appel", r["documents"] == [] and r["total_documents"] == 0)
-        # 16/09 (audit D-06) : une PANNE du fournisseur d'embeddings ne vide plus la recherche.
+        # 16/09 (audit S-06) : une PANNE du fournisseur d'embeddings ne vide plus la recherche.
         async def _emb_en_panne(q):
             raise RuntimeError("quota Gemini épuisé")
         espace["embed_query"] = _emb_en_panne
@@ -267,7 +267,7 @@ if fusion and "MAX_LIMITE" in src_skill:
         etat["docs"] = 0
         r = asyncio.run(skill({"requete": "licorne"}, user))
         verifier("rien trouvé : l'inventaire côté humain, la consigne côté modèle", r["nombre"] == 0 and "1 398 devis" in r["message"] and "connaissances_acquises" in r["a_faire"])
-        # 16/09 (audit D-06) : une recherche EN PANNE n'est pas un « rien trouvé ».
+        # 16/09 (audit S-06) : une recherche EN PANNE n'est pas un « rien trouvé ».
         async def _rechercher_en_panne(*a, **k):
             return {"documents": [], "total_documents": 0, "diagnostic": {"embedding": "indisponible",
                                                                           "erreur": "OperationalError"}}

@@ -213,7 +213,7 @@ verifier("LE PIÈGE DES RUNS — un texte éclaté sur plusieurs runs est rempla
 verifier("et la date qui suivait dans le même paragraphe est conservée",
          eclate and "3 avril 2026" in eclate[0].text)
 
-# ── 5 bis. LA MISE EN FORME DES FRAGMENTS (16/09, audit D-02) ────────────
+# ── 5 bis. LA MISE EN FORME DES FRAGMENTS (16/09, audit S-02) ────────────
 # Avant : tout le paragraphe modifié allait dans le PREMIER run, les autres
 # étaient vidés. Un nom en gras rouge perdait son gras et sa couleur, et un logo
 # posé dans un run réécrit disparaissait (`run.text = ""` efface le dessin).
@@ -333,7 +333,7 @@ verifier("la largeur de colonne réglée à la main a survécu",
          str(f.column_dimensions["A"].width))
 verifier("le gras d'une cellule a survécu", f["A1"].font.bold is True)
 verifier("le nom de la feuille est conservé", relu_x.sheetnames == ["Devis"])
-# 16/09 (audit D-02) : une formule ne se réécrit pas par remplacement de texte.
+# 16/09 (audit S-02) : une formule ne se réécrit pas par remplacement de texte.
 dx = tr.remplir_detaille(ORIGINAL_XLSX, "xlsx", {"B3": "C9", "Monsieur Dupont": "Madame Martin"})
 fx = load_workbook(io.BytesIO(dx["octets"]), data_only=False)["Devis"]
 verifier("« B3 » cherché ne casse pas la formule =B3*B4, et c'est dit",

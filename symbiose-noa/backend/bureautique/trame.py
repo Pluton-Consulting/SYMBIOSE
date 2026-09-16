@@ -30,7 +30,7 @@ remplacement naïf échoue silencieusement sur les documents réels, préciséme
 ceux qui ont été retouchés à la main. On cherche donc dans le texte ENTIER du
 paragraphe — mais on n'écrit que dans les fragments concernés.
 
-⚠️ AVANT LE 16/09 (audit D-02), tout le paragraphe modifié était reposé dans le
+⚠️ AVANT LE 16/09 (audit S-02), tout le paragraphe modifié était reposé dans le
 PREMIER run et les autres vidés : un paragraphe « Client : **Martin** (en
 rouge) » perdait son gras et sa couleur dès qu'on y changeait la date, et un
 logo porté par un run réécrit pouvait disparaître. Désormais chaque occurrence
@@ -608,7 +608,7 @@ def _remplir_xlsx(octets: bytes, propre: dict, limites: set) -> tuple[bytes, int
                     continue
                 if v.startswith("="):
                     # UNE FORMULE NE SE RÉÉCRIT PAS PAR REMPLACEMENT DE TEXTE
-                    # (audit D-02) : « B3 » cherché dans « =B3*B4 » casserait le
+                    # (audit S-02) : « B3 » cherché dans « =B3*B4 » casserait le
                     # calcul. Elle reste telle quelle, et c'est dit.
                     if any(k in v for k in propre):
                         limites.add("une formule Excel contenait un texte cherché : elle n'a pas "
@@ -706,7 +706,7 @@ def remplir_detaille(octets: bytes, genre: str, table: dict) -> dict:
     produits = sortie.getvalue()
     controle = _controle().comparer_docx(octets, produits)
     if not controle["ok"]:
-        # UN FICHIER ABÎMÉ NE SORT PAS (audit D-02) : on garde l'original
+        # UN FICHIER ABÎMÉ NE SORT PAS (audit S-02) : on garde l'original
         # intact et on dit ce qui a été détecté.
         raise ValueError("Le document produit ne passe pas le contrôle : "
                          + " ; ".join(controle["problemes"]) + ". L'original n'a pas été modifié.")

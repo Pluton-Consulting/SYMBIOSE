@@ -192,7 +192,7 @@ class VectorStoreClient:
         from vectorstore.fusion import fusionner
         voies: dict = {}
         if query_embedding:
-            # LA VOIE VECTORIELLE A SON FILET (16/09, audit D-06) : un vecteur de
+            # LA VOIE VECTORIELLE A SON FILET (16/09, audit S-06) : un vecteur de
             # la mauvaise dimension ou un index en panne ne doit pas emporter la
             # voie plein texte avec lui.
             try:

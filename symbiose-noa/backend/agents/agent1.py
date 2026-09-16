@@ -1703,7 +1703,7 @@ async def tools_node(state: AgentState, config=None) -> dict:
         plafond = (PLAFOND_RESULTAT_GENEREUX
                    if action["skill"] in RESULTATS_GENEREUX else PLAFOND_RESULTAT)
         contenu = _tailler_resultat(sortie, plafond)
-        # LE RÉSULTAT MÉTIER, PAS LA FIN DE L'APPEL PYTHON (16/09, audit D-05) :
+        # LE RÉSULTAT MÉTIER, PAS LA FIN DE L'APPEL PYTHON (16/09, audit S-05) :
         # une sortie qui dit elle-même l'échec compte comme un échec pour les
         # filets, le journal et la console.
         ok = bool(brut.get("ok", True))

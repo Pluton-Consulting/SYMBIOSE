@@ -16,6 +16,7 @@ poussées sur benit seulement.
 |---|---|---|
 | S-02 | Styles Word conservés au remplacement, contrôle du fichier produit | fait (bancs réels) |
 | S-05 | Échecs métier jamais présentés comme réussis | étape 1 faite (normaliseur, exécuteur, boucle, reprise) ; reçus avant « créé/envoyé » et preuves par requête : lot suivant |
+| S-03 | Bearer jamais envoyé à une origine externe ; propriété des visuels | étape 1 faite (jeton par origine, propriétaire noté au dépôt, route et pièces jointes contrôlées, pièce de mail résolue dans sa boîte, script de rattachement des anciens) ; registre PostgreSQL des ressources, médias DOCX, résultat structuré d'image manquante : lot suivant |
 | S-06 | Secours lexical quand les embeddings tombent | étape 1 faite (embedding et voie vectorielle isolés, diagnostic, panne ≠ absence) ; orchestrateur de sources et comparables Drive : lot 2 |
 
 ## Journal
@@ -37,3 +38,14 @@ poussées sur benit seulement.
   recherche — une panne d'embedding ne vidait plus seulement la voie vectorielle, elle
   renvoyait « aucun document ». La voie plein texte répond seule, la raison est dite, et
   une panne n'est plus présentée comme une absence. Banc `test_recherche_documents`.
+- 16/09 — S-03 (étape 1) : `frontend/lib/origineBackend.ts` — le jeton de session n'est
+  posé QUE si l'URL du fichier vise l'origine du backend (`ApercuDocument`, `FileCard`) ;
+  une adresse absolue étrangère recevait le bearer. Le dépôt de visuels note le
+  PROPRIÉTAIRE (nouveau module `security/lecteur.py` : l'identité posée une fois au goulot
+  `execute_skill` et à la préparation des pièces, relue au dépôt) ; `routers/visuels.visuel`
+  et la résolution d'une pièce jointe vérifient ce propriétaire — un identifiant connu ne
+  vaut plus autorisation. Une pièce de mail se résout DANS SA BOÎTE.
+  `scripts/rattacher_visuels.py` rattache les anciens fichiers (constat par défaut).
+  Bancs `test_visuels_proprietaire` (nouveau), `test_pieces_multiples`,
+  `test_image_dans_document`, `test_pieces_jointes`, `test_apercu_pieces`,
+  `test_vision_reponse` verts ; `tsc --noEmit` vert.

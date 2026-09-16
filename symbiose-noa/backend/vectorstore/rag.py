@@ -85,7 +85,7 @@ def _filtrer_mails(chunks: list[dict], mailboxes: Optional[list[str]]) -> list[d
 
 
 async def _embedding_sans_panne(query: str, diagnostic: dict):
-    """Le vecteur de la requête, ou None — JAMAIS une exception (16/09, audit D-06).
+    """Le vecteur de la requête, ou None — JAMAIS une exception (16/09, audit S-06).
 
     Le calcul du vecteur vivait dans le même `try` que la recherche : un
     fournisseur d'embeddings en panne (quota, clé refusée, réseau) faisait
@@ -111,7 +111,7 @@ async def retrieve_detaille(
     top_k: int = 5,
     mailboxes: Optional[list[str]] = None,
 ) -> dict:
-    """Comme `retrieve`, avec le DIAGNOSTIC de couverture (audit D-06).
+    """Comme `retrieve`, avec le DIAGNOSTIC de couverture (audit S-06).
 
     {"chunks": [...], "diagnostic": {"embedding": ok|absent|indisponible,
     "voies": [...], "corpus_vide": bool, "erreur": ...}}. Une liste vide dit
@@ -178,7 +178,7 @@ async def retrieve(
         ou d'absence de résultat. Ne lève jamais.
     """
     # L'API liste est conservée pour tous les appelants ; le diagnostic vit dans
-    # `retrieve_detaille` (audit D-06).
+    # `retrieve_detaille` (audit S-06).
     return (await retrieve_detaille(query, user_role, source_types=source_types,
                                     top_k=top_k, mailboxes=mailboxes))["chunks"]
 
@@ -243,7 +243,7 @@ async def rechercher(
     if not query or not await _corpus_has_documents():
         return vide
     diagnostic: dict = {"embedding": "non_tente", "voies": []}
-    # Le vecteur est calculé HORS du `try` de la recherche (audit D-06) : sa
+    # Le vecteur est calculé HORS du `try` de la recherche (audit S-06) : sa
     # panne ne doit pas vider la voie plein texte.
     embedding = await _embedding_sans_panne(query, diagnostic)
     try:
@@ -304,7 +304,7 @@ async def rechercher(
                 "diagnostic": diagnostic}
     except Exception as e:  # noqa: BLE001 — une recherche en échec n'est pas une panne
         logger.warning("Échec RAG rechercher (rôle=%s, %s) : %s", user_role, type(e).__name__, e)
-        # UNE PANNE SE DIT (audit D-06) : « rien trouvé » et « recherche en
+        # UNE PANNE SE DIT (audit S-06) : « rien trouvé » et « recherche en
         # panne » ne sont pas la même réponse.
         return {**vide, "diagnostic": {**diagnostic, "erreur": type(e).__name__}}
 

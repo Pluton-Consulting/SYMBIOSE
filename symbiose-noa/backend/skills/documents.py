@@ -89,7 +89,7 @@ async def rechercher_documents(data: dict, user) -> dict:
 
     documents = trouve.get("documents") or []
     diagnostic = trouve.get("diagnostic") or {}
-    # UNE PANNE N'EST PAS UN « RIEN TROUVÉ » (16/09, audit D-06) : sans cette
+    # UNE PANNE N'EST PAS UN « RIEN TROUVÉ » (16/09, audit S-06) : sans cette
     # distinction, le modèle concluait à l'absence d'un document que la
     # recherche n'avait simplement pas pu chercher.
     if not documents and diagnostic.get("erreur"):
@@ -176,7 +176,7 @@ async def rechercher_documents(data: dict, user) -> dict:
         "total_morceaux": trouve.get("total_morceaux"),
         "page": page, "pages": pages, "limite": limite,
         "compte": compte,
-        # LA COUVERTURE (audit D-06) : quelles voies ont répondu. En plein texte
+        # LA COUVERTURE (audit S-06) : quelles voies ont répondu. En plein texte
         # seul, une notion formulée autrement peut manquer — c'est dit.
         "couverture": {"voies": diagnostic.get("voies") or [],
                        "recherche_par_le_sens": diagnostic.get("embedding") == "ok"},

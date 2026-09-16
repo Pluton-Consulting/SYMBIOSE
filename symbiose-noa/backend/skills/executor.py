@@ -176,7 +176,12 @@ async def execute_skill(name: str, data: dict, user_id: str | None = None,
         _verifier_effet(name, data, ref, approbation)
 
         start = time.monotonic()
-        sortie = await executable(data or {}, user)
+        # LE GOULOT : tout skill natif passe ici. On y pose l'identité de la
+        # personne pour que ce qui est DÉPOSÉ pendant le geste lui appartienne,
+        # quel que soit le chemin suivi par les octets (security/lecteur.py).
+        from security.lecteur import au_nom_de
+        with au_nom_de(user):
+            sortie = await executable(data or {}, user)
         duree = int((time.monotonic() - start) * 1000)
         from skills.resultats import message_d_echec, normaliser_resultat
         normalise = normaliser_resultat(sortie, effet_du_skill(name, ref))
@@ -209,7 +214,7 @@ async def execute_skill(name: str, data: dict, user_id: str | None = None,
         except Exception:
             pass
 
-        # `ok` DIT LE RÉSULTAT MÉTIER (16/09, audit D-05) : une sortie qui
+        # `ok` DIT LE RÉSULTAT MÉTIER (16/09, audit S-05) : une sortie qui
         # annonce elle-même l'échec n'est plus une réussite. Tous les champs
         # d'avant restent (`output`, `error`…), les nouveaux s'y ajoutent.
         return {"skill": name, "status": "native", "ok": normalise["ok"], "output": sortie,
