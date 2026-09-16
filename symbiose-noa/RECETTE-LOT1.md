@@ -12,7 +12,7 @@ déploiement, restauration).
 
 ---
 
-## 1. Avant de déployer
+## 1. Avant de déployer (S-00 — la préparation)
 
 1. **Pousser la branche** (Claude ne pousse pas) :
    `git push origin audit/symbiose` depuis le worktree `SYMBIOSE-audit`.
@@ -21,7 +21,7 @@ déploiement, restauration).
    `BACKUP_DISTANT=user@hote:/chemin` (copie hors de la machine). La phrase de
    passe se garde **ailleurs** que les sauvegardes.
 
-## 2. Déployer
+## 2. Déployer (S-26 — la livraison vérifiée)
 
 ```bash
 cd ~/SYMBIOSE/symbiose-noa        # le dossier du projet sur le VPS

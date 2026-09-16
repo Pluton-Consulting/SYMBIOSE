@@ -305,6 +305,17 @@ class Settings(BaseSettings):
     # refusé à l'écriture. Changer de modèle d'embedding impose donc de
     # re-vectoriser tout le corpus, parce que des vecteurs de modèles
     # différents ne se comparent pas — même à dimension égale.
+    # LE CODE GÉNÉRÉ NE TOURNE PAS DANS LE BACKEND (16/09, audit S-15). Sans
+    # exécuteur isolé configuré, un skill généré est REFUSÉ : le sous-processus
+    # partagerait les fichiers, les clés et le réseau du serveur. Ce drapeau
+    # rétablit l'ancien comportement — en connaissance de cause, et il se voit.
+    autoriser_code_non_isole: bool = False
+    # LE RÔLE DE CE PROCESSUS (16/09, audit S-18). « complet » : le serveur fait
+    # tout, comme aujourd'hui. « interactif » : il sert le chat et les écrans,
+    # sans les boucles de fond. « fond » : il ne fait que les boucles (embeddings,
+    # tâches, carte du classement). C'est ce qui permet d'ajouter un second
+    # processus sans que les deux relancent les mêmes travaux.
+    role_processus: str = "complet"
     embedding_dimensions: int = 1536
     # Worker de vectorisation : draine embedding_jobs en tâche de fond (dans le backend).
     embedding_worker_enabled: bool = True

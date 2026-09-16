@@ -44,16 +44,27 @@ async def lifespan(app: FastAPI):
         await init_runtime()
     except Exception as e:  # le graph ne doit pas empêcher l'API de démarrer
         logging.getLogger("symbiose").error("init_runtime a échoué : %s", e)
-    try:
-        from vectorstore.worker import start_embedding_worker
-        await start_embedding_worker()
-    except Exception as e:
-        logging.getLogger("symbiose").error("start_embedding_worker a échoué : %s", e)
-    try:
-        from tasks.worker import start_task_worker
-        await start_task_worker()
-    except Exception as e:
-        logging.getLogger("symbiose").error("start_task_worker a échoué : %s", e)
+    # LE RÔLE DE CE PROCESSUS (16/09, audit S-18). Toutes les boucles de fond
+    # vivaient dans le serveur du chat, et un second processus les aurait
+    # relancées une deuxième fois — deux ordonnanceurs, deux synchronisations,
+    # deux workers d'embeddings sur la même file. Le rôle se pose dans la
+    # configuration (`ROLE_PROCESSUS`) ; « complet » reste le défaut, donc rien
+    # ne change pour le déploiement d'aujourd'hui.
+    role = str(getattr(settings, "role_processus", "complet") or "complet").strip().lower()
+    travaux_de_fond = role in ("complet", "fond")
+    logging.getLogger("symbiose").info("Rôle du processus : %s (boucles de fond : %s)",
+                                       role, "oui" if travaux_de_fond else "non")
+    if travaux_de_fond:
+        try:
+            from vectorstore.worker import start_embedding_worker
+            await start_embedding_worker()
+        except Exception as e:
+            logging.getLogger("symbiose").error("start_embedding_worker a échoué : %s", e)
+        try:
+            from tasks.worker import start_task_worker
+            await start_task_worker()
+        except Exception as e:
+            logging.getLogger("symbiose").error("start_task_worker a échoué : %s", e)
     try:
         from security.cleanup import start_validation_cleanup
         await start_validation_cleanup()
@@ -117,19 +128,21 @@ async def lifespan(app: FastAPI):
     # son arborescence se construit en tâche de fond dès le démarrage et se
     # rafraîchit seule — la recherche par nom devient un filtre en mémoire.
     # Sans module `nas` (le jumeau sur Drive), l'import échoue et rien ne part.
-    try:
-        from nas.acces import demarrer_catalogue
-        asyncio.create_task(demarrer_catalogue())
-    except Exception:
-        pass
+    if travaux_de_fond:
+        try:
+            from nas.acces import demarrer_catalogue
+            asyncio.create_task(demarrer_catalogue())
+        except Exception:
+            pass
     # LA CARTE DU CLASSEMENT (08/09 soir) : l'architecture du stockage relevée
     # en fond, gardée en mémoire (prompt, `ou_chercher`) et écrite dans la base
     # vectorisée (recherche documentaire). Six heures entre deux relevés.
-    try:
-        from classement.carte import demarrer_carte
-        asyncio.create_task(demarrer_carte())
-    except Exception:
-        pass
+    if travaux_de_fond:
+        try:
+            from classement.carte import demarrer_carte
+            asyncio.create_task(demarrer_carte())
+        except Exception:
+            pass
     yield
     try:
         from vectorstore.worker import stop_embedding_worker

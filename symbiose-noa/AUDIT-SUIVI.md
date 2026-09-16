@@ -36,6 +36,14 @@ poussées sur benit seulement.
 | S-13 | Fil de travail, pas de double demande | étape 1 faite (request_id des deux transports, résumé périmé écarté, mode du checkpointer dans la readiness) ; état de travail structuré : lot suivant |
 | S-16 | Latence bornée, fournisseurs utilisables | étape 1 faite (budget de demande, pannes classées, demi-ouverture) ; propagation du budget à tous les étages : lot suivant |
 | S-17 | Embeddings et files fiables | étape 1 faite (bail des jobs, identité du modèle sur le vecteur) ; générations de vecteurs : lot suivant |
+| S-12 | Chiffres calculés, jamais devinés | étape 1 faite (montants en décimal, au centime) ; provenance ligne à ligne : lot suivant |
+| S-14 | Apprendre sans mémoriser les erreurs | étape 1 faite (type, confiance, statut, panne passagère écartée, rappel par confiance) ; écran des leçons : lot suivant |
+| S-15 | Skills générés testés et isolés | fait (même verrou d'effet, refus du code non isolé, retour arrière explicite) ; exécuteur isolé à fournir par l'exploitant |
+| S-18 | Travaux lourds séparés | étape 1 faite (rôle de processus, requalification seulement sans signe de vie) ; baux durables par job long : lot suivant |
+| S-21 | Secrets et navigateur | étape 1 faite (SSRF : résolution DNS, IPv6, adresses internes) ; secrets du worker et route interne : à faire avec le serveur |
+| S-25 | Mesurer les usages et prouver l'absence de régression | fait (`scripts/recette_usages.py` : PASS/FAIL/SKIP, rapport daté par commit) |
+| S-19 | Sessions et connexions Google | à faire (propre à Symbiose : liens de connexion, JWT, refresh tokens, scopes) |
+| S-24 | Vision cohérente avec la demande | à faire |
 | S-20 | Cloisonnement PostgreSQL effectif | script de contrôle en lecture + procédure ; bascule du rôle applicatif : à faire par Noa sur le serveur |
 
 ## Journal
@@ -126,3 +134,17 @@ poussées sur benit seulement.
   Bancs `test_droits_et_reindexation` (nouveau), `test_budget_et_baux` (nouveau),
   `test_disjoncteur`, `test_resume_en_fond`, `test_vitesse_tour`, `test_recherche_documents`,
   `test_graphe_routeurs`, `test_accord_et_fil` verts.
+- 16/09 — S-12 / S-14 / S-15 / S-18 / S-21 / S-25 : les montants s'additionnent en
+  `Decimal` au centime (`_agreger`) — en flottant, un total de trois cents lignes ne
+  tombait plus juste. Une leçon porte son type, sa confiance et son statut (migration
+  **048**), les plus sûres sont rappelées d'abord, et une correction qui suit une panne
+  passagère n'en produit plus. Un skill GÉNÉRÉ passe par le même verrou d'effet que les
+  natifs et n'est plus exécuté dans un sous-processus du backend : sans exécuteur isolé,
+  il est refusé, en le disant (`autoriser_code_non_isole` pour revenir en arrière).
+  `role_processus` commande les boucles de fond — un second processus ne relance plus les
+  mêmes travaux — et le démarrage ne requalifie que ce qui n'a plus donné signe de vie
+  depuis un quart d'heure. La garde du navigateur RÉSOUT le nom (IPv6, IPv4 déguisée,
+  169.254.169.254, nom public qui mène à 10.x) au lieu de comparer des chaînes.
+  `scripts/recette_usages.py` joue tous les bancs et rend un rapport daté PASS/FAIL/SKIP
+  par commit : **138 PASS · 0 FAIL · 3 SKIP** sur cette branche. Banc
+  `test_chiffres_et_isolement` (22).
