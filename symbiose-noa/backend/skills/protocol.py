@@ -690,14 +690,15 @@ CATALOGUE_AGENT1: dict[str, tuple[str, list[str], list[str]]] = {
         "Va CHERCHER la signature (nom, fonction, telephone, mentions, logo) dans "
         "les derniers messages ENVOYES de la boite, et l'enregistre : elle sera "
         "apposee automatiquement a chaque envoi. C'est le geste a faire quand on "
-        "demande de retrouver, mettre a jour ou corriger la signature. `ref` "
-        "l'apprend depuis UN message precis, qui doit etre un message ENVOYE par la "
-        "boite (sa ref vient de `lire_mails` avec `dossier: envoyes`) : un message RECU "
-        "porte la signature de son expediteur, jamais la notre. Une signature en IMAGE "
+        "demande de retrouver, mettre a jour ou corriger la signature. `ref` (ou "
+        "`objet` : l'objet du message) l'apprend depuis UN message precis, qui doit "
+        "etre un message ENVOYE par la boite : un message RECU porte la signature de "
+        "son expediteur, jamais la notre. Si tu viens de trouver la signature dans un "
+        "message, DESIGNE-LE, sinon c'est le dernier envoi qui sert. Une signature en IMAGE "
         "est reconnue. Si le geste echoue, dis qu'AUCUNE signature n'a ete apprise. "
         "N'ecris JAMAIS une signature toi-meme : elle se reproduit a l'identique, "
         "elle ne se redige pas.",
-        [], ["mailbox", "ref"]),
+        [], ["mailbox", "ref", "objet"]),
     "supprimer_signature": (
         "RETIRE la signature en vigueur d'une boite (mal apprise, obsolete) : elle "
         "n'est plus apposee. Seulement si la personne dit « supprime ».",

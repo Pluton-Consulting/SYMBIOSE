@@ -558,6 +558,43 @@ async def apprendre_style(data: dict, user) -> dict:
     }
 
 
+def _objet_designe(data: dict) -> str:
+    """L'objet du message que le modèle désigne, sous le nom qu'il lui a donné."""
+    for cle in ("objet", "source", "message", "sujet", "titre", "subject"):
+        v = data.get(cle)
+        if isinstance(v, str) and v.strip():
+            return v.strip().strip("«»\"' ")
+    return ""
+
+
+def _objet_nu(objet: str) -> str:
+    """L'objet sans ses préfixes de réponse ou de transfert, en minuscules."""
+    import re as _re
+    nu = (objet or "").strip().lower()
+    while True:
+        suite = _re.sub(r"^(re|tr|fw|fwd|rép|rep)\s*:\s*", "", nu)
+        if suite == nu:
+            return " ".join(nu.split())
+        nu = suite
+
+
+async def _ref_du_message_envoye(boite: str, objet: str) -> str:
+    """La `ref` du message ENVOYÉ le plus récent qui porte cet objet, ou ""."""
+    from mail.lecture import lire_boite
+    voulu = _objet_nu(objet)
+    if not voulu:
+        return ""
+    liste = await lire_boite(boite, dossier="envoyes", limite=25, recherche=voulu[:80])
+    messages = liste.get("messages") or []
+    exacts = [m for m in messages if _objet_nu(str(m.get("objet") or "")) == voulu]
+    proches = [m for m in messages if voulu in _objet_nu(str(m.get("objet") or ""))
+               or _objet_nu(str(m.get("objet") or "")) in voulu]
+    for m in exacts + proches:
+        if m.get("ref"):
+            return str(m["ref"])
+    return ""
+
+
 # Registre consommé par l'exécuteur de skills.
 async def apprendre_signature(data: dict, user) -> dict:
     """Va CHERCHER la signature dans les messages ENVOYÉS de la boîte.
@@ -572,10 +609,27 @@ async def apprendre_signature(data: dict, user) -> dict:
     voir. C'est aussi pourquoi le résultat porte un bloc GARANTI : on veut que
     la personne LISE ce qui partira désormais sous ses messages.
     """
-    boite = await verifier_acces(user, data.get("mailbox")
+    boite = await verifier_acces(user, data.get("mailbox") or data.get("boite")
                                  or await boite_par_defaut(user))
     from mail.signature import apprendre
-    resultat = await apprendre(boite, user, ref=str(data.get("ref") or ""))
+    ref = str(data.get("ref") or "").strip()
+    # LE MESSAGE SE DÉSIGNE AUSSI PAR SON OBJET (17/09). « Enregistre cette
+    # signature » après avoir trouvé l'image dans « RE: projet allée… » : le modèle
+    # a écrit `"source": "RE: projet allée…"` — un paramètre que ce geste ne
+    # connaissait pas. Il était IGNORÉ EN SILENCE : la signature était ré-apprise
+    # depuis le DERNIER envoi (un message de téléphone, « Envoyé à partir de
+    # Outlook pour iOS »), et la réponse affirmait l'image enregistrée.
+    # Un message désigné est retrouvé dans les ENVOYÉS ; introuvable, le geste
+    # ÉCHOUE et le dit — il ne retombe jamais sur un autre message.
+    objet = _objet_designe(data)
+    if not ref and objet:
+        ref = await _ref_du_message_envoye(boite, objet)
+        if not ref:
+            raise MailSkillError(
+                f"Aucun message ENVOYÉ par {boite} ne porte l'objet « {objet[:120]} ». "
+                "AUCUNE signature n'a été apprise ni modifiée. Retrouve le message avec "
+                "`lire_mails` (`dossier: envoyes`, `recherche`) et passe sa `ref`.")
+    resultat = await apprendre(boite, user, ref=ref)
     if not resultat.get("trouvee"):
         # UN ÉCHEC, PAS UN COMPTE RENDU (15/09). Rendu comme un résultat
         # ordinaire, « rien trouvé » passait pour une réussite, et le modèle a

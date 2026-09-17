@@ -2339,6 +2339,28 @@ def _reference_bloc(bloc) -> str:
     return ""
 
 
+# LES PIÈCES D'UN MAIL OUVERT EN CHEMIN NE SONT PAS UN LIVRABLE (17/09).
+#
+# « Enregistre l'image » (de ma signature) : pour la retrouver, le tour a rouvert un
+# mail avec ses pièces — et la réponse s'est vue ajouter d'office `Photo projet.jpg`
+# et deux devis PDF d'un client, sans aucun rapport. Relevé de Noa : « il affiche des
+# images et PDF au hasard ». Ce qu'un geste de LECTURE de mail dépose en chemin reste
+# connu (le modèle peut le montrer, sa carte est réelle), mais ne s'affiche d'office
+# que si la demande parle de mails ou de pièces jointes (règle du 09/09 : seul ce qui
+# est produit POUR la demande est un livrable).
+_SKILLS_PIECES_DE_MAIL = {"lire_mail", "lire_mails", "lire_piece_jointe", "check_mails",
+                          "courrier_entrant", "resume_fil_email"}
+_DEMANDE_DE_MAIL_RE = _re_livrables.compile(
+    r"\b(mails?|e-?mails?|courriels?|courrier|messages?|bo[iî]te|pi[eè]ces?[ -]jointes?|"
+    r"pj|joint[es]*|re[cç]us?|envoy[ée]s?)\b", _re_livrables.I)
+
+
+def _pieces_de_mail_hors_sujet(resultat: dict, demande: str) -> bool:
+    """Vrai si ce résultat vient d'une lecture de mail que la demande ne visait pas."""
+    return (str(resultat.get("skill") or "") in _SKILLS_PIECES_DE_MAIL
+            and not _DEMANDE_DE_MAIL_RE.search(demande or ""))
+
+
 def _blocs_livrables(resultats) -> list[dict]:
     """Les blocs d'écran des livrables produits par les skills de CE tour."""
     import json as _j
@@ -2585,6 +2607,12 @@ def _livrables_a_l_ecran(texte: str, state: AgentState) -> str:
     """Le texte final, débarrassé des faux fichiers et des doublons, complété des vrais."""
     import json as _j
     produits = _blocs_livrables(state.get("tool_results") or [])
+    # Connu n'est pas affiché d'office : les pièces d'un mail ouvert en chemin
+    # restent montrables par le modèle, mais ne s'ajoutent pas seules.
+    _demande = str(state.get("query") or "")
+    _d_office = {_reference_bloc(b) for b in _blocs_livrables(
+        [r for r in (state.get("tool_results") or [])
+         if isinstance(r, dict) and not _pieces_de_mail_hors_sujet(r, _demande)])}
     # Le même livrable produit deux fois dans le tour : seule la DERNIÈRE
     # version compte (cf. _meme_livrable) — les références plus anciennes
     # sortent aussi de `references`, donc du texte, via _trier.
@@ -2659,7 +2687,7 @@ def _livrables_a_l_ecran(texte: str, state: AgentState) -> str:
     # restitué le DERNIER fichier du fil : l'Excel des fournisseurs, sans
     # aucun rapport. Corroborer une invention avec le mauvais fichier est
     # pire que ne rien montrer.
-    a_montrer = list(produits)
+    a_montrer = [b for b in produits if _reference_bloc(b) in _d_office]
     if inventes and not a_montrer and (du_fil or atelier):
         # UNE carte par invention (09/09 : trois vignettes, trois documents —
         # ne restituer que la dernière en aurait perdu deux), la version la

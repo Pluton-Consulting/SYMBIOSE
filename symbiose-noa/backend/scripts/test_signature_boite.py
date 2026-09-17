@@ -279,7 +279,7 @@ async def _boite_par_defaut(user):
 esp = {"MailSkillError": MailSkillError, "verifier_acces": _verifier_acces,
        "boite_par_defaut": _boite_par_defaut}
 manque = extraire(racine / "mail" / "skills.py",
-                  {"apprendre_signature", "_fiche_signature", "envoyer_email", "_signature_exigee",
+                  {"apprendre_signature", "_objet_designe", "_fiche_signature", "envoyer_email", "_signature_exigee",
                    "supprimer_signature"}, esp)
 verifier("les gestes existent (dont supprimer_signature)", not manque, manque)
 if not manque:
@@ -466,7 +466,7 @@ else:
     esp6 = {"MailSkillError": MailSkillError, "verifier_acces": _verifier_acces,
             "boite_par_defaut": _boite_par_defaut}
     manque6 = extraire(racine / "mail" / "skills.py",
-                       {"ma_signature", "apprendre_signature", "_fiche_signature"}, esp6)
+                       {"ma_signature", "apprendre_signature", "_objet_designe", "_fiche_signature"}, esp6)
     verifier("ma_signature existe", not manque6, manque6)
     if not manque6:
         ETAT6 = {"sig": {"html": "", "texte": "", "images": []}}

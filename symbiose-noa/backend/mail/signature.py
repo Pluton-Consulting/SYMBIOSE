@@ -41,7 +41,25 @@ MAX_IMAGE_SIGNATURE = 3 * 1024 * 1024
 MAX_IMAGES = 4
 # Assez d'envois pour qu'une RÉCURRENCE se voie, assez peu pour ne pas payer
 # huit ouvertures de message à chaque apprentissage.
-MAX_ECHANTILLONS = 8
+# 17/09 : huit envois ne suffisaient pas — quand les derniers partent d'un téléphone,
+# le message écrit à l'ordinateur (celui qui porte la vraie signature) est plus loin.
+MAX_ECHANTILLONS = 20
+
+# LA MENTION D'UN TÉLÉPHONE N'EST PAS UNE SIGNATURE (17/09, Symbiose). « Envoyé à
+# partir de Outlook pour iOS » revenait dans les derniers envois : « la plus
+# récurrente » l'emportait, elle était ENREGISTRÉE comme signature de la boîte et
+# apposée aux envois — pendant que la vraie (nom, fonction, logo en image) restait
+# introuvable. C'est le logiciel qui l'ajoute, pas la personne.
+_RE_MENTION_MOBILE = re.compile(
+    r"^\s*(?:envoy[ée]e?s?\s+(?:à\s+partir\s+d[e']|depuis|de\s+mon|d['e]\s*puis)|sent\s+from|"
+    r"t[ée]l[ée]charge[rz]?\s+outlook|obtenir\s+outlook|get\s+outlook|"
+    r"provenance\s*:\s*courrier\s+pour)\b[^\n]{0,80}$", re.I)
+
+
+def mention_de_telephone(texte: str) -> bool:
+    """Vrai si ce « bloc de signature » n'est que la mention d'un client mobile."""
+    lignes = [l.strip() for l in (texte or "").splitlines() if l.strip()]
+    return bool(lignes) and len(lignes) <= 2 and all(_RE_MENTION_MOBILE.match(l) for l in lignes)
 _CACHE: dict = {}                       # boîte -> (instant, signature | None)
 _DUREE_CACHE_S = 120
 
@@ -455,6 +473,7 @@ async def apprendre(boite: str, user, ref: str = "") -> dict:
     # prise dans la réception, le message ouvert était la réponse de la
     # cliente — et sa signature a été enregistrée comme celle de la boîte.
     ecartes = []
+    mobiles = 0          # envois qui ne portent que la mention d'un téléphone
 
     # L'EXPÉDITEUR SE LIT PAR SON ADRESSE (15/09, Duret). IMAP rend l'en-tête
     # entier, « Revêtements Duret Sols <revetementsduret@gmail.com> » : comparé
@@ -487,6 +506,9 @@ async def apprendre(boite: str, user, ref: str = "") -> dict:
                 + [hashlib.sha1(m.group(3).encode()).hexdigest()[:12] for m in _RE_IMG_DATA.finditer(signature)])
         if not cle:
             continue
+        if mention_de_telephone(en_texte(signature)):
+            mobiles += 1
+            continue
         etrangeres = adresses_etrangeres(en_texte(signature), boite)
         if etrangeres:
             ecartes.append(", ".join(etrangeres))
@@ -499,6 +521,12 @@ async def apprendre(boite: str, user, ref: str = "") -> dict:
             f"message « {(m.get('objet') or 'sans objet')[:60]} » "
             f"du {(m.get('date') or '')[:10]}")
 
+    if not candidats and mobiles:
+        return {"trouvee": False, "ecartes": ecartes or None, "mobiles": mobiles,
+                "message": (f"Les {mobiles} derniers envois lus partent d'un téléphone : ils ne "
+                            "portent que la mention du logiciel (« Envoyé à partir de… »), qui "
+                            "n'est pas une signature. Rien n'a été enregistré. La vraie signature "
+                            "se trouve dans un message envoyé depuis l'ordinateur.")}
     if not candidats:
         return {"trouvee": False,
                 "ecartes": ecartes or None,
