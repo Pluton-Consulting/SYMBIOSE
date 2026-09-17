@@ -1194,7 +1194,11 @@ async def _livrer_inventaire(inventaire: dict, user, *, classer: bool, fichier: 
 
 # L'inventaire d'une période : jusqu'à 250 messages en un geste (comme `check_mails`),
 # avec un extrait court — le compte et la liste priment, `lire_mail` ouvre le détail.
-MAX_INVENTAIRE_MAILS = 250
+MAX_INVENTAIRE_MAILS = 400
+# Au-delà de ce rang, l'extrait se resserre : quatre cents messages doivent tenir dans UN résultat
+# (18/09 : « mes mails des 30 derniers jours » = 294 messages, la lecture s'arrêtait à 250).
+RANG_EXTRAIT_COURT = 250
+APERCU_INVENTAIRE_COURT = 110
 APERCU_INVENTAIRE = 200
 
 
@@ -1261,6 +1265,8 @@ async def lire_mails(data: dict, user) -> dict:
         # modèle a rappelé SEPT fois le même geste sans jamais prendre la page suivante,
         # la garde du rejeu a coupé, et la réponse disait « lecture interrompue ».
         # `exhaustif` sur une PÉRIODE parcourt ici toutes les pages, par curseur.
+        if exhaustif and recherche and not avant and not data.get("curseur"):
+            return await _toute_la_recherche(premier, boite, data.get("dossier") or "recus", recherche, depuis)
         if not (exhaustif and depuis and not recherche and not avant and not data.get("curseur")):
             return premier
         messages = list(premier.get("messages") or [])
@@ -1269,7 +1275,9 @@ async def lire_mails(data: dict, user) -> dict:
             vus.add(suivant)
             page = await lire_boite(boite, data.get("dossier") or "recus",
                                     min(25, MAX_INVENTAIRE_MAILS - len(messages)), depuis=depuis,
-                                    apercu=APERCU_INVENTAIRE, curseur=suivant, exhaustif=True)
+                                    apercu=(APERCU_INVENTAIRE if len(messages) < RANG_EXTRAIT_COURT
+                                            else APERCU_INVENTAIRE_COURT),
+                                    curseur=suivant, exhaustif=True)
             messages.extend(page.get("messages") or [])
             suivant = page.get("curseur_suivant")
         total = premier.get("total_periode")
@@ -1303,6 +1311,64 @@ async def lire_mails(data: dict, user) -> dict:
         raise MailSkillError(
             f"La boîte {boite} n'a pas pu être consultée ({detail}). "
             "Vérifiez la configuration de la messagerie.")
+
+
+async def _toute_la_recherche(premier: dict, boite: str, dossier: str, recherche: str, depuis) -> dict:
+    """TOUTES les pages d'une RECHERCHE, parcourues ici, du plus récent au plus ancien.
+
+    POURQUOI (18/09, recette pilotée). « Tous les échanges avec le Crédit Agricole, et ce qu'ils
+    attendent de nous aujourd'hui » : 301 correspondances, treize pages enchaînées PAR LE MODÈLE —
+    dont le contexte ne garde que les derniers résultats, c'est-à-dire les plus ANCIENS mails. La
+    réponse racontait 2021 et avouait ne rien savoir d'aujourd'hui. Une recherche se remonte par
+    `avant` (une date) : le jour charnière est relu, les doublons écartés par leur référence."""
+    from datetime import date as _date, timedelta
+    from mail.lecture import lire_boite
+    messages, vus = [], set()
+
+    def _ajouter(page: dict) -> int:
+        neufs = 0
+        for m in page.get("messages") or []:
+            cle = m.get("ref") or (m.get("date"), m.get("de"), m.get("objet"))
+            if cle not in vus:
+                vus.add(cle)
+                messages.append(m)
+                neufs += 1
+        return neufs
+    _ajouter(premier)
+    page, complet = premier, False
+    # La première page a la taille que le modèle a demandée (10, 25…) : c'est elle qui dit si
+    # une page est « pleine ». Les suivantes en font 25.
+    pleine = max(1, len(premier.get("messages") or []))
+    if premier.get("total_periode") is not None and int(premier["total_periode"]) <= len(messages):
+        pleine = 10 ** 9                       # le fournisseur dit qu'il n'y a rien d'autre
+    while len(messages) < MAX_INVENTAIRE_MAILS:
+        jours = sorted({m.get("date_iso") for m in page.get("messages") or [] if m.get("date_iso")})
+        if not jours or len(page.get("messages") or []) < min(pleine, 25):
+            complet = True
+            break
+        # Plusieurs jours sur la page : on reprend AU jour le plus ancien (relu, dédoublonné) —
+        # rien n'est sauté. Un seul jour : on passe au jour d'avant, sinon on tournerait en rond.
+        if len(jours) > 1:
+            borne = (_date.fromisoformat(jours[0]) + timedelta(days=1)).isoformat()
+        else:
+            borne = jours[0]
+        page = await lire_boite(boite, dossier, 25, depuis=depuis, recherche=recherche, avant=borne,
+                                apercu=(APERCU_INVENTAIRE if len(messages) < RANG_EXTRAIT_COURT
+                                        else APERCU_INVENTAIRE_COURT), exhaustif=True)
+        pleine = 25
+        if not _ajouter(page):
+            complet = True
+            break
+    total = premier.get("total_periode")
+    return {**premier, "messages": messages, "nombre": len(messages), "inventaire": True,
+            "tronque": not complet, "pour_continuer": None,
+            "compte": (f"{len(messages)} message(s) correspondant à « {recherche} », du plus RÉCENT au plus ancien"
+                       + (f" (le fournisseur en annonce {total})" if total else "")
+                       + (", TOUS détaillés ci-dessous." if complet else
+                          f" — arrêt à {MAX_INVENTAIRE_MAILS} : les plus anciens ne sont pas détaillés, dis-le.")),
+            "a_faire": ("Toute la recherche est là, du plus RÉCENT au plus ancien : ne rappelle pas ce geste et "
+                        "ne pagine pas. « Aujourd'hui » se lit dans les PREMIERS messages de la liste. Pour le "
+                        "corps complet d'un message : `lire_mail` avec sa `ref`.")}
 
 
 SKILLS_NATIFS["lire_mails"] = lire_mails

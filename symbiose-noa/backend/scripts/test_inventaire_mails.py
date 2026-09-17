@@ -80,8 +80,9 @@ import types, logging
 sys.modules["mail.lecture"] = types.SimpleNamespace(lire_boite=lire_boite)
 sys.modules.setdefault("mail", types.ModuleType("mail"))
 esp2 = {"_boite_a_lire": _a_lire, "verifier_acces": _acces, "boite_par_defaut": _defaut, "boites_visibles": _visibles,
-        "MailSkillError": _Erreur, "logger": logging.getLogger("banc"), "MAX_INVENTAIRE_MAILS": 250, "APERCU_INVENTAIRE": 200}
-exec(fonctions(sk, {"lire_mails"}), esp2)
+        "MailSkillError": _Erreur, "logger": logging.getLogger("banc"), "MAX_INVENTAIRE_MAILS": 400, "APERCU_INVENTAIRE": 200,
+        "RANG_EXTRAIT_COURT": 250, "APERCU_INVENTAIRE_COURT": 110}
+exec(fonctions(sk, {"lire_mails", "_toute_la_recherche"}), esp2)
 # La mémoire de l'inventaire et les priorités vivent à côté du skill.
 esp2.update({"re": __import__("re")})
 exec("\n".join(ast.get_source_segment(sk, n) for n in ast.parse(sk).body
@@ -105,13 +106,38 @@ appels.clear()
 r2 = asyncio.run(lire_mails({"depuis": "7j"}, user))
 verifier("SANS `exhaustif`, une seule page comme avant (rapide)", len(appels) == 1 and r2["nombre"] == 25 and not r2.get("inventaire"))
 appels.clear()
-asyncio.run(lire_mails({"recherche": "terrasse", "exhaustif": True}, user))
-verifier("une RECHERCHE exhaustive garde son régime (pas de parcours par curseur)", len(appels) == 1)
+# 18/09 : une recherche exhaustive se parcourt AUSSI côté serveur — par `avant`, pas par curseur
+# (voir le banc dédié plus bas). Ici la doublure ne rend pas de dates : une page, et c'est complet.
+rr = asyncio.run(lire_mails({"recherche": "terrasse", "exhaustif": True}, user))
+verifier("une RECHERCHE exhaustive ne passe pas par le curseur d'une période", all(a[0] == 0 for a in appels) and rr.get("inventaire") is True)
 BOITE.extend({"ref": f"x{i}", "objet": "x", "de": "a@b.fr", "date": "2026-09-10"} for i in range(400))
 appels.clear()
 r3 = asyncio.run(lire_mails({"depuis": "30j", "tous": True}, user))
-verifier("le parcours est BORNÉ (250), et au-delà la suite est DITE, jamais tue",
-         r3["nombre"] == 250 and r3["tronque"] is True and r3["curseur_suivant"] == "saut:250" and "curseur=saut:250" in (r3.get("pour_continuer") or ""))
+verifier("le parcours est BORNÉ (400), et au-delà la suite est DITE, jamais tue",
+         r3["nombre"] == 400 and r3["tronque"] is True and r3["curseur_suivant"] == "saut:400" and "curseur=saut:400" in (r3.get("pour_continuer") or ""))
+verifier("au-delà du 250ᵉ message, l'extrait se resserre pour que tout tienne dans UN résultat",
+         {a[2] for a in appels if a[0] < 250} == {200} and {a[2] for a in appels if a[0] >= 250} == {110}, str(sorted({(a[0] >= 250, a[2]) for a in appels})))
+
+# ── 18/09 : TOUTE une recherche, du plus récent au plus ancien, sans rien sauter ──
+from datetime import date as _d, timedelta as _td
+COURRIER = [{"ref": f"c{i}", "objet": "Crédit Agricole", "de": "ca@exemple.fr",
+             "date_iso": (_d(2026, 9, 17) - _td(days=i // 3)).isoformat()} for i in range(80)]   # trois par jour
+pages_lues = []
+async def lire_boite_recherche(boite, dossier="recus", limite=10, depuis=None, recherche=None, avant=None,
+                               apercu=None, curseur=None, exhaustif=False):
+    pages_lues.append(avant)
+    candidats = [m for m in COURRIER if not avant or m["date_iso"] < str(avant)[:10]]
+    page = [dict(m) for m in candidats[:limite]]
+    return {"boite": boite, "messages": page, "nombre": len(page), "total_periode": len(COURRIER), "compte": "…"}
+sys.modules["mail.lecture"].lire_boite = lire_boite_recherche
+ca = asyncio.run(lire_mails({"recherche": "Crédit Agricole", "exhaustif": True, "limite": 25}, user))
+verifier("les 80 correspondances sortent en UN geste, sans doublon ni trou, le plus RÉCENT d'abord",
+         [m["ref"] for m in ca["messages"]] == [f"c{i}" for i in range(80)] and ca["tronque"] is False, f"{ca['nombre']} / {pages_lues}")
+verifier("le jour charnière est RELU (avant = jour le plus ancien + 1), les doublons écartés par leur référence",
+         len(pages_lues) >= 4 and pages_lues[0] is None and all(p for p in pages_lues[1:]))
+verifier("le modèle est prévenu : tout est là, « aujourd'hui » se lit en TÊTE, ne pas paginer",
+         "PREMIERS messages" in ca["a_faire"] and ca["pour_continuer"] is None and ca["inventaire"] is True)
+sys.modules["mail.lecture"].lire_boite = lire_boite
 
 # ── LE TABLEAU COMPLET ET L'EXCEL SE FABRIQUENT, ILS NE SE RECOPIENT PAS ─────
 # 17/09 15:36 → 15:45 : 98 mails lus, VINGT lignes à l'écran, puis QUATRE dans l'Excel.
