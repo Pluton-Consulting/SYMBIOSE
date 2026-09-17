@@ -128,6 +128,17 @@ feuilles = esp2["_feuilles_lues"](json.loads(IMBRIQUE))
 verifier("les libellés gardent leur chemin (« emetteur › nom »)",
          ("emetteur › nom", "SARL BOIENNE DE TRAVAUX FORESTIERS") in feuilles and len(feuilles) == 5)
 
+# ── UN TOUR QUI AGIT RAISONNE (17/09) ────────────────────────────────────────
+print("\n── le palier d'un tour qui agit")
+routeur = agent1[agent1.index("decision = _json.loads(trouve.group(0)) if trouve else {}"):]
+routeur = routeur[:routeur.index("async def recherche_node")]
+verifier("des outils prévus par le routeur, ou une correction, envoient le tour au palier qui raisonne",
+         "if familles or correction:" in routeur and 'effort = "complex"' in routeur.split("if familles or correction:")[1][:60])
+verifier("la règle tombe APRÈS la lecture des familles et de la correction, avant le retour",
+         routeur.index("familles_valides(brutes)") < routeur.index("if familles or correction:") < routeur.index('"llm_tier": effort'))
+verifier("une conversation sans outil (familles vides) garde le modèle rapide — la règle ne s'applique qu'à une liste NON vide",
+         "else [] if not brutes else familles_valides(brutes))" in routeur)
+
 print("\n" + "═" * 70)
 if echecs:
     print(f"✗ {len(echecs)} échec(s) : " + ", ".join(echecs))

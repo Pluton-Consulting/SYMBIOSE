@@ -89,6 +89,23 @@ verifier("rien, None ou une liste vide ne lèvent pas", deplier_feuilles(None) =
 verifier("un chiffre clé en `items` passe comme avant",
          normaliser_element({"type": "chiffres", "items": [{"valeur": "12", "libelle": "devis"}]})["items"] == [{"valeur": "12", "libelle": "devis"}])
 
+# 17/09, 15:45 — la feuille posée en SÉPARATEUR, blocs EXACTS de prod (« ignores=2 »).
+SEPARATEUR = [
+    {"bloc": "feuille", "titre": "Mails reçus (7 derniers jours)"},
+    {"bloc": "tableau", "entetes": ["Date", "Expéditeur", "Objet", "Résumé", "Catégorie"],
+     "lignes": [["17/09", "CBP", "RE: RELANCE", "Relance comptable", "administratif"]] * 4},
+    {"bloc": "feuille", "titre": "Trois mails prioritaires"},
+    {"bloc": "tableau", "entetes": ["Rang", "Expéditeur", "Objet", "Raison"], "lignes": [["1", "a", "b", "c"]] * 3},
+]
+rs = rendre(SEPARATEUR)
+verifier("une feuille NUE suivie de son tableau devient un onglet (prod : deux tableaux dans le même onglet)",
+         [e["bloc"] for e in rs] == ["feuille", "feuille"]
+         and [e["nom"] for e in rs] == ["Mails reçus (7 derniers jours)", "Trois mails prioritai"[:21] + "res"][:2]
+         or [e["nom"][:20] for e in rs] == ["Mails reçus (7 derni", "Trois mails priorita"])
+verifier("…avec les lignes de SON tableau", len(rs) == 2 and len(rs[0]["lignes"]) == 4 and len(rs[1]["lignes"]) == 3)
+verifier("une feuille nue qui n'est PAS suivie d'un tableau ne vole rien",
+         [e["bloc"] for e in rendre([{"bloc": "feuille", "titre": "Vide"}, {"bloc": "paragraphe", "texte": "x"}])] == ["paragraphe"])
+
 atelier = (BACKEND / "bureautique" / "atelier.py").read_text(encoding="utf-8")
 verifier("l'atelier déplie AVANT de normaliser : tous les chemins d'ajout en profitent",
          "normaliser_element(x) for x in deplier_feuilles(elements)" in atelier)

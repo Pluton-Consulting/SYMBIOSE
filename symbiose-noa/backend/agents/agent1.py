@@ -675,6 +675,17 @@ async def routeur_node(state: AgentState) -> dict:
         familles = (None if not isinstance(brutes, list)
                     else [] if not brutes else familles_valides(brutes))
         correction = decision.get("correction") is True or str(decision.get("correction")).lower() == "true"
+        # UN TOUR QUI AGIT RAISONNE (17/09). Trois tours de suite classés « simple » et
+        # donc confiés au modèle rapide SANS réflexion : « tourne l'image » a retouché
+        # une autre photo, « liste tous les mails » a rappelé sept fois le même geste,
+        # « mets-moi ça dans un Excel » a refait l'Excel d'AVANT. Mesuré le même jour
+        # sur un appel réel de la boucle d'actions : sans réflexion, deepseek saute des
+        # étapes (bonne action 1 fois sur 6) ; le modèle puissant choisit juste en 4 à
+        # 7 s. Dès que le routeur prévoit des OUTILS, ou que la personne CORRIGE
+        # l'assistant, le tour part au palier qui raisonne. Une conversation sans
+        # outil reste au modèle rapide.
+        if familles or correction:
+            effort = "complex"
     except Exception as e:  # noqa: BLE001
         # En cas d'échec, on CHERCHE : répondre « je n'ai rien » alors que la
         # mémoire contient la réponse est bien pire qu'une recherche inutile.

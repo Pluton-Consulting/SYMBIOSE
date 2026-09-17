@@ -88,7 +88,9 @@ verifier("alias acceptés (mots, contient, mots_cles, query)",
 verifier("limite 25 d'office dès qu'on cherche ou qu'on pagine", "25 if (_periode or recherche or avant) else 10" in skills)
 proto = (BACKEND / "skills" / "protocol.py").read_text(encoding="utf-8")
 verifier("le catalogue déclare recherche, avant et exhaustif en optionnels",
-         '["mailbox", "dossier", "limite", "depuis", "recherche", "avant", "curseur", "exhaustif"]' in proto)
+         # 17/09 : `classer`, `categories`, `fichier` ont rejoint la liste (inventaire livré par le skill).
+         '"mailbox", "dossier", "limite", "depuis", "recherche", "avant", "curseur", "exhaustif"' in proto
+         and '"classer", "categories", "fichier"' in proto)
 verifier("le catalogue explique la page suivante (plus_ancien → avant)",
          "plus_ancien" in proto and "`avant`" in proto)
 verifier("lire_boite calcule plus_ancien depuis date_iso", 'plus_ancien = min((m.get("date_iso")' in src)

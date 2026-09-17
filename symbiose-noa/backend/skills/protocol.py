@@ -534,8 +534,14 @@ CATALOGUE_AGENT1: dict[str, tuple[str, list[str], list[str]]] = {
         "(défaut) ou envoyes ; limite : 1 à 25. Sans mailbox, la boîte de la personne "
         "connectée. Chaque `apercu` rendu est un EXTRAIT, pas le message : pour le "
         "corps complet, `lire_mail` avec la `ref`. Pour un POINT complet avec "
-        "résumés et propositions de réponse, préfère `check_mails`",
-        [], ["mailbox", "dossier", "limite", "depuis", "recherche", "avant", "curseur", "exhaustif"]),
+        "résumés et propositions de réponse, préfère `check_mails`. "
+        "TOUS LES MAILS D'UNE PÉRIODE EN LISTE OU EN EXCEL : `depuis` + `classer: true` "
+        "(résumé et catégorie de CHAQUE mail ; `categories` pour imposer la liste) + "
+        "`fichier: true` pour l'Excel. Le tableau complet et le fichier s'affichent SEULS, "
+        "toutes lignes comprises : ne recopie jamais la liste, et pour « mets-le dans un "
+        "Excel » rappelle ce geste avec `fichier: true` — n'utilise PAS `produire_document`",
+        [], ["mailbox", "dossier", "limite", "depuis", "recherche", "avant", "curseur", "exhaustif",
+             "classer", "categories", "fichier"]),
     "lire_mail": (
         "OUVRE UN message EN ENTIER : le corps complet (jusqu'à 10 000 caractères) et "
         "ses pièces jointes nommées. L'`apercu` rendu par `lire_mails` ou `check_mails` "

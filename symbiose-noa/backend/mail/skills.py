@@ -956,6 +956,151 @@ async def _boite_a_lire(data: dict, user) -> str:
            "depuis Paramètres → Utilisateurs, ou ajouter votre domaine à MS_DOMAIN."))
 
 
+# LE TABLEAU DE TOUS LES MAILS SE FABRIQUE, IL NE SE RECOPIE PAS (17/09, Symbiose).
+#
+# « Liste tous les mails des 7 derniers jours : date, expéditeur, objet, résumé,
+# catégorie » — 98 mails lus, VINGT lignes à l'écran (« faute de place »), puis « mets
+# ça dans un Excel » : QUATRE lignes dans le classeur. Un modèle ne recopie pas 98
+# lignes : son budget de sortie n'y suffit pas, et au tour suivant les mails ne sont
+# plus sous ses yeux. Même leçon que la liste des clients (23/08) et le publipostage
+# (04/09) : ce qui est long se fabrique DANS le skill. Le résumé et la catégorie de
+# chaque mail sont demandés au modèle par LOTS ; le tableau complet et l'Excel sont
+# assemblés mécaniquement, ligne pour ligne.
+CATEGORIES_MAILS = ("demande de devis", "question chantier", "fournisseur", "administratif", "sans suite")
+LOT_CLASSEMENT = 20
+
+
+def _categories_voulues(brut) -> list[str]:
+    """Les catégories demandées (liste ou texte séparé par des virgules), sinon celles de la maison."""
+    if isinstance(brut, str):
+        brut = [c for c in re.split(r"[,;/\n]", brut)]
+    voulues = [str(c).strip().lower()[:40] for c in (brut or []) if str(c).strip()]
+    return list(dict.fromkeys(voulues))[:12] or list(CATEGORIES_MAILS)
+
+
+def _lire_classement(brut: str, taille: int, categories: list[str]) -> dict:
+    """{rang: (résumé, catégorie)} lu dans la réponse du modèle. Tolérant, jamais inventif :
+    une catégorie hors liste est écartée, un rang hors du lot aussi."""
+    import json as _j
+    m = re.search(r"\[.*\]", brut or "", re.S)
+    try:
+        lignes = _j.loads(m.group(0)) if m else []
+    except ValueError:
+        return {}
+    sortie = {}
+    for l in lignes if isinstance(lignes, list) else []:
+        if not isinstance(l, dict):
+            continue
+        try:
+            n = int(l.get("n"))
+        except (TypeError, ValueError):
+            continue
+        if not 1 <= n <= taille:
+            continue
+        cat = str(l.get("categorie") or "").strip().lower()
+        sortie[n] = (" ".join(str(l.get("resume") or "").split())[:180],
+                     cat if cat in categories else "")
+    return sortie
+
+
+async def _classer_les_mails(messages: list[dict], categories: list[str]) -> int:
+    """Pose `resume` et `categorie` sur chaque fiche, par lots. Rend le nombre de fiches classées."""
+    import asyncio
+    verrou = asyncio.Semaphore(3)
+
+    async def _un_lot(lot: list[dict]) -> int:
+        lignes = "\n".join(
+            f"{i}. De : {str(m.get('de') or '')[:80]} | Objet : {str(m.get('objet') or '')[:140]} | "
+            f"Extrait : {' '.join(str(m.get('apercu') or '').split())[:220]}"
+            for i, m in enumerate(lot, 1))
+        consigne = (
+            "Voici des mails reçus par une entreprise. Pour CHACUN, écris un résumé d'UNE phrase "
+            "(ce que l'expéditeur veut ou annonce, tiré de l'objet et de l'extrait, rien d'inventé) "
+            "et choisis UNE catégorie dans cette liste exacte : " + " | ".join(categories) + ". "
+            "Une lettre d'information, une publicité ou une notification automatique : « sans suite » "
+            "si cette catégorie existe. Réponds par un tableau JSON seul, un objet par mail, dans "
+            "l'ordre : [{\"n\": 1, \"resume\": \"…\", \"categorie\": \"…\"}].\n\n" + lignes)
+        async with verrou:
+            try:
+                masque, carte = await _protege(consigne)
+                lu = _lire_classement(_rehydrater(await _appeler(masque, "standard"), carte),
+                                      len(lot), categories)
+            except Exception as e:  # noqa: BLE001 — un lot muet laisse ses lignes « à classer »
+                logger.warning("Classement d'un lot de mails impossible : %s", e)
+                lu = {}
+        for i, m in enumerate(lot, 1):
+            m["resume"], m["categorie"] = lu.get(i, ("", ""))
+        return sum(1 for i in range(1, len(lot) + 1) if lu.get(i, ("", ""))[1])
+
+    lots = [messages[i:i + LOT_CLASSEMENT] for i in range(0, len(messages), LOT_CLASSEMENT)]
+    return sum(await asyncio.gather(*[_un_lot(l) for l in lots]))
+
+
+def _jour_lisible(m: dict) -> str:
+    brut = str(m.get("date") or m.get("date_iso") or "")
+    return f"{brut[8:10]}/{brut[5:7]}/{brut[:4]}" + (f" {brut[11:16]}" if len(brut) >= 16 else "") if len(brut) >= 10 else brut
+
+
+async def _livrer_inventaire(inventaire: dict, user, *, classer: bool, fichier: bool, categories=None) -> dict:
+    """Le tableau COMPLET à l'écran, et l'Excel si on le demande — assemblés ligne pour ligne."""
+    import asyncio
+    messages = inventaire.get("messages") or []
+    voulues = _categories_voulues(categories)
+    classes = await _classer_les_mails(messages, voulues) if classer and messages else 0
+    entetes = ["Date", "Expéditeur", "Objet"] + (["Résumé", "Catégorie"] if classer else ["Extrait"])
+
+    def _ligne(m: dict) -> list:
+        base = [_jour_lisible(m), str(m.get("de") or "")[:80], str(m.get("objet") or "")[:160]]
+        if classer:
+            return base + [m.get("resume") or "", m.get("categorie") or "à classer"]
+        return base + [" ".join(str(m.get("apercu") or "").split())[:200]]
+    lignes = [_ligne(m) for m in messages]
+    periode = str(inventaire.get("periode_depuis") or "")[:10]
+    titre = f"Mails reçus depuis le {periode[8:10]}/{periode[5:7]}/{periode[:4]}" if len(periode) == 10 else "Mails de la période"
+    blocs = [{"type": "table", "titre": f"{titre} ({len(lignes)})", "columns": entetes, "rows": lignes}]
+    par_categorie = []
+    if classer:
+        compte_cat = {}
+        for m in messages:
+            compte_cat[m.get("categorie") or "à classer"] = compte_cat.get(m.get("categorie") or "à classer", 0) + 1
+        par_categorie = sorted(compte_cat.items(), key=lambda kv: -kv[1])
+    url = None
+    if fichier and lignes:
+        from bureautique.atelier import ouvrir, ajouter, terminer
+        proprio = str(getattr(user, "id", "") or "")
+        entete = {"titre": titre, "format": "xlsx"}
+        elements = [{"type": "feuille", "nom": "Mails", "entetes": entetes, "lignes": lignes}]
+        if par_categorie:
+            elements.append({"type": "feuille", "nom": "Par catégorie", "entetes": ["Catégorie", "Nombre"],
+                             "lignes": [[c, n] for c, n in par_categorie]})
+
+        def _produire():
+            jeton = ouvrir(entete, proprio)
+            ajouter(jeton, elements, proprio)
+            return jeton, terminer(jeton, proprio)
+        try:
+            jeton, fiche = await asyncio.to_thread(_produire)
+            url = f"/api/documents/{jeton}"
+            blocs.insert(0, {"type": "fichier", "url": url, "nom": "mails.xlsx", "titre": titre,
+                             "format": "xlsx", "octets": fiche.get("octets")})
+        except Exception as e:  # noqa: BLE001 — le tableau reste, et l'échec se dit
+            logger.warning("Excel des mails impossible : %s", e)
+    complet = not inventaire.get("tronque")
+    phrase = (f"{inventaire.get('total_periode') or len(lignes)} mail(s) sur la période, "
+              f"{len(lignes)} listé(s)" + (" — tous." if complet else " ; la suite se lit par `curseur`."))
+    return {**inventaire, "classes": classes if classer else None,
+            "par_categorie": dict(par_categorie) or None, "fichier": url,
+            "fichier_non_produit": bool(fichier and lignes and not url) or None,
+            "message_final": phrase, "bloc_garanti": True, "bloc_ui": blocs,
+            "a_faire": ("Le tableau COMPLET (" + str(len(lignes)) + " lignes)"
+                        + (" et le fichier Excel" if url else "")
+                        + " S'AFFICHENT AUTOMATIQUEMENT : ne recopie AUCUNE ligne, n'écris aucun "
+                        "tableau toi-même. Donne le total, la répartition par catégorie si elle existe, "
+                        "puis ce qu'on t'a demandé EN PLUS (les mails à traiter en priorité, avec la "
+                        "raison) en t'appuyant sur `messages`. Ne rappelle pas ce geste."
+                        + (" Le fichier n'a PAS pu être produit : dis-le." if fichier and lignes and not url else ""))}
+
+
 # L'inventaire d'une période : jusqu'à 250 messages en un geste (comme `check_mails`),
 # avec un extrait court — le compte et la liste priment, `lire_mail` ouvre le détail.
 MAX_INVENTAIRE_MAILS = 250
@@ -990,6 +1135,10 @@ async def lire_mails(data: dict, user) -> dict:
     # pagination complète est réservée à une demande explicite d'inventaire.
     exhaustif = bool(data.get("exhaustif") or data.get("tous") or data.get("toutes")
                      or data.get("pour_tous"))
+    # Un Excel ou un classement de « tous les mails » EST un inventaire complet.
+    veut_fichier = bool(data.get("fichier") or data.get("excel"))
+    veut_classement = bool(data.get("classer") or data.get("categories"))
+    exhaustif = exhaustif or veut_fichier or veut_classement
     try:
         limite = int(data.get("limite") or (25 if (_periode or recherche or avant) else 10))
     except (TypeError, ValueError):
@@ -1020,7 +1169,7 @@ async def lire_mails(data: dict, user) -> dict:
             suivant = page.get("curseur_suivant")
         total = premier.get("total_periode")
         complet = not suivant and (total is None or len(messages) >= int(total))
-        return {**premier, "messages": messages, "nombre": len(messages),
+        inventaire = {**premier, "messages": messages, "nombre": len(messages),
                 "tronque": not complet, "curseur_suivant": suivant, "inventaire": True,
                 "pour_continuer": (None if complet else
                                    f"Rappelle lire_mails avec les mêmes filtres et curseur={suivant}."),
@@ -1029,6 +1178,10 @@ async def lire_mails(data: dict, user) -> dict:
                            + (", c'est-à-dire TOUS." if complet else " — le reste suit par `curseur`.")),
                 "a_faire": ("La liste porte TOUS les messages de la période : traite-les TOUS, sans "
                             "« etc. » ni échantillon. Ne rappelle pas ce geste." if complet else None)}
+        if veut_classement or veut_fichier:
+            return await _livrer_inventaire(inventaire, user, classer=veut_classement,
+                                            fichier=veut_fichier, categories=data.get("categories"))
+        return inventaire
     except NotImplementedError as e:
         raise MailSkillError(str(e))
     except Exception as e:  # noqa: BLE001 - une messagerie injoignable n'est pas une panne du chat

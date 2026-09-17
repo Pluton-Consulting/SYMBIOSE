@@ -180,6 +180,14 @@ def _champ_texte(brut: dict, limite: int = MAX_TEXTE, lignes: bool = False) -> s
 _CLES_CONTENU_IMBRIQUE = ("contenu", "blocs", "elements", "content", "children")
 
 
+def _est_feuille(brut: dict) -> bool:
+    return _TYPES.get(_texte(brut.get("bloc") or brut.get("type") or brut.get("kind"), 40).lower()) == "feuille"
+
+
+def _a_des_lignes(brut: dict) -> bool:
+    return bool(brut.get("lignes") or brut.get("rows") or brut.get("entetes") or brut.get("headers"))
+
+
 def deplier_feuilles(elements) -> list:
     """Une « feuille » qui PORTE ses blocs devient une feuille suivie de ses blocs.
 
@@ -198,7 +206,30 @@ def deplier_feuilles(elements) -> list:
     sens. Une feuille déjà plate, ou tout autre bloc, passe tel quel.
     """
     sortie = []
-    for brut in (elements or []):
+    elements = list(elements or [])
+    # LA FEUILLE-SÉPARATEUR (17/09, 15:45) : {"bloc":"feuille","titre":"Mails reçus"} puis,
+    # à côté, {"bloc":"tableau",…}. Sans entêtes ni lignes la feuille était écartée, et
+    # les deux tableaux tombaient dans le même onglet (« ignores=2 »). Une feuille NUE
+    # suivie d'un tableau prend ce tableau : c'est ce que la personne a demandé.
+    fusionnes, saute = [], False
+    for i, brut in enumerate(elements):
+        if saute:
+            saute = False
+            continue
+        if (isinstance(brut, dict) and _est_feuille(brut) and not _a_des_lignes(brut)
+                and not any(isinstance(brut.get(c), list) and brut.get(c) for c in _CLES_CONTENU_IMBRIQUE)
+                and i + 1 < len(elements) and isinstance(elements[i + 1], dict)
+                and _TYPES.get(_texte(elements[i + 1].get("bloc") or elements[i + 1].get("type")
+                                      or elements[i + 1].get("kind"), 40).lower()) == "tableau"):
+            suivant = elements[i + 1]
+            fusionnes.append({**{k: v for k, v in suivant.items() if k not in ("bloc", "type", "kind", "legende")},
+                              "type": "feuille",
+                              "nom": brut.get("nom") or brut.get("name") or brut.get("titre") or brut.get("title")
+                                     or suivant.get("titre") or suivant.get("legende")})
+            saute = True
+        else:
+            fusionnes.append(brut)
+    for brut in fusionnes:
         imbriques = None
         if isinstance(brut, dict) and _TYPES.get(
                 _texte(brut.get("bloc") or brut.get("type") or brut.get("kind"), 40).lower()) == "feuille":

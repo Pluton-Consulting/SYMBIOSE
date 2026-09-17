@@ -106,6 +106,68 @@ r3 = asyncio.run(lire_mails({"depuis": "30j", "tous": True}, user))
 verifier("le parcours est BORNÉ (250), et au-delà la suite est DITE, jamais tue",
          r3["nombre"] == 250 and r3["tronque"] is True and r3["curseur_suivant"] == "saut:250" and "curseur=saut:250" in (r3.get("pour_continuer") or ""))
 
+# ── LE TABLEAU COMPLET ET L'EXCEL SE FABRIQUENT, ILS NE SE RECOPIENT PAS ─────
+# 17/09 15:36 → 15:45 : 98 mails lus, VINGT lignes à l'écran, puis QUATRE dans l'Excel.
+print("\n── le livrable de l'inventaire")
+import json as _json, re as _re
+del BOITE[97:]
+produits = []
+
+
+async def _appeler(prompt, tier="standard"):
+    # Un modèle doublé : classe chaque ligne du lot, invente UNE catégorie hors liste.
+    rangs = [int(x) for x in _re.findall(r"^(\d+)\. De :", prompt, _re.M)]
+    return "Voici : " + _json.dumps([{"n": n, "resume": f"résumé {n}", "categorie": ("fournisseur" if n % 2 else "PUBLICITÉ")} for n in rangs])
+
+
+async def _protege(t): return t, {}
+class _Atelier:
+    @staticmethod
+    def ouvrir(entete, proprio): return "jeton123"
+    @staticmethod
+    def ajouter(jeton, elements, proprio): produits.append(elements); return len(elements)
+    @staticmethod
+    def terminer(jeton, proprio): return {"octets": 4242}
+sys.modules["bureautique"] = types.ModuleType("bureautique")
+sys.modules["bureautique.atelier"] = _Atelier
+esp3 = {"re": _re, "logger": logging.getLogger("banc"), "_appeler": _appeler, "_protege": _protege,
+        "_rehydrater": lambda v, c: v}
+exec("\n".join(ast.get_source_segment(sk, n) for n in ast.parse(sk).body
+               if (isinstance(n, ast.Assign) and getattr(n.targets[0], "id", "") in ("CATEGORIES_MAILS", "LOT_CLASSEMENT"))
+               or (isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))
+                   and n.name in ("_categories_voulues", "_lire_classement", "_classer_les_mails", "_jour_lisible", "_livrer_inventaire"))), esp3)
+esp2.update(esp3)
+r4 = asyncio.run(lire_mails({"depuis": "7j", "classer": True, "fichier": True}, user))
+blocs = r4["bloc_ui"]
+table = next(b for b in blocs if b["type"] == "table")
+verifier("`classer` + `fichier` sans `exhaustif` : l'inventaire complet est fait quand même (97 lignes)", len(table["rows"]) == 97, str(len(table["rows"])))
+verifier("le tableau porte date, expéditeur, objet, résumé, catégorie — pour CHAQUE mail",
+         table["columns"] == ["Date", "Expéditeur", "Objet", "Résumé", "Catégorie"] and all(len(l) == 5 for l in table["rows"]))
+verifier("une catégorie HORS liste n'est pas recopiée : la ligne reste « à classer », rien n'est inventé",
+         {l[4] for l in table["rows"]} == {"fournisseur", "à classer"})
+verifier("le bloc est GARANTI (le modèle n'a rien à recopier) et le fichier est au-dessus du tableau",
+         r4["bloc_garanti"] is True and blocs[0]["type"] == "fichier" and blocs[0]["url"] == "/api/documents/jeton123")
+verifier("l'Excel porte les 97 lignes et un second onglet « Par catégorie »",
+         len(produits[-1]) == 2 and produits[-1][0]["type"] == "feuille" and len(produits[-1][0]["lignes"]) == 97
+         and produits[-1][1]["nom"] == "Par catégorie")
+verifier("la consigne interdit de recopier et demande ce qu'on veut EN PLUS (les priorités)",
+         "ne recopie AUCUNE ligne" in r4["a_faire"] and "priorité" in r4["a_faire"] and "Ne rappelle pas" in r4["a_faire"])
+esp3["_appeler"] = None   # un modèle en panne
+async def _panne(prompt, tier="standard"): raise RuntimeError("cascade à terre")
+esp2["_appeler"] = _panne
+r5 = asyncio.run(lire_mails({"depuis": "7j", "classer": True}, user))
+verifier("un modèle en panne ne fait pas tomber l'inventaire : 97 lignes « à classer », et c'est dit",
+         len(r5["bloc_ui"][0]["rows"]) == 97 and r5["classes"] == 0 and {l[4] for l in r5["bloc_ui"][0]["rows"]} == {"à classer"})
+lc = esp3["_lire_classement"]
+verifier("la lecture du classement est tolérante et bornée (rang hors lot, JSON cassé, prose autour)",
+         lc('blabla [{"n": 1, "resume": "x", "categorie": "Fournisseur"}, {"n": 9, "resume": "y", "categorie": "fournisseur"}] fin', 3, ["fournisseur"]) == {1: ("x", "fournisseur")}
+         and lc("pas de json", 3, ["a"]) == {} and lc("[{", 3, ["a"]) == {})
+verifier("`categories` en texte ou en liste, sinon celles de la maison",
+         esp3["_categories_voulues"]("Devis, SAV ; Compta") == ["devis", "sav", "compta"] and esp3["_categories_voulues"](None)[0] == "demande de devis")
+proto = (BACKEND / "skills" / "protocol.py").read_text(encoding="utf-8")
+verifier("le catalogue annonce `classer`, `categories`, `fichier` et dit de NE PAS passer par produire_document",
+         '"classer", "categories", "fichier"' in proto and "n'utilise PAS `produire_document`" in proto)
+
 a1 = (BACKEND / "agents" / "agent1.py").read_text(encoding="utf-8")
 verifier("le résultat d'un inventaire n'est pas recoupé après avoir été parcouru en entier",
          "action['skill']=='lire_mails' and isinstance(sortie,dict) and sortie.get('inventaire'):plafond=190000" in a1)
