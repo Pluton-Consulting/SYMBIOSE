@@ -55,11 +55,11 @@ git fetch origin && git checkout audit/symbiose && git pull
 livraison) → vérification que le schéma est complet → bascule → attente de
 `/api/ready`.
 
-⚠️ **Quatre migrations nouvelles** — **045**, **046**, **047**, **048**. Toutes additives et
+⚠️ **Cinq migrations nouvelles** — **045**, **046**, **047**, **048**, **049**. Toutes additives et
 idempotentes ; `deploy.sh` les applique seul, et un échec ARRÊTE la livraison
 (l'ancienne version reste en service). Elles ajoutent le registre des opérations
 externes (045), celui des demandes de chat (046), les baux de vectorisation et
-l'identité du modèle sur le vecteur (047), et la qualification des leçons (048).
+l'identité du modèle sur le vecteur (047), la qualification des leçons (048), et le propriétaire / signe de vie des demandes (049).
 
 ⚠️ `deploy.sh` va aussi, pour la première fois, **vérifier objet par objet** que les
 migrations déjà suivies sont bien en place (`attendus.tsv`). S'il annonce « objet
@@ -67,8 +67,9 @@ ABSENT → elle sera jouée » pour une migration ancienne, c'est un trou réel 
 de production : **le relever avant de continuer**.
 
 **À VÉRIFIER** : la dernière ligne affiche l'état prêt, avec le commit. Sinon, le
-script dit ce qui manque et rappelle le retour arrière — l'ancienne version est
-restée en service.
+script dit ce qui manque et rappelle le retour arrière. Avant la bascule, un échec
+arrête la livraison en conservant les conteneurs précédents. Après la bascule,
+un échec de readiness exige un retour arrière explicite : il n'est pas automatique.
 
 ```bash
 # la version réellement en ligne, à tout moment
@@ -214,3 +215,13 @@ vrai Drive), tâches planifiées coupées.
   (S-27), recadrage des cotes (S-24), rétention et modes de confidentialité (S-22).
 * La bascule du rôle applicatif PostgreSQL (S-20) est une opération de serveur :
   `scripts/controle_droits_base.py` dit seulement où l'on en est.
+
+## Complément de fiabilisation du 16 septembre 2026
+
+- Inclure `backend/requirements.lock` et la migration `049_requetes_signe_de_vie.sql` dans la livraison. La branche locale contient aussi des fichiers nouveaux non suivis tant que les corrections ne sont pas enregistrées dans Git.
+- Construire le backend depuis le fichier verrouillé avec empreintes ; NumPy reste en version 1.x pour spaCy 3.7. Le frontend utilise Next 15.5.25, PostCSS 8.5.28 et Sharp 0.35.4.
+- Le code backend de production est désormais dans l’image ; les secrets et les documents restent montés. Le montage intégral du code n’existe que dans `docker-compose.dev.yml`. Une simple réouverture du navigateur ne livre donc pas ces changements.
+- Le signe de vie des requêtes bat toutes les 15 secondes ; une demande sans signe de vie depuis 120 secondes devient interrompue lors de sa consultation, sans relance automatique. Le budget total d’un tour est de 600 secondes (`DEMANDE_DELAI_S`).
+- Les pièces jointes des nouveaux accords sont copiées avant validation, contrôlées par SHA-256 avant envoi et conservées sept jours. Après cette durée, préparer un nouvel accord.
+- Une recherche sans résultat en mémoire complète la lecture avec le stockage et/ou la boîte autorisés, avec 15 secondes par source. Les noms trouvés doivent encore être ouverts ; cette recherche n’est pas exhaustive.
+- Les tests de la dernière revue et leurs limites sont détaillés dans `FIABILISATION-20260916.md`. Ne pas classer la production validée avant la recette des services réels.

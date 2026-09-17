@@ -646,6 +646,8 @@ class ResilientLLM:
         self.last_model_used: Optional[str] = None
 
     async def ainvoke(self, messages: Any, **kwargs) -> Any:
+        extraction_documentaire = kwargs.pop("_extraction_documentaire", False)
+        secours_timeout_documentaire = kwargs.pop("_secours_timeout_documentaire", False)
         chain = _filtrer_quarantaine(_tier_chain(self.tier))
         if not chain:
             raise RuntimeError(
@@ -694,8 +696,17 @@ class ResilientLLM:
                     # bas, reste HORS de la porte : attendre en tenant un
                     # créneau serait absurde.
                     from llm.concurrence import porte_llm
-                    async with porte_llm():
-                        result = await llm.ainvoke(messages, **kwargs)
+                    from llm.budget import delai_disponible
+                    async with asyncio.timeout(delai_disponible(tier_timeout(self.tier.value))):
+                        async with porte_llm():
+                            options = dict(kwargs)
+                            # L’extraction cite des faits contrôlés mot à mot ;
+                            # la rédaction et la relecture restent au palier puissant.
+                            # Cette option n’est envoyée qu’aux modèles testés
+                            # qui savent explicitement désactiver le raisonnement.
+                            if extraction_documentaire and provider == "ollama_cloud" and (model or "").startswith("deepseek-v4"):
+                                options.update(reasoning_effort="none", max_tokens=8192)
+                            result = await llm.ainvoke(messages, **options)
                     # CE QUE L'APPEL A COÛTÉ, compté ICI parce que c'est le seul
                     # endroit que TOUS les appels traversent. Les nœuds du
                     # graphe sont une vingtaine et il en naît de nouveaux :
@@ -726,6 +737,18 @@ class ResilientLLM:
                     return result
                 except Exception as e:
                     last_error = e
+                    if isinstance(e, TimeoutError) and idx + 1 < len(chain):
+                        # Le délai entier du candidat a déjà été consommé. Un
+                        # second essai sur le même endpoint ne fait que doubler
+                        # le gel visible dans l'interface (un résumé de mails
+                        # restait bloqué quatre minutes). La cascade existe
+                        # précisément pour donner la main au candidat suivant.
+                        # Cela vaut pour les documents comme pour les réponses
+                        # ordinaires ; s'il n'y a aucun secours, on conserve la
+                        # tentative configurée afin de ne pas supprimer le
+                        # dernier filet disponible.
+                        logger.warning("LLM %s : délai dépassé — candidat suivant", label)
+                        break
                     if _is_hard_fail(e):
                         logger.warning("LLM %s indispo (quota/auth) : %s — candidat suivant", label, e)
                         # Et on le RETIENT : sans cela, l'appel suivant referait
@@ -738,7 +761,8 @@ class ResilientLLM:
                         label, attempt + 1, tentatives, e, delay,
                     )
                     if attempt < tentatives - 1:
-                        await asyncio.sleep(delay)
+                        from llm.budget import delai_disponible
+                        await asyncio.sleep(delai_disponible(delay))
 
         raise RuntimeError(f"Tous les modèles LLM ont échoué (dernier : {last_error})") from last_error
 
@@ -805,25 +829,18 @@ def get_vision_candidates() -> list[tuple[Any, str]]:
     if not getattr(s, "vision_enabled", True):
         return []
     sortie: list[tuple[Any, str]] = []
-    # OpenRouter en deuxième (01/09) : Gemini 2.5 Pro y lit les scans et
-    # factures bien mieux que le flash direct — c'est le modèle d'OCR
-    # préparamétré, servi par la clé OpenRouter déjà en place. Anthropic garde
-    # la tête quand sa clé existe (meilleure lecture de plans).
-    for provider, model in (tuple(choisi) +
-                           (("anthropic", s.model_anthropic_vision),
-                            ("openrouter", s.model_openrouter_vision),
-                            # Ollama Cloud lit aussi les images. Placé DERRIÈRE
-                            # Gemini 2.5 Pro tant qu'aucune mesure n'a comparé
-                            # les deux sur de vraies factures : le modèle d'OCR
-                            # en place a été choisi sur un constat, pas sur une
-                            # préférence. Pour basculer, remonter ces deux
-                            # lignes — après avoir mesuré.
-                            ("ollama_cloud", s.model_ollama_cloud_vision),
-                            ("ollama_cloud", s.model_ollama_cloud_vision_secours),
-                            ("google", s.model_google_vision),
-                            ("google", s.model_google_vision_secours),
-                            ("groq", s.model_groq_vision))):
+    # RÈGLE DE DÉPLOIEMENT : SYMBIOSE utilise Ollama Cloud pour tous les
+    # modèles, y compris la lecture visuelle. Les anciens replis OpenRouter,
+    # Anthropic, Google et Groq pouvaient envoyer des pièces jointes vers un
+    # fournisseur différent du modèle de texte choisi ; ils sont donc refusés
+    # ici, même si une clé existe encore dans la base.
+    candidats_ollama = (("ollama_cloud", s.model_ollama_cloud_vision),
+                        ("ollama_cloud", s.model_ollama_cloud_vision_secours))
+    for provider, model in candidats_ollama:
         if not _provider_available(provider):
+            continue
+        if any(m in str(model).lower() for m in ("deepseek-v4", "deepseek-chat", "deepseek-reasoner")):
+            logger.warning("Modèle texte ignoré pour la vision : %s", model)
             continue
         try:
             sortie.append((_build_model(provider, model), f"{provider}:{model}"))

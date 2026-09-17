@@ -348,7 +348,7 @@ def _rendu(resultat: dict, titre: str, *, essai: bool, avant: str = "",
                   + [{"cle": c, "legende": "Après (projet)"} for c in cles])
     else:
         images = [{"cle": c} for c in cles]
-    bloc = {"type": "visuel",
+    bloc = {"type": "visuel", "genere_par_ia": True,
             "titre": (titre or ("Essai de visuel" if essai else "Visuel d'aménagement"))[:80],
             "images": images}
     # LE RÉSULTAT EN GRAND, L'AVANT / APRÈS EN DESSOUS (07/09, relevé de Noa :

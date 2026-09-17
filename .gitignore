@@ -48,3 +48,13 @@ graphify-out/
 symbiose-noa/backend/.version
 # Environnement de restauration isolée, produit par restaurer.sh.
 symbiose-noa/.restauration/
+
+# Journaux de livraison privés ; ne jamais publier la copie du .env.
+**/.livraisons/
+
+**/.configuration-retour.json
+**/RETOUR-ARRIERE.txt
+
+# Versions de livraison privées et anciens scripts opérationnels
+**/.livraisons-code-*/
+**/.operations-avant-livraison/

@@ -1,10 +1,9 @@
 import logging
-import secrets
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel
 from database.connection import get_db
 from auth import appareil
 from auth.jwt_handler import create_access_token, decode_access_token
@@ -12,9 +11,6 @@ from auth.dependencies import get_current_user
 from database.models import User
 from security.audit import log_action
 from security import tentatives
-from emails.envoi import envoyer
-from emails.gabarit import mail_connexion
-from config import settings
 
 logger = logging.getLogger("symbiose.auth")
 
@@ -22,20 +18,12 @@ _bearer = HTTPBearer()
 
 router = APIRouter()
 
-MAGIC_LINK_EXPIRE_MINUTES = 15
-
-
-class MagicLinkRequest(BaseModel):
-    email: str
-
-
-class VerifyTokenRequest(BaseModel):
-    token: str
+class ConnexionEmailRequest(BaseModel):
     email: str
 
 
 class RefreshRequest(BaseModel):
-    """Le jeton d'appareil posé lors de la dernière connexion par lien magique."""
+    """Le jeton d'appareil posé lors de la dernière connexion."""
     refresh_token: str
 
 
@@ -46,224 +34,47 @@ class LogoutRequest(BaseModel):
     refresh_token: str | None = None
 
 
-async def _send_magic_link_email(to_email: str, magic_link: str) -> None:
-    """Envoie le lien de connexion. En debug, l'affiche AUSSI en console.
+@router.post("/connexion/email")
+async def connexion_email(body: ConnexionEmailRequest, request: Request):
+    """Entrée par adresse seule, demandée explicitement par le propriétaire.
 
-    Le contenu a quitté ce fichier : il vit dans `emails/`, gabarit commun aux
-    deux clients et marque isolée dans un seul module. Ce routeur ne connaît
-    plus ni HTML ni Resend — c'est ce qui garantit qu'une correction de mise en
-    page se pose des deux côtés d'un seul geste.
+    Ce mode temporaire ne prouve pas la possession de la boîte mail. Il garde
+    les comptes, rôles et sessions existants ; il ne crée aucun utilisateur.
+    Le futur code devra être vérifié ici avant toute émission de session.
     """
-    # LE LIEN NE S'IMPRIME QU'EN DÉVELOPPEMENT (16/09, audit S-19). Un lien de
-    # connexion EST une identité : imprimé dans les journaux, il se lit dans
-    # `docker compose logs`, dans une capture d'écran de diagnostic, dans une
-    # sauvegarde de journaux. `DEBUG=true` laissé par mégarde sur le serveur
-    # suffisait — l'environnement fait donc foi, pas le drapeau de confort.
-    environnement = str(getattr(settings, "environment", "") or "").strip().lower()
-    if settings.debug and environnement in ("development", "dev", "local", "test"):
-        print(f"\nMAGIC LINK (dev) → {magic_link}\n")
-        # Pas de return : l'email part quand même en mode debug.
-
-    objet, _apercu, html = mail_connexion(magic_link, MAGIC_LINK_EXPIRE_MINUTES)
-    # Le logo voyage AVEC le message (pièce jointe « inline », référencée par
-    # `cid:` dans l'en-tête du gabarit) : un logo distant serait bloqué par la
-    # plupart des clients, et celui-ci vit derrière le VPN de toute façon.
-    from emails.marque import logo_image
-    logo = logo_image()
-    await envoyer(to_email, objet, html, images=[logo] if logo else None)
+    origine = "email:" + tentatives.origine_de(
+        request.headers.get("x-forwarded-for", ""), getattr(request.client, "host", ""))
+    if tentatives.saturee(origine):
+        raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                            detail="Connexion impossible. Réessayez plus tard.")
+    email = str(body.email).strip().lower()
+    async with get_db() as conn:
+        comptes = await conn.fetch(
+            "SELECT * FROM users WHERE lower(trim(email)) = $1 AND actif = true LIMIT 2", email)
+    # Refuser une adresse ambiguë plutôt que choisir arbitrairement un rôle.
+    if len(comptes) != 1:
+        tentatives.noter_echec(origine)
+        await log_action(action="login_attempt_unknown", success=False,
+                         error_message="Compte absent, inactif ou ambigu")
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Accès non autorisé")
+    user = comptes[0]
+    tentatives.oublier(origine)
+    async with get_db() as conn:
+        await conn.execute("UPDATE users SET last_login = $1 WHERE id = $2",
+                           datetime.now(timezone.utc), user["id"])
+    await log_action(action="login_email", user_id=str(user["id"]))
+    access_token = create_access_token({"sub": str(user["id"]), "role": user["role"]})
+    jeton_appareil = await appareil.creer(user["id"], request.headers.get("user-agent", ""))
+    return {"id": str(user["id"]), "email": user["email"], "access_token": access_token,
+            "token_type": "bearer", "role": user["role"], "refresh_token": jeton_appareil}
 
 
 @router.post("/magic-link/request")
-async def request_magic_link(body: MagicLinkRequest, request: Request):
-    """
-    Génère un token et envoie un lien de connexion par email.
-    Retourne toujours le même message pour ne pas révéler si l'email existe.
-
-    BORNÉE PAR ORIGINE (16/09, audit S-19) : mille demandes font mille mails
-    partis de notre domaine, et notre réputation d'expéditeur avec. Quand la
-    borne mord, la réponse NE CHANGE PAS — sinon elle dirait, à qui insiste,
-    quelles adresses existent : on cesse simplement d'envoyer.
-    """
-    origine = tentatives.origine_de(request.headers.get("x-forwarded-for", ""),
-                                    getattr(request.client, "host", ""))
-    if tentatives.saturee(origine):
-        logger.warning("Demandes de lien de connexion trop nombreuses depuis une origine")
-        return {"ok": True}
-    async with get_db() as conn:
-        user = await conn.fetchrow(
-            "SELECT id FROM users WHERE email = $1 AND actif = true",
-            body.email,
-        )
-
-    if not user:
-        await log_action(
-            action="login_attempt_unknown",
-            success=False,
-            error_message="Email non enregistré",
-        )
-        tentatives.noter_echec(origine)
-        # Réponse UNIFORME (anti-énumération de comptes) — voir aussi le chemin "connu".
-        return {"ok": True}
-
-    token = secrets.token_urlsafe(32)
-    expires_at = datetime.now(timezone.utc) + timedelta(minutes=MAGIC_LINK_EXPIRE_MINUTES)
-
-    async with get_db() as conn:
-        await conn.execute(
-            "INSERT INTO verification_tokens (email, token, expires_at) VALUES ($1, $2, $3)",
-            body.email, token, expires_at,
-        )
-
-    magic_link = f"{settings.app_url}/verify?token={token}&email={body.email}"
-    await _send_magic_link_email(body.email, magic_link)
-    return {"ok": True}
-
-
 @router.post("/magic-link/verify")
-async def verify_magic_link(body: VerifyTokenRequest, request: Request):
-    """Vérifie le token, le consomme, retourne un JWT backend ET ouvre la
-    session durable de CET appareil (03/09).
-
-    C'est ici, et seulement ici, que naît un jeton d'appareil : le lien magique
-    reste l'unique preuve d'identité. Ce qui change, c'est qu'on ne la redemande
-    plus tous les jours au même poste.
-    """
-    async with get_db() as conn:
-        row = await conn.fetchrow(
-            "SELECT * FROM verification_tokens WHERE token = $1 AND email = $2",
-            body.token, body.email,
-        )
-
-    origine = tentatives.origine_de(request.headers.get("x-forwarded-for", ""),
-                                    getattr(request.client, "host", ""))
-    if tentatives.saturee(origine):
-        # Même message que pour un lien faux : la borne ne se laisse pas
-        # mesurer depuis l'extérieur.
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Lien invalide")
-    if not row:
-        tentatives.noter_echec(origine)
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Lien invalide")
-    # UN LIEN PEUT SERVIR PLUSIEURS FOIS (03/09, migration 035) : PC puis
-    # téléphone, chacun ouvrant sa propre session d'appareil. Le compteur fait
-    # foi quand il existe ; `used` reste le verrou du lien envoyé par mail et
-    # celui d'une base sans la migration — dans ce cas tout lien vaut une fois.
-    d = dict(row)
-    maxi = int(d.get("utilisations_max") or 1)
-    faites = int(d.get("utilisations") or 0)
-    if row["used"] or faites >= maxi:
-        tentatives.noter_echec(origine)
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Lien déjà utilisé")
-    if row["expires_at"] < datetime.now(timezone.utc):
-        tentatives.noter_echec(origine)
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Lien expiré")
-
-    async with get_db() as conn:
-        try:
-            # Une utilisation de plus ; le lien se ferme quand le compte est
-            # plein. Écrit en UNE requête pour que deux appareils qui cliquent
-            # au même instant ne consomment pas la même utilisation.
-            await conn.execute(
-                """UPDATE verification_tokens
-                      SET utilisations = utilisations + 1,
-                          used = (utilisations + 1 >= utilisations_max)
-                    WHERE token = $1""",
-                body.token,
-            )
-        except Exception as e:  # noqa: BLE001
-            from database.connection import schema_incomplet
-            if not schema_incomplet(e):
-                raise
-            # Migration 035 absente : comportement d'avant, à usage unique.
-            await conn.execute(
-                "UPDATE verification_tokens SET used = true WHERE token = $1",
-                body.token,
-            )
-        user = await conn.fetchrow(
-            "SELECT * FROM users WHERE email = $1 AND actif = true",
-            body.email,
-        )
-
-    if not user:
-        tentatives.noter_echec(origine)
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Accès non autorisé")
-    # Entrée réussie : cette origine n'a plus rien à traîner.
-    tentatives.oublier(origine)
-
-    async with get_db() as conn:
-        await conn.execute(
-            "UPDATE users SET last_login = $1 WHERE id = $2",
-            datetime.now(timezone.utc), user["id"],
-        )
-
-    await log_action(action="login", user_id=str(user["id"]))
-
-    access_token = create_access_token({"sub": str(user["id"]), "role": user["role"]})
-    jeton_appareil = await appareil.creer(user["id"], request.headers.get("user-agent", ""))
-    return {
-        "access_token": access_token,
-        "token_type": "bearer",
-        "role": user["role"],
-        # None si la migration 034 n'est pas encore appliquée : le navigateur
-        # retombe alors sur le comportement d'avant (lien magique tous les jours).
-        "refresh_token": jeton_appareil,
-    }
-
-
 @router.post("/magic-link/etat")
-async def etat_magic_link(body: VerifyTokenRequest):
-    """POURQUOI ce lien a été refusé — sans rien consommer ni modifier.
-
-    RELEVÉ DE NOA DU 08/09 : une employée n'arrive pas à se connecter, et
-    l'écran répond « Lien invalide ou expiré » quoi qu'il arrive. Le serveur,
-    lui, distingue quatre situations très différentes — lien inconnu, déjà
-    utilisé, périmé, compte désactivé — dont trois appellent un geste précis.
-    Sans cette route, il faut ouvrir la base pour savoir laquelle : c'est la
-    même faute que le 429 sans cause de Nano Banana ou le refus Drive muet.
-
-    ⚠️ ANTI-ÉNUMÉRATION. On ne répond en détail QUE si le couple (jeton,
-    adresse) existe vraiment : le porteur du lien connaît déjà l'adresse, on
-    ne lui apprend rien. À un jeton inventé, la réponse reste générique — sinon
-    la route deviendrait un moyen de tester des adresses.
-    """
-    async with get_db() as conn:
-        row = await conn.fetchrow(
-            "SELECT * FROM verification_tokens WHERE token = $1 AND email = $2",
-            body.token, body.email,
-        )
-        actif = None
-        if row:
-            actif = await conn.fetchval(
-                "SELECT actif FROM users WHERE email = $1", body.email)
-
-    if not row:
-        return {"raison": "inconnu",
-                "message": ("Ce lien ne correspond à rien. Demandez-en un nouveau "
-                            "depuis la page de connexion.")}
-
-    d = dict(row)
-    maxi = int(d.get("utilisations_max") or 1)
-    faites = int(d.get("utilisations") or 0)
-    if d.get("used") or faites >= maxi:
-        return {"raison": "deja_utilise",
-                "message": ("Ce lien a déjà servi" + (f" ({faites} fois sur {maxi})" if maxi > 1 else "")
-                            + ". Demandez-en un nouveau : chaque lien ne vaut "
-                              "que pour une ouverture de session.")}
-    if d["expires_at"] < datetime.now(timezone.utc):
-        return {"raison": "expire",
-                "message": (f"Ce lien a expiré (il vaut {MAGIC_LINK_EXPIRE_MINUTES} minutes). "
-                            "Demandez-en un nouveau et ouvrez-le tout de suite.")}
-    if actif is False:
-        return {"raison": "compte_desactive",
-                "message": ("Ce compte est désactivé : aucun lien ne l'ouvrira. "
-                            "Demandez à un administrateur de le réactiver dans "
-                            "Paramètres puis Utilisateurs.")}
-    if actif is None:
-        return {"raison": "compte_absent",
-                "message": ("Aucun compte ne porte cette adresse. Un administrateur "
-                            "doit la créer, ou corriger l'orthographe.")}
-    return {"raison": "valide",
-            "message": ("Ce lien est encore valable. Si la connexion échoue quand même, "
-                        "le serveur n'a pas répondu : réessayez dans un instant.")}
+async def lien_magique_retire():
+    raise HTTPException(status_code=status.HTTP_410_GONE,
+                        detail="Saisissez votre adresse sur la page de connexion.")
 
 
 @router.post("/refresh")

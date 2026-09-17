@@ -1112,7 +1112,12 @@ async def principal():
     verifier("aucune image n'est promise à l'écran par ce geste",
              not any("image" in json.dumps(x, ensure_ascii=False).lower()
                      for x in r.get("resultats") or []))
-    r = await documents.rechercher_documents({"requete": "zzz introuvable"}, User())
+    import importlib.util
+    _src = importlib.util.spec_from_file_location("skills.recherche_sources", pathlib.Path(documents.__file__).with_name("recherche_sources.py"))
+    _module_sources = importlib.util.module_from_spec(_src)
+    sys.modules["skills.recherche_sources"] = _module_sources
+    _src.loader.exec_module(_module_sources)
+    r = await documents.rechercher_documents({"requete": "zzz introuvable", "sources_directes": False}, User())
     # LE CONTRÔLE A SUIVI LE CHAMP. La consigne « ne dis pas que la mémoire est
     # vide » s'adresse au MODÈLE : elle vit dans `a_faire` depuis qu'on a vu
     # cette phrase s'afficher telle quelle à l'écran (question 8, 27/08). Ce
@@ -1225,6 +1230,7 @@ async def principal():
     _palier = types.SimpleNamespace(value="complex")
     espace3 = {"AgentState": dict, "LLMTier": types.SimpleNamespace(COMPLEX=_palier),
                "classify_request_tier": lambda q, a: _palier}
+    sys.modules['skills.trames']=types.SimpleNamespace(travail_en_cours=lambda user,fil: {})
     extraire("agents/router.py", {"classify_node"}, espace3)
     r = await espace3["classify_node"]({"query": "analyse ce plan et fais le devis",
                                         "has_attachment": True, "attachment_text": None})

@@ -230,6 +230,7 @@ if NAS:
              outils_nas.count("_lire_ouvert(client, base, sid, demande, proprietaire)") == 1
              and 'premier["chemin"], proprietaire)' in outils_nas)
 else:
+    _poser("security", __path__=[str(BACKEND / "security")])
     drive = (BACKEND / "outils" / "drive.py").read_text(encoding="utf-8")
     verifier("`outils.drive.ouvrir` accepte un propriétaire et passe par `_deposer_pour`",
              "proprietaire: str | None = None) -> dict:" in drive and drive.count("_deposer_pour(fichier, service, proprietaire") == 2)

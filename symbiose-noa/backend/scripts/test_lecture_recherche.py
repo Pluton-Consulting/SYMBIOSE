@@ -87,12 +87,14 @@ verifier("alias acceptés (mots, contient, mots_cles, query)",
          all(f'data.get("{a}")' in skills for a in ("mots", "contient", "mots_cles", "query")))
 verifier("limite 25 d'office dès qu'on cherche ou qu'on pagine", "25 if (_periode or recherche or avant) else 10" in skills)
 proto = (BACKEND / "skills" / "protocol.py").read_text(encoding="utf-8")
-verifier("le catalogue déclare recherche et avant en optionnels",
-         '["mailbox", "dossier", "limite", "depuis", "recherche", "avant"]' in proto)
+verifier("le catalogue déclare recherche, avant et exhaustif en optionnels",
+         '["mailbox", "dossier", "limite", "depuis", "recherche", "avant", "curseur", "exhaustif"]' in proto)
 verifier("le catalogue explique la page suivante (plus_ancien → avant)",
          "plus_ancien" in proto and "`avant`" in proto)
 verifier("lire_boite calcule plus_ancien depuis date_iso", 'plus_ancien = min((m.get("date_iso")' in src)
 verifier("pour_continuer dit au modèle quoi rappeler", '"pour_continuer"' in src and "avant={plus_ancien}" in src)
+verifier("une recherche simple ne force pas la pagination", "(exhaustif or not mots)" in src)
+verifier("le skill transmet le mode exhaustif", "exhaustif=exhaustif" in skills)
 verifier("Gmail : date_iso vient d'internalDate (le seul champ garanti lisible)", 'm["internalDate"]' in src)
 verifier("Outlook : date_iso vient de receivedDateTime", '"date_iso": (m.get("receivedDateTime") or "")[:10]' in src)
 verifier("le compte dit quand le total n'est pas connu (recherche Outlook)",

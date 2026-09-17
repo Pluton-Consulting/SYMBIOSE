@@ -61,7 +61,70 @@ async def creer_document(data: dict, user) -> dict:
     if not proprio:
         _echec("Impossible d'ouvrir un document sans compte identifié.")
 
-    entete = normaliser_entete(data or {})
+    donnees = data or {}
+    entete = normaliser_entete(donnees)
+
+    # Un modèle DOCX peut servir de GABARIT pour un contenu entièrement
+    # nouveau. `reproduire_document` reste réservé au remplacement de textes
+    # existants : il ne sait pas inventer un nouveau corps et rendait donc un
+    # échec trompeur quand la demande disait « crée un document à partir de ce
+    # modèle ». On résout la référence avant d'ouvrir l'atelier afin qu'une
+    # pièce inaccessible ne laisse pas de brouillon vide derrière elle.
+    modele_reference = str(
+        donnees.get("modele_fichier") or donnees.get("fichier_modele")
+        or donnees.get("modele") or donnees.get("gabarit") or ""
+    ).strip()
+    modele_octets = None
+    modele_nom = ""
+    modele_entete = modele_pied = False
+    if modele_reference:
+        if entete["format"] != "docx":
+            _echec("Un gabarit de mise en page est actuellement pris en charge "
+                   "pour un nouveau document Word uniquement (`format: docx`).")
+        from mail.attaches import resoudre
+        boite = str(getattr(user, "email", "") or "")
+        pretes, refusees = await resoudre(
+            [modele_reference], user, boite, plafond=60 * 1024 * 1024
+        )
+        if not pretes:
+            pourquoi = (refusees[0].get("raison") if refusees else
+                        "référence inconnue ou non accessible")
+            _echec(f"Le gabarit Word « {modele_reference} » est inaccessible : {pourquoi}.")
+        piece = pretes[0]
+        modele_nom = str(piece.get("nom") or modele_reference)
+        if not modele_nom.lower().endswith(".docx"):
+            _echec("Le gabarit sélectionné n'est pas un fichier Word .docx. "
+                   "Choisis un modèle Word, puis relance la création.")
+        modele_octets = piece.get("octets")
+        if not isinstance(modele_octets, (bytes, bytearray)):
+            _echec("Le gabarit Word a été trouvé mais son contenu n'est pas lisible.")
+        # Un texte placé en haut du corps n'est pas un en-tête Word. Vérifier
+        # les zones réelles avant l'ouverture permet de refuser proprement un
+        # modèle qui ne respecte pas une demande explicite « en-tête et pied »
+        # et d'en essayer un autre sans laisser de brouillon orphelin.
+        try:
+            import io
+            from docx import Document
+            document_modele = Document(io.BytesIO(bytes(modele_octets)))
+            def _zone_remplie(zone):
+                xml = zone._element.xml
+                return any(marque in xml for marque in ("<w:t", "<w:drawing", "<w:pict", "<w:tbl"))
+            modele_entete = any(_zone_remplie(s.header) for s in document_modele.sections)
+            modele_pied = any(_zone_remplie(s.footer) for s in document_modele.sections)
+        except Exception as exc:
+            _echec(f"Le gabarit Word « {modele_nom} » est illisible : {exc}.")
+        exige_zones = bool(
+            donnees.get("verifier_entete_pied")
+            or donnees.get("exige_entete_pied")
+            or donnees.get("exiger_entete_pied")
+        )
+        if exige_zones and (not modele_entete or not modele_pied):
+            zones = []
+            if not modele_entete: zones.append("en-tête")
+            if not modele_pied: zones.append("pied de page")
+            _echec(f"Le modèle « {modele_nom} » ne possède pas de zone Word "
+                   f"{' ni '.join(zones)}. Choisis un autre DOCX qui les contient "
+                   "ou demande une création avec la charte.")
 
     # UN TITRE DÉJÀ OUVERT NE S'OUVRE PAS UNE DEUXIÈME FOIS. Relevé en
     # production (projet jumeau) : quatre documents quasi identiques ouverts
@@ -71,7 +134,7 @@ async def creer_document(data: dict, user) -> dict:
     # JAMAIS ce que la conversation voulait : on rend l'existant, avec son
     # compte d'éléments, et la reprise continue au lieu de cloner. Repartir de
     # zéro reste possible : abandonner d'abord, ouvrir ensuite.
-    for d in ouverts(proprio):
+    for d in ouverts(proprio, fil=(data or {}).get("_fil") or ""):
         if _meme_titre(d.get("titre"), entete["titre"]):
             # CETTE NOTE NE DOIT JAMAIS PROPOSER DE DÉTRUIRE.
             #
@@ -108,6 +171,19 @@ async def creer_document(data: dict, user) -> dict:
     except TropDeDocuments as e:
         # Le quota ne détruit plus un brouillon rempli (audit S-04) : on le DIT.
         _echec(str(e))
+    if modele_octets is not None:
+        from bureautique.atelier import mettre_a_jour_entete
+        from bureautique.document_modele import preparer_modele
+        import asyncio
+        chemin = await asyncio.to_thread(
+            preparer_modele, jeton, proprio, bytes(modele_octets)
+        )
+        entete = dict(entete)
+        entete["_modele_docx"] = chemin
+        entete["modele_source"] = modele_nom
+        entete["modele_entete"] = modele_entete
+        entete["modele_pied"] = modele_pied
+        mettre_a_jour_entete(jeton, proprio, entete)
     # Les images d'en-tête et de pied (un logo) se résolvent et se rangent
     # MAINTENANT, sous le jeton : le rendu ne lit que des fichiers rangés.
     refus: list = []
@@ -126,10 +202,17 @@ async def creer_document(data: dict, user) -> dict:
         "formats_possibles": list(FORMATS),
         "blocs_possibles": BLOCS,
         "images_refusees": refus,
+        "modele_applique": modele_nom or None,
+        "modele_entete": modele_entete if modele_nom else None,
+        "modele_pied": modele_pied if modele_nom else None,
         "note": ("Document OUVERT, encore vide et sans fichier. Verse le contenu "
                  "avec `ajouter_document` (en plusieurs appels si le document est "
                  "long, il n'y a pas de limite au nombre d'appels), puis appelle "
                  "`terminer_document` pour obtenir le lien de téléchargement."
+                 + (f" Gabarit Word « {modele_nom} » appliqué : les styles, "
+                    "en-têtes, pieds de page et éléments de mise en page sont "
+                    "conservés ; ajoute maintenant le nouveau contenu."
+                    if modele_nom else "")
                  + (f" Image posée en {' et en '.join(images_posees)} de chaque page."
                     if images_posees else "")
                  + _note_refus(refus)),

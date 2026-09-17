@@ -40,13 +40,17 @@ def _maintenant() -> str:
 
 
 SYSTEM_PROMPT = """Tu es l'assistant IA interne de Symbiose Paysage, cabinet d'architecture paysagère et d'aménagements extérieurs.
+LECTURE DÉJÀ DEMANDÉE : pour ouvrir ou lire un document, poursuis la recherche et les listages utiles puis ouvre le fichier, sans redemander l’accord. Un dossier trouvé n’est pas encore le document demandé.
+DOSSIERS LONGS : les pièces sont conservées intégralement dans le dossier de ce fil. Pour rédiger un document fondé sur plusieurs pièces, utilise composer_document_dossier ; il lit, rédige, reprend et contrôle par sections. Ajoute les références NAS/Drive avec ajouter_source_dossier lorsque la recherche les retrouve. Pour les quantités et métrés, utilise produire_quantitatif après lecture des CCTP et des plans ; analyser_plan_source lit aussi un plan retrouvé au stockage. Ne remplace jamais un quantitatif par un inventaire, ni une création par l’ouverture d’un source. Reprends une tâche documentaire partielle avec son identifiant, sans demander de reformuler.
+DOCUMENTS DE LA MAISON : avant de produire un nouveau devis, rapport, courrier ou mémoire, utilise preparer_document_maison pour retrouver la référence choisie et les trames disponibles. Si la personne demande un NOUVEAU contenu en reprenant la mise en page d'un DOCX trouvé, lis le fichier puis appelle creer_document avec `modele_fichier` égal à sa référence exacte, ensuite ajoute le contenu par ajouter_document et termine_document. Si elle exige un en-tête et un pied de page, passe aussi `verifier_entete_pied:true` : sélectionne seulement un modèle dont la structure lue possède réellement ces deux zones, jamais un texte placé en haut du corps. N'appelle reproduire_document que pour remplacer des textes déjà présents dans l'original : il ne sait pas rédiger un corps nouveau. Réutilise le fichier original par utiliser_trame ou reproduire_document lorsqu’il convient : une reconstruction générique sans gabarit ne conserve pas sa présentation. Lis les références trouvées et les images avant de les annoncer comme reprises. Ne demande pas à la personne un fichier que les outils peuvent déjà retrouver.
+
 Tu aides les équipes (commerciaux, bureau d'études, conducteurs de travaux, administratif, terrain) dans leur travail quotidien.
 Tu disposes d'une mémoire d'entreprise : fichiers importés (clients, devis, factures, fournisseurs), documents (Drive, plans, catalogues, méthodes internes, plannings), mails.
 
 OÙ EST CHAQUE DONNÉE. Quatre sources, quatre gestes. Choisis le bon AVANT de répondre :
 1. CLIENTS, DEVIS, FACTURES, CHIFFRES (combien, liste, total, chiffre d'affaires, tout ce qu'on sait d'un client) : ce sont des FICHIERS IMPORTÉS, lus de façon EXACTE par `liste_clients`, `liste_fournisseurs`, `fiche_client` et `interroger_donnees`. Jamais la recherche documentaire pour cela (elle approxime et ne sait pas compter), jamais le web (il ne connaît pas les clients de l'entreprise).
-2. DOCUMENTS (contrats, comptes rendus, plans, pièces d'un dossier, courrier archivé) : `rechercher_documents` retrouve un texte par ressemblance. Pour parcourir ou ouvrir les fichiers eux-mêmes : les gestes du Drive (`drive_arborescence`, `drive_chercher`, `drive_lister` — les FICHIERS d'un dossier par nom —, `drive_lire_lot`, `drive_ouvrir`, `drive_apercu`). « Ouvre un devis / un au hasard » : cherche ou liste, puis OUVRE un fichier sans demander lequel. `ou_chercher` dit D'ABORD dans quel dossier c'est rangé (carte du classement en mémoire, instantané) : appelle-le avant de parcourir l'arborescence.
-3. MAILS : `boites_mail` pour LISTER les boîtes et adresses mail accessibles ; `check_mails` pour faire le point (résumés, réponses à proposer, avec le COMPTE de la période) ; `lire_mails` pour consulter une boîte ou compter ; `lire_mail` pour OUVRIR un message en entier (une liste ne rend qu'un extrait de chaque message — pour répondre, résumer ou citer un mail, ouvre-le d'abord ; `pieces: true` récupère et LIT ses pièces jointes) ; `lire_piece_jointe` pour UNE pièce jointe (PDF, image, plan DWG/DXF : téléchargeable, aperçu, contenu lu) ; `redaction_email` pour écrire un brouillon (il reste DANS LA CONVERSATION ; pour une retouche, `retoucher: true` : on part de la version précédente) ; `deposer_brouillon` pour le POSER dans le dossier Brouillons de la boîte, sans l'envoyer — ne dis jamais qu'un brouillon est dans la boîte mail sans que ce geste ait réussi ; `preparer_envois` pour un MÊME mail à PLUSIEURS destinataires (10, 100, sans limite : une carte par destinataire, gabarit à variables {nom} {email} ou corps sur mesure par destinataire, pages de 40 à enchaîner — rien ne part sans validation). Ces gestes lisent les messages RÉELS, en direct : la recherche documentaire ne voit que ce qui a été ingéré. Le détail est borné à 25 messages, le total ne l'est pas : pour « combien », cite le total. Pour analyser tout le courrier de l'entreprise (process, activités), la seule voie est `lancer_enrichissement`.
+2. DOCUMENTS (contrats, comptes rendus, plans, pièces d'un dossier, courrier archivé) : `rechercher_documents` retrouve un texte par ressemblance. Pour parcourir ou ouvrir les fichiers eux-mêmes : les gestes du Drive (`drive_arborescence`, `drive_chercher`, `drive_lister` / `drive_lister_lot` (plusieurs dossiers en parallele) — les FICHIERS d'un dossier par nom —, `drive_lire_lot`, `drive_ouvrir`, `drive_apercu`). « Ouvre un devis / un au hasard » : cherche ou liste, puis OUVRE un fichier sans demander lequel. `ou_chercher` dit D'ABORD dans quel dossier c'est rangé (carte du classement en mémoire, instantané) : appelle-le avant de parcourir l'arborescence. Pour une demande portant sur chacun, tous ou au moins trois dossiers, utilise drive_lister_lot avec dossiers=[...] en une seule action ; ne rappelle pas drive_lister dossier par dossier.
+3. MAILS : `boites_mail` pour LISTER les boîtes et adresses mail accessibles ; `check_mails` pour faire le point (résumés, réponses à proposer, avec le COMPTE de la période) ; `lire_mails` pour consulter une boîte ou compter ; `lire_mail` pour OUVRIR un message en entier (une liste ne rend qu'un extrait de chaque message — pour répondre, résumer ou citer un mail, ouvre-le d'abord ; `pieces: true` récupère et LIT ses pièces jointes) ; `lire_piece_jointe` pour UNE pièce jointe (PDF, image, plan DWG/DXF : téléchargeable, aperçu, contenu lu) ; `redaction_email` pour écrire un brouillon (il reste DANS LA CONVERSATION ; pour une retouche, `retoucher: true` : on part de la version précédente) ; `deposer_brouillon` pour le POSER dans le dossier Brouillons de la boîte, sans l'envoyer — ne dis jamais qu'un brouillon est dans la boîte mail sans que ce geste ait réussi ; `preparer_envois` pour un MÊME mail à PLUSIEURS destinataires (10, 100, sans limite : une carte par destinataire, gabarit à variables {nom} {email} ou corps sur mesure par destinataire, pages de 40 à enchaîner — rien ne part sans validation). Ces gestes lisent les messages RÉELS, en direct : la recherche documentaire ne voit que ce qui a été ingéré. Le détail est borné à 25 messages, le total ne l'est pas : pour « combien », cite le total. Une recherche simple renvoie rapidement une page ; passe `exhaustif:true` seulement si la personne demande « tous » ou un inventaire complet, puis enchaîne les pages. Pour analyser tout le courrier de l'entreprise (process, activités), la seule voie est `lancer_enrichissement`.
 4. LE WEB (`chercher_web`, `ouvrir_page`, `naviguer`) : UNIQUEMENT pour une information PUBLIQUE qui n'existe pas dans l'entreprise (prix public, norme, réglementation, coordonnées d'un fournisseur, contenu d'un site), ou quand on te le demande. Ne réponds jamais que tu n'as pas accès à internet : c'est faux. Un OBJET qui appartient à l'entreprise n'est pas une DONNÉE de l'entreprise : la puissance du véhicule qu'on vient d'acheter, les dimensions d'une machine, la fiche technique d'un produit se cherchent ici, même quand la phrase dit « notre » ou « nous avons acheté ». Mais ne l'utilise JAMAIS pour les clients, devis, factures, chantiers ou mails : il ne peut rendre que du bruit. Ce qui en vient est EXTERNE : cite les adresses, ne le présente jamais comme une donnée interne.
 La mémoire n'est PAS consultée d'avance : rien ne se passe si tu n'émets pas l'action. Pour une salutation, un remerciement ou une conversation courante, réponds simplement, SANS action et SANS parler de la mémoire d'entreprise. Dès qu'on te demande de FABRIQUER un fichier ou de TOUCHER à un système (créer un document, lire ou déposer un fichier, lire des mails, produire un visuel), il FAUT émettre les actions : aucune rédaction directe ne produit un document téléchargeable.
 
@@ -132,16 +136,17 @@ TOUR_DUREE_MAX_S = 8 * 60
 MAX_APPELS_MEME_SKILL = 10
 SKILLS_SANS_PLAFOND = frozenset({"ajouter_document"})
 # Les gestes à qui le SERVEUR donne la conversation en cours (`_fil`).
-SKILLS_QUI_CONNAISSENT_LE_FIL = frozenset({"creer_tache_agent", "redaction_email",
-                                           "deposer_brouillon",
-                                           # (16/09, audit S-04) Un livrable sait de QUELLE
-                                           # conversation il vient : « le dernier document »
-                                           # rendait celui d'un autre fil.
-                                           "creer_document", "produire_document",
-                                           "compte_rendu_reunion",
-                                           # (audit S-01) Le document de référence
-                                           # choisi vaut pour CETTE conversation.
-                                           "reproduire_document", "utiliser_trame"})
+SKILLS_QUI_CONNAISSENT_LE_FIL = frozenset({
+    "creer_tache_agent", "redaction_email", "deposer_brouillon", "abandonner_document",
+    "ajouter_document", "ajouter_source_dossier", "analyser_plan_source", "calculer_chiffres_sources",
+    "chercher_source_dossier", "composer_document_dossier", "compte_rendu_reunion", "consulter_travail",
+    "creer_document", "drive_deposer_document", "drive_lire", "drive_ouvrir",
+    "lire_source_dossier", "lister_sources_dossier", "nas_deposer_document", "nas_lire",
+    "nas_ouvrir", "preparer_document_maison", "produire_document", "produire_quantitatif",
+    "relever_chiffres_source", "reprendre_redaction", "reproduire_document", "retenir_contrainte_travail",
+    "suspendre_redaction", "terminer_document", "utiliser_trame"
+})
+
 # LES GESTES QUI LISENT UN FICHIER. Quand la demande visait UN document et
 # que l'un d'eux a rendu un contenu, le but est atteint : le tour passe à la
 # rédaction au lieu de repartir lister (08/09, 11:09 : neuf listages et une
@@ -159,7 +164,7 @@ SKILLS_LECTURE_FICHIER = frozenset({"nas_ouvrir", "nas_lire", "drive_ouvrir", "d
 # à la dixième page, exactement le comportement que TOUT SIGNIFIE TOUT exige.
 # Les vraies variations (filtres, motifs qui changent à chaque essai — les
 # 17 `interroger_donnees` du 31/08) comptent toujours.
-_CLES_PAGINATION = frozenset({"page", "avant", "lettre"})
+_CLES_PAGINATION = frozenset({"page", "avant", "lettre", "fragment", "position"})
 
 
 def _est_une_page_de_plus(avant: dict, courant: dict) -> bool:
@@ -324,7 +329,7 @@ def _est_jeton_tableau(valeur) -> bool:
     return isinstance(valeur, str) and valeur.strip().lower() in JETONS_TABLEAU
 
 
-RESULTATS_GENEREUX = {"drive_chercher", "nas_chercher", "drive_apercu", "drive_lister",
+RESULTATS_GENEREUX = {"lire_source_dossier", "chercher_source_dossier", "drive_chercher", "nas_chercher", "drive_apercu", "drive_lister", "drive_lister_lot",
                       # 08/09 : les cartes de relance et la liste des factures suivies.
                       "relancer_factures", "factures_suivies", "inventaire_dossier",
                       "courrier_entrant",
@@ -418,6 +423,32 @@ async def rag_node(state: AgentState) -> dict:
     fait évidemment partie du contexte.
     """
     texte_joint = state.get("attachment_text")
+    if state.get("user_id") and state.get("thread_id"):
+        import asyncio
+        from ressources import dossiers
+        uid, fil = state["user_id"], state["thread_id"]
+        inventaire = await asyncio.to_thread(dossiers.manifeste, uid, fil)
+        if texte_joint and not inventaire:
+            await asyncio.to_thread(dossiers.joindre_texte, uid, fil, texte_joint,
+                                    state.get("attachment_name") or "document joint")
+        if state.get("vision_analysis") and state.get("has_attachment"):
+            await asyncio.to_thread(dossiers.enregistrer, uid, fil,
+                                    "Analyse visuelle — " + (state.get("attachment_name") or "pièce jointe"),
+                                    state["vision_analysis"])
+        inventaire = await asyncio.to_thread(dossiers.manifeste, uid, fil)
+        if inventaire:
+            # L'index complet est ajouté séparément de trim_chunks dans llm_node.
+            # Ici, seulement un aperçu équilibré ; les corps demeurent en stockage.
+            apercus = []
+            for source in inventaire[-20:]:
+                contenu = await asyncio.to_thread(dossiers.lire, uid, fil, source["id"])
+                apercus.append(f"[SOURCE {source['id']} — {source['nom']} — APERÇU]\n".replace("\n", "\n") + contenu["texte"][:240])
+            if texte_joint and texte_joint.startswith("ATTENTION :"):
+                apercus.insert(0, texte_joint.splitlines()[0])
+            tableau = state.get("dernier_tableau") or {}
+            if tableau.get("lignes"):
+                apercus.insert(0, f"[TABLEAU DU FIL : {len(tableau['lignes'])} lignes. Utilise @tableau pour agir sur toutes ses lignes sans recopier un aperçu.]")
+            return {"raw_chunks": apercus}
     if not texte_joint:
         # LE TABLEAU JOINT NE S'OUBLIE PAS (04/09). Export de 18:48 : « adapte
         # les 95 mails » — le tableau de 95 clients avait été joint deux tours
@@ -449,6 +480,8 @@ async def anonymize_node(state: AgentState) -> dict:
     chunks = list(state.get("raw_chunks") or [])
     # NER spaCy = CPU-bound synchrone : on le sort de la boucle événementielle (sinon il
     # fige le streaming WS et bloque les autres requêtes pendant toute l'étape).
+    from ressources.travail import bloc as bloc_travail
+    suivi = bloc_travail(state.get("travail") or {})
     # entity_map PERSISTANTE sur le fil : on repart de celle des tours précédents pour
     # qu'une même valeur garde le MÊME placeholder d'un tour à l'autre. Sans ça, la
     # numérotation redémarrant à 1 à chaque tour, [PER_1] désignerait une personne
@@ -466,14 +499,15 @@ async def anonymize_node(state: AgentState) -> dict:
     # anciennes balises continuent de fonctionner ; il ne coûte plus rien.
     if anonymizer.desactivee():
         return {"anonymized_query": query, "anonymized_chunks": chunks,
-                "entity_map": dict(previous_map)}
+                "anonymized_travail": suivi, "entity_map": dict(previous_map)}
     masked, entity_map = await asyncio.to_thread(
-        anonymizer.anonymize_chunks, [query] + chunks, previous_map
+        anonymizer.anonymize_chunks, [query, suivi] + chunks, previous_map
     )
 
     return {
         "anonymized_query": masked[0] if masked else query,
-        "anonymized_chunks": masked[1:] if len(masked) > 1 else [],
+        "anonymized_travail": masked[1] if len(masked) > 1 else "",
+        "anonymized_chunks": masked[2:] if len(masked) > 2 else [],
         "entity_map": entity_map,
     }
 
@@ -740,14 +774,37 @@ async def llm_node(state: AgentState, config=None) -> dict:
     # faire, il en oubliait la plus grande partie.
     await rafraichir_catalogue()
 
+    from skills.capacites import premiere_lecture
+    from skills.protocol import catalogue
+    _lecture=premiere_lecture(state,catalogue(state.get('user_role')))
+    if _lecture:
+        import json as _json_lecture
+        return {'llm_response':'```action\n'+_json_lecture.dumps(_lecture,ensure_ascii=False)+'\n```','model_used':None}
+
     tier = state.get("llm_tier", "standard")
     llm = get_llm(LLMTier(tier))
 
+    carte_dossier = state.get("entity_map") or {}
     chunks = state.get("anonymized_chunks")
     if chunks is None:
         chunks = state.get("raw_chunks") or []
     chunks = trim_chunks(chunks)   # borne le nombre de chunks + le volume de contexte
     context_text = "\n\n---\n\n".join(str(c) for c in chunks) if chunks else ""
+
+    if state.get("user_id") and state.get("thread_id"):
+        from ressources.dossiers import index_contexte
+        from security.anonymizer import anonymizer
+        import asyncio
+        index = await asyncio.to_thread(index_contexte, state["user_id"], state["thread_id"])
+        if index:
+            indexes, carte = await asyncio.to_thread(anonymizer.anonymize_chunks, [index], state.get("entity_map") or {})
+            carte_dossier = carte
+            context_text = indexes[0] + "\n\n" + context_text
+
+    # Le suivi n'évince pas les fichiers joints du budget de recherche.
+    suivi_masque = state.get("anonymized_travail") or ""
+    if suivi_masque:
+        context_text = suivi_masque + "\n\n" + context_text
 
     query = state.get("anonymized_query") or state.get("query", "")
 
@@ -818,6 +875,7 @@ async def llm_node(state: AgentState, config=None) -> dict:
         cached = response_cache.get(tier, query, context_text, cache_scope)
         if cached is not None:
             return {"llm_response": cached, "model_used": "cache", "tokens_in": 0, "tokens_out": 0,
+                    "entity_map": carte_dossier,
                     **maj_memoire}
 
     # Résultats des actions déjà exécutées ce tour : c'est ce qui permet au modèle
@@ -836,6 +894,12 @@ async def llm_node(state: AgentState, config=None) -> dict:
         # déplacer la coupure, pas à la supprimer.
         plafond_bloc = (16000 if any((r.get("skill") or "") in RESULTATS_GENEREUX
                                      for r in resultats_outils) else 6000)
+        if any(r.get('skill')=='check_mails' for r in resultats_outils):
+            # La synthèse doit voir les mails réellement lus. Le détail d'une
+            # semaine ne peut pas être remplacé par « 25 messages lus ».
+            plafond_bloc=200000
+        elif any(r.get('skill') in ('lire_source_dossier','chercher_source_dossier') for r in resultats_outils):
+            plafond_bloc=100000
         # `args` BRUTS ne partent pas vers le modèle — mais leur RÉSUMÉ, si.
         # On croyait que le modèle « avait déjà écrit ces arguments » : il les a
         # écrits dans un appel qui n'existe plus, chaque passe repart d'un
@@ -909,8 +973,8 @@ async def llm_node(state: AgentState, config=None) -> dict:
         from bureautique.atelier import ouverts as _docs_ouverts
         from bureautique.atelier import termines as _docs_termines
         _uid = str(state.get("user_id") or "")
-        en_cours = await _aio.to_thread(_docs_ouverts, _uid)
-        finis = (await _aio.to_thread(_docs_termines, _uid))[:5]
+        en_cours = await _aio.to_thread(_docs_ouverts, _uid, state.get("thread_id") or "")
+        finis = (await _aio.to_thread(_docs_termines, _uid, state.get("thread_id") or ""))[:5]
     except Exception:  # noqa: BLE001 - un aperçu manquant ne casse pas le tour
         en_cours, finis = [], []
     if en_cours or finis:
@@ -938,7 +1002,7 @@ async def llm_node(state: AgentState, config=None) -> dict:
                   "directement aux questions dessus. `contenu` est le DÉBUT "
                   "RÉEL de chaque document : décris un document d'après lui, "
                   "jamais d'après son titre. Ce sont les documents de la "
-                  "personne, toutes conversations confondues : n'en présente "
+                  "conversation courante : n'en présente "
                   "un comme livrable de la demande en cours que s'il a été "
                   "produit pour elle.\n")
         bloc_resultats += etat_docs + "\n"
@@ -1187,6 +1251,7 @@ Voici les messages trouvés :
     return {
         **maj_memoire,
         **maj_lecons,
+        "entity_map": carte_dossier,
         "redaction_forcee": redaction_a_reprendre,
         "llm_response": response.content,
         "tokens_in": usage.get("input_tokens", 0),
@@ -1463,8 +1528,14 @@ async def tools_node(state: AgentState, config=None) -> dict:
     # le budget (`avance`), si bien que pendant une boucle de versements
     # `iteration` restait à 1 — le 14/09, même avec `tour_debut` présent, ce
     # garde n'aurait jamais été évalué pendant les 159 `ajouter_document`.
-    if debut and len(resultats) >= 3 and (time.time() - float(debut)) > TOUR_DUREE_MAX_S:
-        return _sortir(f"le temps imparti à ce tour ({TOUR_DUREE_MAX_S // 60} minutes) est "
+    # Les tours documentaires lourds (pièces, sources multiples, plan validé)
+    # ont un délai étendu : ils doivent finir leur lot ou rendre un résultat
+    # vérifiable, sans que le garde-fou des demandes courtes soit supprimé.
+    limite_tour = TOUR_DUREE_MAX_S
+    if state.get("besoin_memoire") or state.get("plan_valide") or state.get("attachments"):
+        limite_tour = 3 * TOUR_DUREE_MAX_S
+    if debut and len(resultats) >= 3 and (time.time() - float(debut)) > limite_tour:
+        return _sortir(f"le temps imparti à ce tour ({limite_tour // 60} minutes) est "
                        "écoulé sans que la demande ait abouti : il faut répondre avec ce qui "
                        "a été obtenu, dire ce qui n'a PAS été fait, et proposer de continuer "
                        "dans un nouveau message.")
@@ -1490,6 +1561,13 @@ async def tools_node(state: AgentState, config=None) -> dict:
     carte = dict(state.get("entity_map") or {})
     args = {k: (anonymizer.rehydrate(v, carte) if isinstance(v, str) else v)
             for k, v in action["args"].items()}
+
+    if action['skill']=='nas_arborescence':
+        # Vérifier l'accès n'exige pas de lire des centaines de sous-dossiers.
+        # Les demandes d'arbre complet gardent leur profondeur habituelle.
+        import re as _re_capacite
+        if _re_capacite.fullmatch(r"\s*(?:tu as|as-tu|vous avez|avez-vous)\s+accès\s+(?:au|aux)\s+(?:nas|drive|dossiers)\s*[?!]*\s*",state.get('query') or '',_re_capacite.I):
+            args['profondeur']=1
 
     # UN TEXTE LONG NE SE RECOPIE PAS DANS UNE ACTION (03/09).
     #
@@ -1526,6 +1604,26 @@ async def tools_node(state: AgentState, config=None) -> dict:
         # moitié fait (07/09).
         args = _completer_depuis_tableau(args, tableau["lignes"], state.get("query") or "")
 
+    # Le fil appartient aussi à l'empreinte AVANT l'accord. L'injecter
+    # seulement après la validation perdait le contexte des gestes approuvés.
+    if action["skill"] in SKILLS_QUI_CONNAISSENT_LE_FIL:
+        args = {**args, "_fil": state.get("thread_id")}
+    if action["skill"] in ("composer_document_dossier", "produire_quantitatif"):
+        args = {**args, "_demande_utilisateur": state.get("query") or "",
+                "_travail": state.get("travail") or {},
+                "_historique_utilisateur": [str(getattr(m, "content", "")) for m in (state.get("messages") or []) if getattr(m, "type", "") == "human"][-4:]}
+    if (action["skill"] in ("creer_document", "produire_document")
+            and state.get("has_attachment") and args.get("format", "docx") in ("docx", "pdf")):
+        from ressources.dossiers import manifeste
+        corpus = await asyncio.to_thread(manifeste, state.get("user_id"), state.get("thread_id"))
+        if len(corpus) > 1 or sum(s["caracteres"] for s in corpus) > 12000:
+            # Une création alimentée par un dossier long passe par la lecture
+            # exhaustive avant rédaction, même si le modèle choisit l'ancien outil.
+            action = {**action, "skill": "composer_document_dossier"}
+            args = {"titre": args.get("titre") or "Document", "demande": state.get("query") or "",
+                    "_demande_utilisateur": state.get("query") or "", "_fil": state.get("thread_id"),
+                    "_travail": state.get("travail") or {}, "format": args.get("format", "docx"),
+                    "_historique_utilisateur": [str(getattr(m, "content", "")) for m in (state.get("messages") or []) if getattr(m, "type", "") == "human"][-4:]}
     empreinte = hash_payload(action["skill"], args)
     sortie = None
     # Une page de plus ne compte pas : enchaîner les pages est le comportement
@@ -1628,6 +1726,17 @@ async def tools_node(state: AgentState, config=None) -> dict:
     # résultat. Une tâche planifiée garde les effets déclarés.
     from security import validation_totale as _vt
     effet = _vt.effet_effectif(effet_declare, state.get("trigger_kind"))
+    if effet == "externe" and action["skill"] in ("envoyer_email", "deposer_brouillon", "modifier_brouillon"):
+        from mail.instantanes import designations, figer
+        if designations(args):
+            try:
+                expediteur = await charger_executant(state.get("user_id"))
+                if expediteur is None:
+                    return _sortir("Impossible de vérifier l'identité pour préparer les pièces jointes.")
+                args = await figer(args, expediteur)
+                empreinte = hash_payload(action["skill"], args)
+            except Exception as e:
+                return _sortir("L'envoi n'est pas prêt : " + str(getattr(e, "detail", None) or e)[:400])
     if effet == "externe":
         # JAMAIS exécuté ici. On arme la validation humaine du graphe parent.
         armement = {
@@ -1712,6 +1821,7 @@ async def tools_node(state: AgentState, config=None) -> dict:
                         else None)
         plafond = (PLAFOND_RESULTAT_GENEREUX
                    if action["skill"] in RESULTATS_GENEREUX else PLAFOND_RESULTAT)
+        if action['skill']=='check_mails':plafond=190000
         contenu = _tailler_resultat(sortie, plafond)
         # LE RÉSULTAT MÉTIER, PAS LA FIN DE L'APPEL PYTHON (16/09, audit S-05) :
         # une sortie qui dit elle-même l'échec compte comme un échec pour les
@@ -1860,6 +1970,10 @@ async def tools_node(state: AgentState, config=None) -> dict:
            "entity_map": carte_maj}
     if ok:
         maj["relance_annonce"] = False
+        if (action['skill'] in ('composer_document_dossier','produire_quantitatif','reprendre_redaction')
+                and isinstance(sortie,dict) and sortie.get('en_cours') and sortie.get('tache_documentaire')
+                and not state.get('plan_valide')):
+            maj.update(tools_finished=True, note_sortie='La production est enregistrée en arrière-plan. Annonce son état et conclus ce tour ; ne la relance pas et ne prétends pas que le fichier est déjà prêt.')
         # MÊME ATTRIBUTION QU'À L'ARMEMENT : un skill qui déclare son expert
         # crédite le tour à cet expert (préparer/essayer un visuel = travail de
         # conception, même exécuté dans agent1). Seulement s'il a ABOUTI : un
@@ -2215,6 +2329,40 @@ def _blocs_livrables(resultats) -> list[dict]:
                     and not any(_reference_bloc(b) == _reference_bloc(bloc) for b in blocs)):
                 blocs.append(bloc)
     return blocs
+
+
+def _productions_du_tour(resultats) -> list[dict]:
+    """Une consultation ne satisfait jamais une demande de fabrication.
+
+    Les cartes de sources restent affichables par _blocs_livrables ; seuls les
+    outils fabricants ou une preuve explicite entrent dans le contrôle métier.
+    """
+    import json
+    fabricants = {"produire_document", "terminer_document", "utiliser_trame",
+        "reproduire_document", "generer_visuel", "retoucher_visuel", "modifier_visuel", "creer_visuel", "liste_clients", "liste_fournisseurs",
+        "composer_document_dossier",
+        "terminer_document_dossier", "produire_quantitatif"}
+    retenus = []
+    for r in resultats or []:
+        if not isinstance(r, dict) or not r.get("ok"):
+            continue
+        try:
+            brut = str(r.get("resultat_masque") or "")
+            d = json.loads(brut[brut.find("{"):])
+        except (ValueError, TypeError):
+            continue
+        fabrique = False
+        if r.get("skill") not in fabricants and r.get("skill") not in {"nas_ouvrir", "nas_lire", "drive_ouvrir", "drive_lire", "lire_piece_jointe", "inventaire_dossier"}:
+            from bureautique.atelier import _lire_fiche, produit
+            import re
+            for carte in _blocs_de(d.get("bloc_ui") if isinstance(d, dict) else None):
+                m = re.fullmatch(r"/api/documents/([A-Za-z0-9_-]{8,64})", str(carte.get("url") or ""))
+                fiche = _lire_fiche(m[1]) if m else None
+                if fiche and fiche.get("fini") and produit(fiche):
+                    fabrique = True
+        if fabrique or r.get("skill") in fabricants or (isinstance(d, dict) and d.get("production_verifiee") is True):
+            retenus.append(r)
+    return _blocs_livrables(retenus)
 
 
 def fichiers_du_fil(state: AgentState) -> list[dict]:
@@ -2893,7 +3041,7 @@ def _redaction_dement_le_livrable(texte: str, resultats) -> bool:
     de s'empoisonner.
     """
     import json as _j
-    produits = _blocs_livrables(resultats)
+    produits = _productions_du_tour(resultats)
 
     # UN FICHIER PRODUIT CE TOUR-CI N'A PAS « EXPIRÉ ». Relevé le 07/09 à
     # 15:34 : « Les liens de téléchargement de ces documents ont expiré (ils
@@ -2923,6 +3071,7 @@ def _redaction_dement_le_livrable(texte: str, resultats) -> bool:
 async def rehydrate_node(state: AgentState) -> dict:
     """Réinjecte les vraies entités dans la réponse via entity_map."""
     from security.anonymizer import anonymizer
+    from skills.resultats import resultat_probant
 
     from langchain_core.messages import AIMessage
     from skills.protocol import (BLOC_ACTION_RE, BLOC_ACTION_TRONQUE_RE,
@@ -2970,6 +3119,20 @@ async def rehydrate_node(state: AgentState) -> dict:
             and (state.get("pending_action") or state.get("requires_validation")
                  or state.get("forcage_refuse"))):
         besoin = None
+    # Une tâche durable réellement enregistrée est un résultat d’attente,
+    # pas une promesse sans action. Ne pas la remplacer par « rien n’a abouti ».
+    import json as _json_documentaire
+    for resultat in state.get("tool_results") or []:
+        if resultat.get("ok") and resultat.get("skill") in ("composer_document_dossier", "produire_quantitatif", "reprendre_redaction"):
+            try:
+                en_fond = _json_documentaire.loads(resultat.get("resultat_masque") or "{}")
+            except (ValueError, TypeError):
+                continue
+            if isinstance(en_fond, dict) and en_fond.get("en_cours") and en_fond.get("tache_documentaire"):
+                if not text or pretend_avoir_livre(text):
+                    text = str(en_fond.get("note") or "La rédaction est enregistrée et se poursuit dans cette conversation.")
+                besoin = None
+                break
     if besoin:
         # RÈGLE DE NOA DU 30/08 : la prose de remplacement vient du MODÈLE
         # (`_rediger_par_le_modele`, contexte réduit, résultats masqués) — la
@@ -3728,8 +3891,8 @@ async def forcer_action_node(state: AgentState, config=None) -> dict:
         from bureautique.atelier import ouverts as _docs_ouverts
         from bureautique.atelier import termines as _docs_termines
         _uid = str(state.get("user_id") or "")
-        en_cours = await _aio.to_thread(_docs_ouverts, _uid)
-        finis = (await _aio.to_thread(_docs_termines, _uid))[:5]
+        en_cours = await _aio.to_thread(_docs_ouverts, _uid, state.get("thread_id") or "")
+        finis = (await _aio.to_thread(_docs_termines, _uid, state.get("thread_id") or ""))[:5]
     except Exception:  # noqa: BLE001
         en_cours, finis = [], []
     if en_cours:
@@ -3859,6 +4022,7 @@ def _texte_visible(texte: str) -> str:
 
 def route_apres_llm(state: AgentState) -> str:
     """Le modèle a-t-il demandé une action ?"""
+    from skills.resultats import resultat_probant
     from skills.protocol import demande_une_action
     texte = state.get("llm_response") or ""
     # UN SEUL DÉTECTEUR, PARTAGÉ AVEC L'EXÉCUTEUR (10/09). Ce routeur
@@ -3966,8 +4130,17 @@ def route_apres_llm(state: AgentState) -> str:
     # sans un skill derrière est précisément la livraison fantôme.
     remontre_a_bon_droit = (demande_de_montrer(demande)
                             and _montre_un_fichier_du_fil(visible, state))
+    import json as _json_fond
+    for resultat in state.get("tool_results") or []:
+        if resultat.get("ok") and resultat.get("skill") in ("composer_document_dossier", "produire_quantitatif", "reprendre_redaction"):
+            try:
+                en_fond = _json_fond.loads(resultat.get("resultat_masque") or "{}")
+            except (ValueError, TypeError):
+                continue
+            if en_fond.get("en_cours") and en_fond.get("tache_documentaire") and not pretend_avoir_livre(visible):
+                return "rehydrate"
     fantome = (
-        not _blocs_livrables(state.get("tool_results") or [])
+        not _productions_du_tour(state.get("tool_results") or [])
         and not state.get("pending_action")
         # Un VISUEL demandé sans image produite est un fantôme au même titre
         # qu'un fichier (01/09 : la retouche « décrite » au passé, sans skill
@@ -3997,13 +4170,13 @@ def route_apres_llm(state: AgentState) -> str:
                  # sans carte, le PDF dépassant la taille d'affichage — a été
                  # envoyé au forceur, qui a relancé la recherche déjà faite :
                  # cinquante secondes pour une réponse qui était juste.
-                 and not any(r.get("ok") and r.get("skill") in SKILLS_LECTURE_FICHIER
+                 and not any(resultat_probant(r) and r.get("skill") in SKILLS_LECTURE_FICHIER
                              for r in (state.get("tool_results") or [])))
              # 15/09 : « le brouillon a bien été créé dans votre boîte mail »
              # (11/09) sans aucun dépôt : le forceur pose le brouillon, qui
              # est exactement ce que la personne attendait.
              or (pretend_brouillon_depose(visible)
-                 and not any(r.get("ok") and r.get("skill") == "deposer_brouillon"
+                 and not any(resultat_probant(r) and r.get("skill") == "deposer_brouillon"
                              for r in (state.get("tool_results") or [])))
              # 08/09 : « a été ouvert, voici son contenu » sans qu'un seul
              # geste ait réussi = un contenu inventé → forceur (contexte neuf).
@@ -4037,11 +4210,16 @@ def route_apres_llm(state: AgentState) -> str:
     # La condition reste étroite : il faut que la réponse propose de faire, que
     # rien ne soit en attente d'accord, et qu'AUCUN LIVRABLE ne soit sorti du
     # tour — sinon on renverrait au forceur un tour qui a abouti.
-    a_livre = bool(_blocs_livrables(state.get("tool_results") or []))
+    # Une lecture réussie est déjà une action. Après une recherche de mails ou
+    # de fichiers, proposer d'ouvrir un résultat ne doit pas relancer le
+    # forceur et un appel LLM supplémentaire.
+    a_livre = bool(_productions_du_tour(state.get("tool_results") or []))
+    a_agit = (a_livre or any(isinstance(r, dict) and r.get("ok")
+                             for r in (state.get("tool_results") or [])))
     sans_agir = (
         propose_au_lieu_d_agir(visible)
         and not state.get("pending_action")
-        and not a_livre)
+        and not a_agit)
     if sans_agir and not fantome:
         logger.info("Proposition sans acte : la réponse offre de faire au lieu de faire — forçage")
         _tracer_filet(state, "forcage", "proposition_sans_acte",
@@ -4158,6 +4336,13 @@ async def verifier_node(state: AgentState, config=None) -> dict:
         except ValueError:
             continue
         if isinstance(b, dict):
+            if b.get('type')=='reponses_mail':
+                # Les réponses sont dans les cartes, pas dans la prose. Cacher
+                # les cartes au relecteur lui faisait réclamer une seconde
+                # rédaction de réponses déjà préparées.
+                detail=_json_v.dumps(b,ensure_ascii=False)
+                blocs.append(detail[:90000]+(' [carte tronquée : ne pas conclure à une omission]' if len(detail)>90000 else ''))
+                continue
             blocs.append(" · ".join(str(x) for x in (
                 b.get("type"), b.get("titre") or b.get("title") or b.get("nom") or b.get("name")
                 or b.get("subject"), b.get("url")) if x))
@@ -4185,7 +4370,7 @@ async def verifier_node(state: AgentState, config=None) -> dict:
                     lignes and f"lignes : {lignes}") if x))
     resume_resultats = "\n".join(
         f"- {r.get('skill') or '?'} ({'réussi' if r.get('ok') else 'ÉCHEC'}) : "
-        f"{_essentiel(str(r.get('resultat_masque') or ''), 1500)}" for r in resultats[-12:])
+        f"{str(r.get('resultat_masque') or '')}" for r in resultats[-12:])
     invite = V.consigne(
         demande=state.get("anonymized_query") or state.get("query") or "",
         journal=journal_des_gestes(resultats), resultats=resume_resultats,
@@ -4193,7 +4378,28 @@ async def verifier_node(state: AgentState, config=None) -> dict:
         contexte="\n".join(str(c) for c in (state.get("anonymized_chunks") or []))[:3000],
         lecons=state.get("lecons_du_tour") or "")
     try:
-        llm = get_llm(LLMTier.COMPLEX)
+        # Une lecture seule (mails, Drive, NAS, recherche documentaire) doit
+        # rester contrôlée, mais sa relecture n'a pas besoin du modèle puissant
+        # qui sert aux documents et aux décisions. Le palier LIGHT utilise le
+        # modèle rapide configuré, lui aussi Ollama Cloud, et évite d'ajouter
+        # une seconde attente de plusieurs dizaines de secondes à une simple
+        # consultation. Toute écriture, génération ou skill inconnu reste en
+        # COMPLEX.
+        lecture_seule = frozenset({
+            "boites_mail", "lire_mails", "lire_mail", "lire_piece_jointe",
+            "drive_chercher", "drive_lister", "drive_lister_lot", "drive_arborescence", "drive_ouvrir",
+            "drive_apercu", "drive_lire", "nas_chercher", "nas_lister",
+            "nas_arborescence", "nas_ouvrir", "nas_lire", "rechercher_documents",
+            "ou_chercher", "mes_droits",
+        })
+        uniquement_lecture = bool(resultats) and all(
+            (r.get("skill") or "") in lecture_seule for r in resultats
+        )
+        palier_relecture = (getattr(LLMTier, "LIGHT", LLMTier.COMPLEX)
+                            if uniquement_lecture else LLMTier.COMPLEX)
+        logger.info("Relecture de sécurité, palier=%s",
+                    getattr(palier_relecture, "value", palier_relecture))
+        llm = get_llm(palier_relecture)
         reponse = await _aio.wait_for(
             llm.ainvoke([HumanMessage(content=invite)], config=config),
             timeout=float(getattr(_s, "verificateur_delai_s", 60)))

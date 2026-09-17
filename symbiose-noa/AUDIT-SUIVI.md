@@ -187,3 +187,13 @@ poussées sur benit seulement.
   retouche_indisponible, aucune) et confrontée au registre réel des capacités — chez le
   jumeau, sans moteur de retouche, une demande de photomontage ne passe plus la main.
   Banc `test_pages_et_suite` (25, le même fichier des deux côtés).
+
+
+## Contre-vérification complémentaire — 16/09
+
+Voir `REVUE-COMPLEMENTAIRE-20260916.md`. Plusieurs défauts supplémentaires ont été corrigés et testés localement. Les mentions « fait » ci-dessus ne valent pas validation en production ; les éléments annoncés « étape 1 » et « lot suivant » restent partiels. Aucun déploiement effectué dans cette revue.
+
+
+## Continuation de fiabilisation — 16/09
+
+Voir `FIABILISATION-20260916.md` : dépendances corrigées/verrouillées, migration 049, reprise du chat, sources directes, copies des pièces avant accord, documents et références entre processus, apprentissage filtré et démarrage renforcé. Modifications locales non déployées. Les mentions « fait » précédentes ne remplacent pas la recette réelle ; les points partiels sont explicitement recensés dans cette mise à jour.

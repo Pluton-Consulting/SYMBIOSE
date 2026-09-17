@@ -45,24 +45,23 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
   providers: [
     Credentials({
       credentials: {
-        token: { type: "text" },
         email: { type: "email" },
       },
-      async authorize({ token, email }) {
+      async authorize({ email }, request) {
         try {
           const res = await fetch(
-            `${API_URL}/api/auth/magic-link/verify`,
+            `${API_URL}/api/auth/connexion/email`,
             {
               method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ token, email }),
+              headers: { "Content-Type": "application/json", "User-Agent": request.headers.get("user-agent") || "", "X-Forwarded-For": request.headers.get("x-forwarded-for") || "" },
+              body: JSON.stringify({ email: String(email || "").trim() }),
             }
           )
           if (!res.ok) return null
           const data = await res.json()
           return {
-            id: email as string,
-            email: email as string,
+            id: data.id,
+            email: data.email,
             backendToken: data.access_token,
             // Le jeton d'appareil (03/09). Absent si la migration 034 n'est pas
             // appliquée : on retombe alors sur le comportement d'avant.

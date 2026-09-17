@@ -131,6 +131,26 @@ html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
   }
   .sym-zone-saisie { background: transparent !important; }
   .sym-barre-saisie { box-shadow: none !important; }
+
+  /* Sur téléphone, les commandes ne doivent pas étrangler la saisie.
+     La rangée desktop place trombone, raccourcis, micro, texte, arrêt et
+     envoi sur un seul axe : à 360-430 px, le texte ne garde parfois que
+     quelques dizaines de pixels. Le champ prend donc toute la première
+     ligne ; les actions restent accessibles sur la ligne suivante. */
+  .sym-saisie-ligne {
+    flex-wrap: wrap;
+    row-gap: 6px !important;
+    min-width: 0;
+  }
+  .sym-saisie-ligne .sym-saisie-champ {
+    order: -1;
+    flex: 1 1 100% !important;
+    width: 100% !important;
+    min-width: 0 !important;
+  }
+  .sym-saisie-ligne [data-testid="envoyer-message"] {
+    margin-left: auto;
+  }
   .v2-contexte { margin: 0 0 6px !important; }
   .v2-fils { margin: 0 0 4px !important; }
   .v2-fils-choix { max-width: 70% !important; }

@@ -61,13 +61,15 @@ def lire_curseur() -> dict:
         return {}
 
 
-def ecrire_curseur(token: str, inventaire_le: Optional[str] = None) -> None:
+def ecrire_curseur(token: str, inventaire_le: Optional[str] = None, perimetres: Optional[str] = None) -> None:
     """Écriture ATOMIQUE : un curseur à moitié écrit est un curseur perdu."""
     fiche = lire_curseur()
     fiche["token"] = str(token)
     fiche["pose_le"] = datetime.now(timezone.utc).isoformat(timespec="seconds")
     if inventaire_le:
         fiche["inventaire_le"] = inventaire_le
+    if perimetres is not None:
+        fiche["perimetres"] = perimetres
     chemin = _chemin()
     try:
         chemin.parent.mkdir(parents=True, exist_ok=True)
@@ -103,7 +105,7 @@ async def poser_depart(service) -> Optional[str]:
 def _perime(e: Exception) -> bool:
     """Google dit qu'un curseur est trop vieux par un 410 (Gone)."""
     texte = f"{getattr(getattr(e, 'resp', None), 'status', '')} {e}"
-    return "410" in texte or "pageToken" in texte.lower() and "invalid" in texte.lower()
+    return "410" in texte or "pagetoken" in texte.lower() and "invalid" in texte.lower()
 
 
 def _lire_changements(service, token: str) -> tuple:
@@ -152,9 +154,13 @@ def _ancetres(service, fichier: dict, declares: dict) -> Optional[str]:
         try:
             info = service.files().get(fileId=parent, fields="id,parents",
                                        supportsAllDrives=True).execute()
-        except Exception:  # noqa: BLE001 — parent illisible : on s'arrête là
-            continue
+        except Exception:
+            # Un parent non résolu ne prouve pas une sortie de périmètre.
+            # L'appelant garde le curseur pour réessayer le changement.
+            raise
         file_attente.extend(info.get("parents") or [])
+    if file_attente:
+        raise RuntimeError("Profondeur du dossier Drive non résolue")
     return None
 
 
@@ -200,8 +206,13 @@ async def appliquer(service, declares: dict, niveau_par_defaut: str = "all") -> 
             retires += await vectorstore.delete_by_source(fid, "drive") and 1 or 0
             continue
         if f.get("mimeType") == "application/vnd.google-apps.folder":
+            return {"applique": False, "raison": "Un dossier a changé : réconciliation de ses descendants nécessaire."}
+        try:
+            niveau = (await asyncio.to_thread(_ancetres, service, f, declares)
+                      if declares else niveau_par_defaut)
+        except Exception:
+            illisibles += 1
             continue
-        niveau = await asyncio.to_thread(_ancetres, service, f, declares)
         if niveau is None:
             # DÉPLACÉ HORS PÉRIMÈTRE (ou accès retiré sur le dossier) : même
             # conclusion que la suppression, pour la même raison.
@@ -211,6 +222,7 @@ async def appliquer(service, declares: dict, niveau_par_defaut: str = "all") -> 
                 ignores += 1
             continue
         try:
+            await vectorstore.requalifier_drive(fid, niveau or niveau_par_defaut)
             from ingestion.connectors.google_drive import _download_text
             from ingestion.parsers import en_lecture
             texte = await en_lecture(_download_text, service, f, delai=60)
@@ -223,13 +235,16 @@ async def appliquer(service, declares: dict, niveau_par_defaut: str = "all") -> 
                                            access_level=niveau or niveau_par_defaut):
             reingeres += 1
         else:
-            ignores += 1
+            # Une extraction vide ou une ingestion refusée n'est pas un
+            # changement traité. Il doit revenir au prochain passage.
+            illisibles += 1
 
     # LE CURSEUR S'ÉCRIT EN DERNIER. Une panne plus haut fait rejouer le lot au
     # prochain passage : réingérer ce qui est déjà là ne coûte qu'un peu de
     # temps, alors qu'un changement sauté ne se rattrape jamais.
-    if nouveau:
+    if nouveau and not illisibles:
         ecrire_curseur(nouveau)
     return {"applique": True, "changements": len(changements), "retires": retires,
             "reingeres": reingeres, "ignores": ignores, "illisibles": illisibles,
+            "complet": not illisibles, "curseur_avance": bool(nouveau and not illisibles),
             "curseur_pose_le": lire_curseur().get("pose_le")}

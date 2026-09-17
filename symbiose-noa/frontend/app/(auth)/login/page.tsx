@@ -1,14 +1,14 @@
 "use client"
 import { useEffect, useState } from "react"
+import { signIn } from "next-auth/react"
 
 // L'ADRESSE DE LA DERNIÈRE CONNEXION (03/09, demande de Noa : « sans resaisir
 // le mail »). Cet écran ne se voit plus qu'une fois par appareil — la session
 // dure ensuite d'elle-même — mais quand il se voit, l'adresse est déjà là.
-// C'est un CONFORT, pas une preuve : le lien magique reste envoyé à l'adresse,
-// et il faut toujours l'ouvrir. Rien de sensible ne dort donc ici.
+// Cette préférence locale ne contient que la dernière adresse saisie.
 const CLE_DERNIER_EMAIL = "pluton.dernier_email"
 
-type State = "idle" | "loading" | "sent" | "refused" | "error"
+type State = "idle" | "loading" | "error"
 
 export default function LoginPage() {
   const [email, setEmail] = useState("")
@@ -26,14 +26,6 @@ export default function LoginPage() {
     }
   }, [])
 
-  // « Utiliser un autre email » doit vraiment vider le champ — sinon le
-  // pré-remplissage le remettrait et le bouton ne servirait à rien.
-  const changerDAdresse = () => {
-    try { window.localStorage.removeItem(CLE_DERNIER_EMAIL) } catch { /* rien */ }
-    setState("idle")
-    setEmail("")
-  }
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!email.trim()) return
@@ -41,19 +33,15 @@ export default function LoginPage() {
     setError("")
 
     try {
-      const res = await fetch(
-        `${process.env.NEXT_PUBLIC_API_URL}/api/auth/magic-link/request`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ email: email.trim() }),
-        }
-      )
-      if (!res.ok) throw new Error()
-      // Réponse volontairement uniforme côté serveur (anti-énumération de comptes) :
-      // on affiche toujours "email envoyé", qu'il existe ou non.
-      try { window.localStorage.setItem(CLE_DERNIER_EMAIL, email.trim()) } catch { /* rien */ }
-      setState("sent")
+      const adresse = email.trim().toLowerCase()
+      const res = await signIn("credentials", { email: adresse, redirect: false })
+      if (!res || res.error || !res.ok) {
+        setError("Connexion impossible. Vérifiez votre adresse ou contactez votre administrateur.")
+        setState("error")
+        return
+      }
+      try { window.localStorage.setItem(CLE_DERNIER_EMAIL, adresse) } catch { /* rien */ }
+      window.location.assign("/chat")
     } catch {
       setError("Une erreur est survenue. Réessayez.")
       setState("error")
@@ -86,42 +74,6 @@ export default function LoginPage() {
           style={{ width: 210, maxWidth: "85%", height: "auto", display: "block", margin: "0 auto 32px" }}
         />
 
-        {state === "sent" && (
-          <div className="sym-fade">
-            <div className="sym-pop" style={{ fontSize: 40, marginBottom: 16 }}>📬</div>
-            <p className="sym-in sym-in-1" style={{ fontWeight: 500, margin: "0 0 8px", color: "var(--marque-text-primary)" }}>Vérifiez votre boîte mail</p>
-            <p className="sym-in sym-in-2" style={{ color: "var(--marque-text-muted)", fontSize: 13, margin: "0 0 24px" }}>
-              Un lien de connexion a été envoyé à<br />
-              <strong>{email}</strong>
-            </p>
-            <button
-              onClick={changerDAdresse}
-              className="sym-tap sym-in sym-in-3"
-              style={{ color: "var(--marque-primary)", background: "none", border: "none", cursor: "pointer", fontSize: 13 }}
-            >
-              Utiliser un autre email
-            </button>
-          </div>
-        )}
-
-        {state === "refused" && (
-          <div className="sym-fade">
-            <div className="sym-pop" style={{ fontSize: 40, marginBottom: 16 }}>🔒</div>
-            <p className="sym-in sym-in-1" style={{ fontWeight: 500, margin: "0 0 8px", color: "var(--marque-error-text)" }}>Accès non autorisé</p>
-            <p className="sym-in sym-in-2" style={{ color: "var(--marque-text-muted)", fontSize: 13, margin: "0 0 24px" }}>
-              L'adresse <strong>{email}</strong> n'est pas enregistrée.<br />
-              Contactez votre administrateur.
-            </p>
-            <button
-              onClick={changerDAdresse}
-              className="sym-tap sym-in sym-in-3"
-              style={{ color: "var(--marque-primary)", background: "none", border: "none", cursor: "pointer", fontSize: 13 }}
-            >
-              Essayer un autre email
-            </button>
-          </div>
-        )}
-
         {(state === "idle" || state === "loading" || state === "error") && (
           <form className="sym-fade" onSubmit={handleSubmit}>
             <input
@@ -129,6 +81,9 @@ export default function LoginPage() {
               value={email}
               onChange={e => setEmail(e.target.value)}
               placeholder="votre@email.fr"
+              aria-label="Adresse e-mail"
+              autoComplete="email"
+              disabled={state === "loading"}
               required
               className="sym-in sym-in-1"
               style={{
@@ -164,7 +119,7 @@ export default function LoginPage() {
                 boxShadow: "var(--marque-shadow-card)",
               }}
             >
-              {state === "loading" ? "Vérification..." : "Recevoir un lien de connexion"}
+              {state === "loading" ? "Connexion..." : "Connecter"}
             </button>
           </form>
         )}

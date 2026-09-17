@@ -85,7 +85,7 @@ FOURNISSEURS_TEXTE = ("ollama_cloud", "longcat", "deepseek", "openrouter",
 # de TEXTE : l'écran acceptait « deepseek:… » ou « longcat:… » pour lire les
 # plans, que la cascade de vision ne sait pas construire — le choix passait,
 # puis ne servait jamais. Même liste que `get_vision_candidates` (llm/router.py).
-FOURNISSEURS_VISION = ("anthropic", "openrouter", "ollama_cloud", "google", "groq")
+FOURNISSEURS_VISION = ("ollama_cloud",)
 
 # Un réglage dont la valeur finit DANS du SQL doit être validé à l'écriture ET
 # à la lecture. On l'oblige à n'être qu'un instant ISO, ce qui le rend
@@ -199,6 +199,8 @@ async def enregistrer(nom: str, brut: str | None, user_id: str) -> str:
         if f.strip().lower() not in admis or not m.strip():
             raise ValueError("Forme attendue : « fournisseur:modele », fournisseur parmi "
                              + ", ".join(admis) + ".")
+    if nom == "modele_vision" and any(x in (brut or "").lower() for x in ("deepseek-v4", "deepseek-chat", "deepseek-reasoner")):
+        raise ValueError("Ce modèle ne lit pas les images ; choisissez un modèle multimodal pour la vision.")
     from database.connection import get_db
 
     v = (brut or "").strip()

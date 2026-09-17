@@ -99,6 +99,7 @@ CHANGEMENTS = [
               "parents": ["racine-perimetre"],
               "mimeType": "application/vnd.google-apps.folder"}},
 ]
+DOSSIER_CHANGE = CHANGEMENTS.pop()
 ETAT = {"perime": False, "token": "jeton-1", "appels": []}
 
 
@@ -143,7 +144,10 @@ async def _ingerer(**kw):
     return 3
 
 
-poser("vectorstore.client", vectorstore=types.SimpleNamespace(delete_by_source=_supprimer))
+async def _requalifier(fid, niveau):
+    return 1
+
+poser("vectorstore.client", vectorstore=types.SimpleNamespace(delete_by_source=_supprimer, requalifier_drive=_requalifier))
 poser("ingestion.pipeline", ingest_document=_ingerer)
 poser("ingestion.parsers", en_lecture=lambda f, *a, **k: asyncio.sleep(0, result="du texte"))
 poser("ingestion.connectors.google_drive", _download_text=lambda *a, **k: "du texte")
@@ -173,6 +177,18 @@ verifier("le bilan compte ce qu'il a fait", bilan["applique"] and bilan["retires
 print("2. Le curseur : écrit après, jamais avant")
 verifier("le curseur a avancé APRÈS le traitement", changes.lire_curseur()["token"] == "jeton-2")
 verifier("il porte la date de sa pose", bool(changes.lire_curseur().get("pose_le")))
+CHANGEMENTS.append(DOSSIER_CHANGE)
+bilan_dossier = asyncio.run(changes.appliquer(_Service(), {"racine-perimetre": "all"}))
+verifier("un dossier modifié force la réconciliation des descendants", not bilan_dossier["applique"] and "descendants" in bilan_dossier["raison"])
+CHANGEMENTS.pop()
+
+async def _vide(**kw): return 0
+sys.modules["ingestion.pipeline"].ingest_document = _vide
+changes.ecrire_curseur("avant-echec")
+bilan_vide = asyncio.run(changes.appliquer(_Service(), {"racine-perimetre": "all"}))
+verifier("une ingestion refusée conserve le curseur pour réessayer", not bilan_vide["curseur_avance"] and changes.lire_curseur()["token"] == "avant-echec")
+sys.modules["ingestion.pipeline"].ingest_document = _ingerer
+
 ETAT["perime"] = True
 bilan = asyncio.run(changes.appliquer(_Service(), {"racine-perimetre": "all"}))
 verifier("un curseur PÉRIMÉ ne lève pas : il renvoie à un inventaire, en le disant",
@@ -190,7 +206,8 @@ src = (BACKEND / "ingestion" / "connectors" / "google_drive.py").read_text(encod
 verifier("le curseur se prend AVANT l'inventaire",
          src.index("depart = await drive_changes.poser_depart") < src.index("total_vus = total_ingeres"))
 verifier("il ne s'écrit que si le parcours est COMPLET",
-         'complet = all(d.get("parcours_complet") for d in detail) and not non_examines' in src
+         all(n in src.split('complet = (', 1)[1].split('sortie["complet"]', 1)[0]
+             for n in ('parcours_complet', 'non_examines', 'lectures_echouees', 'total_lents', 'lents_sautes', 'trop_gros'))
          and "if depart and complet:" in src)
 verifier("le mode est dit à l'écran (changements ou inventaire)",
          '"mode": "changements"' in src and '"mode": "inventaire"' in src)

@@ -344,6 +344,9 @@ async def deposer_brouillon(data: dict, user) -> dict:
                 "Ces pièces n'ont pas pu être jointes, aucun brouillon n'a été déposé : "
                 + " ; ".join(f"« {r['nom']} » ({r['raison']})" for r in refusees) + ".")
 
+    from mail.instantanes import verifier as verifier_pieces_figees
+    verifier_pieces_figees(data, pieces)
+
     from mail.signature import apposer
     corps_signe, html, pieces_signees = await apposer(boite, corps, pieces, demandee=data.get("signature"))
     signee = bool(html) or corps_signe != corps or len(pieces_signees) != len(pieces)
@@ -423,6 +426,8 @@ async def envoyer_email(data: dict, user) -> dict:
 
     from mail.attaches import resoudre
     pieces, refusees = await resoudre(brut_pieces, user, boite)
+    from mail.instantanes import verifier as verifier_pieces_figees
+    verifier_pieces_figees(data, pieces)
     # UNE PIÈCE QUI NE PEUT PAS PARTIR ARRÊTE L'ENVOI. Le compte rendu d'un
     # envoi incomplet est un mensonge par omission : le destinataire lit
     # « veuillez trouver ci-joint » et ne trouve rien. On refuse en nommant la
@@ -921,6 +926,10 @@ async def lire_mails(data: dict, user) -> dict:
     recherche = (data.get("recherche") or data.get("mots") or data.get("mots_cles")
                  or data.get("contient") or data.get("query"))
     avant = data.get("avant") or data.get("avant_le") or data.get("jusqu_a")
+    # Une recherche ordinaire répond avec une page pour rester rapide. La
+    # pagination complète est réservée à une demande explicite d'inventaire.
+    exhaustif = bool(data.get("exhaustif") or data.get("tous") or data.get("toutes")
+                     or data.get("pour_tous"))
     try:
         limite = int(data.get("limite") or (25 if (_periode or recherche or avant) else 10))
     except (TypeError, ValueError):
@@ -931,7 +940,8 @@ async def lire_mails(data: dict, user) -> dict:
                                 recherche=recherche, avant=avant,
                                 # `apercu` : la longueur d'extrait voulue par un
                                 # appelant qui connaît son budget (check_mails).
-                                apercu=data.get("apercu"))
+                                apercu=data.get("apercu"), curseur=data.get("curseur"),
+                                exhaustif=exhaustif)
     except NotImplementedError as e:
         raise MailSkillError(str(e))
     except Exception as e:  # noqa: BLE001 - une messagerie injoignable n'est pas une panne du chat

@@ -126,6 +126,15 @@ if not nas_cote:
     async def _drives(service):
         return [{"id": "dr1", "name": "Drive"}]
 
+    async def _chercher_pages_stub(service, requete, max_pages=20):
+        if "mimeType = 'application/vnd.google-apps.folder'" in requete:
+            return ([{"id": identifiant, "name": valeur["nom"],
+                      "parents": valeur["parents"]} for identifiant, valeur in CATALOGUE.items()], False)
+        return [], False
+
+    async def _chemins_cibles_stub(service, elements, drives):
+        return {}
+
     espace_d = {
         "DriveRefuse": _Refus, "logger": logging.getLogger("banc"),
         "_service": _srv, "_balayer_dossiers": _balaye, "_drives_nommes": _drives,
@@ -134,6 +143,8 @@ if not nas_cote:
         "Optional": __import__("typing").Optional,
         "_MIME_DOSSIER": "application/vnd.google-apps.folder",
         "MAX_DOSSIERS_ARBRE": 3000,
+        "_chemins_cibles": _chemins_cibles_stub,
+        "_chercher_fichiers_pages": _chercher_pages_stub,
     }
     extraire(BACKEND / "outils" / "drive.py",
              {"chercher", "_paginer_mixte", "_nu", "_echappe", "_ACCENTS", "_parasite",

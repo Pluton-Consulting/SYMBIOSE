@@ -51,7 +51,8 @@ if callable(p):
 agent1 = (BACKEND / "agents" / "agent1.py").read_text(encoding="utf-8")
 verifier("le routeur importe et applique le prédicat quand aucun geste n'a tourné",
          "propose_au_lieu_d_agir" in agent1 and "proposition_sans_acte" in agent1
-         and re.search(r"sans_agir = \(.*?propose_au_lieu_d_agir\(visible\).*?not any\(r\.get\(\"ok\"\)", agent1, re.S))
+         and "a_agit" in agent1
+         and re.search(r"sans_agir = \(.*?propose_au_lieu_d_agir\(visible\).*?not a_agit", agent1, re.S))
 verifier("la réponse repart au forceur (même chemin que la livraison fantôme)", "or fantome or sans_agir" in agent1)
 verifier("le prompt : ESSAIE D'ABORD, plus de « pose 2 ou 3 questions » à la première difficulté",
          "Pose 2 ou 3 questions COURTES" not in agent1 and "ESSAIE D'ABORD" in agent1 and "que préférez-vous" in agent1.lower())

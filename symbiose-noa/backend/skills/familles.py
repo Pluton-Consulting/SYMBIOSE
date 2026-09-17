@@ -36,7 +36,7 @@ FAMILLES: dict[str, tuple[str, ...]] = {
                   "produire_document", "reproduire_document", "enregistrer_trame", "utiliser_trame",
                   "mes_trames", "oublier_trame", "compte_rendu_reunion"),
     "stockage": ("ou_chercher", "inventaire_dossier",
-                 "drive_arborescence", "drive_chercher", "drive_lister", "drive_ouvrir",
+                 "drive_arborescence", "drive_chercher", "drive_lister", "drive_lister_lot", "drive_ouvrir",
                  "drive_lire_lot", "drive_apercu", "drive_photos", "drive_deposer",
                  "drive_deposer_document",
                  "nas_arborescence", "nas_lister", "nas_ouvrir", "nas_lire", "nas_lire_lot",

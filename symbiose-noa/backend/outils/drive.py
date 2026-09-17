@@ -142,6 +142,10 @@ def _evincer(cache: dict) -> None:
 # par identité, pour la même raison.
 _POOLS: dict = {}                       # clé -> {"services": [...], "expire": …}
 _POOL_TAILLE = 5
+# Une API Google qui ne répond pas ne doit jamais retenir le tour indéfiniment.
+# Le client httplib2 porte aussi ce délai ; celui-ci protège en plus l'attente
+# asyncio lorsque la bibliothèque reste bloquée avant de rendre la main.
+_DRIVE_REQUEST_TIMEOUT_S = 25
 
 
 async def _build_service_pour(identite=None, ecriture: bool = False):
@@ -315,14 +319,25 @@ async def _drives_nommes(service) -> list[dict]:
     """
     def _appel():
         return service.drives().list(pageSize=100, fields="drives(id,name)").execute()
-    try:
-        return [d for d in (await asyncio.to_thread(_appel)).get("drives", [])
-                if d.get("id")]
-    except Exception as e:  # noqa: BLE001
-        # Le compte n'a peut-être aucun Drive partagé, ou pas le droit de les
-        # lister. Ce n'est pas une panne : on continue avec « Mon Drive ».
-        logger.info("Drive : liste des Drive partagés indisponible (%s)", e)
-        return []
+    timeout = globals().get("_DRIVE_REQUEST_TIMEOUT_S", 25)
+    derniere = None
+    for tentative in range(2):
+        try:
+            return [d for d in (await asyncio.wait_for(
+                asyncio.to_thread(_appel), timeout=timeout)).get("drives", [])
+                    if d.get("id")]
+        except Exception as e:  # noqa: BLE001
+            derniere = e
+            if tentative == 0:
+                # Les connexions Google peuvent rendre une erreur TLS
+                # transitoire (« record layer failure ») après une longue
+                # période inactive. Refaire une requête courte évite de
+                # perdre uniquement le nom du Drive partagé.
+                await asyncio.sleep(0.15)
+    # Le compte n'a peut-être aucun Drive partagé, ou pas le droit de les
+    # lister. Ce n'est pas une panne : on continue avec « Mon Drive ».
+    logger.info("Drive : liste des Drive partagés indisponible (%s)", derniere)
+    return []
 
 
 async def _racines(service) -> list[str]:
@@ -1311,6 +1326,93 @@ async def lister(dossier: str, perimetres: Optional[list] = None, identite=None,
     return sortie
 
 
+
+# ── Lot de dossiers ─────────────────────────────────────────────────
+# Une demande « vérifie chaque dossier client » ne doit pas faire payer un
+# aller-retour LLM par dossier. Les noms sont déjà connus par l'arborescence :
+# on résout et liste les dossiers en parallèle, avec une borne de concurrence
+# qui protège l'API Google et le VPS. La borne porte sur le LOT fourni par le
+# modèle, pas sur le nombre total de dossiers du Drive.
+MAX_LOT_DOSSIERS = 200
+MAX_LOT_CONCURRENCE = 8
+
+
+async def lister_lot(dossiers: list[str], perimetres: Optional[list] = None,
+                     identite=None, motif: Optional[str] = None) -> dict:
+    """Liste plusieurs dossiers du Drive en une action, sans écrire.
+
+    Chaque dossier est traité indépendamment : une erreur de permission ou un
+    chemin disparu est rendu sur sa ligne et ne masque pas les autres. Les
+    entrées restent des données mécaniques ; le modèle n'a pas à recopier un
+    tableau ni à relancer le même geste dossier par dossier.
+    """
+    propres: list[str] = []
+    vus: set[str] = set()
+    for brut in dossiers or []:
+        nom = str(brut or "").strip().strip("/")
+        if nom and nom not in vus:
+            propres.append(nom)
+            vus.add(nom)
+    if not propres:
+        raise DriveRefuse("Donne au moins un dossier dans dossiers.")
+    if len(propres) > MAX_LOT_DOSSIERS:
+        raise DriveRefuse(
+            f"Le lot contient {len(propres)} dossiers ; la limite sûre est "
+            f"{MAX_LOT_DOSSIERS}. Découpe la liste en plusieurs lots.")
+    motif_n = _nu(str(motif or "").strip()) if motif else ""
+    semaphore = asyncio.Semaphore(MAX_LOT_CONCURRENCE)
+
+    async def un_dossier(nom: str) -> dict:
+        async with semaphore:
+            try:
+                brut = await lister(nom, perimetres=perimetres, identite=identite, page=1)
+                entrees = list(brut.get("entrees") or [])
+                # Un motif doit être exact sur le contenu du dossier, pas
+                # seulement sur les 200 premières lignes affichées. `lister`
+                # indique le nombre de pages ; on les lit dans le même geste
+                # uniquement quand le demandeur a fourni un motif.
+                if motif_n:
+                    pages = max(1, int(brut.get("pages") or 1))
+                    for page_suivante in range(2, pages + 1):
+                        suite = await lister(
+                            nom, perimetres=perimetres, identite=identite,
+                            page=page_suivante)
+                        entrees.extend(suite.get("entrees") or [])
+                    entrees = [
+                        e for e in entrees
+                        if motif_n in _nu(str(e.get("nom") or ""))
+                    ]
+                return {
+                    "dossier": nom,
+                    "ok": True,
+                    "sous_dossiers": int(brut.get("dossiers") or 0),
+                    "fichiers": int(brut.get("fichiers") or 0),
+                    "entrees": entrees,
+                    "pages": int(brut.get("pages") or 1),
+                    "tronque": bool(brut.get("tronque")) or int(brut.get("pages") or 1) > 1,
+                }
+            except Exception as e:  # un dossier ne doit pas annuler le lot
+                return {
+                    "dossier": nom,
+                    "ok": False,
+                    "erreur": str(e)[:240],
+                    "sous_dossiers": 0,
+                    "fichiers": 0,
+                    "entrees": [],
+                }
+
+    lots = await asyncio.gather(*(un_dossier(nom) for nom in propres))
+    return {
+        "lots": lots,
+        "dossiers_demandes": len(propres),
+        "dossiers_inspectes": sum(1 for r in lots if r.get("ok")),
+        "dossiers_en_erreur": sum(1 for r in lots if not r.get("ok")),
+        "fichiers_total": sum(int(r.get("fichiers") or 0) for r in lots if r.get("ok")),
+        "motif": motif or None,
+        "concurrence": MAX_LOT_CONCURRENCE,
+    }
+
+
 # LES FICHIERS DÉJÀ RÉSOLUS SE DÉSIGNENT AUSSI PAR LEUR IDENTIFIANT (15/09).
 #
 # `drive_ouvrir` rend l'`id` du fichier ; le 14/09, le modèle l'a repris tel
@@ -1548,6 +1650,21 @@ async def _deposer_pour(fichier: dict, service, proprietaire: str | None, result
             return resultat
         binaire, vrai_nom, mime = await _binaire(
             fichier, service, fichier.get("name") or "fichier", fichier.get("mimeType") or "")
+        try:
+            from security.conversation import fil_courant
+            if fil_courant.get():
+                from bureautique.lecture_integrale import lire as lire_integral
+                from ressources.dossiers import enregistrer
+                integral = await asyncio.to_thread(lire_integral, vrai_nom, binaire, resultat.get("texte") or "")
+                if integral.strip():
+                    import hashlib
+                    source = await asyncio.to_thread(enregistrer, proprietaire, fil_courant.get(), vrai_nom, integral,
+                                                    fichier["id"], hashlib.sha256(binaire).hexdigest())
+                    resultat = {**resultat, "source_dossier": source,
+                                "pour_continuer": {"skill": "lire_source_dossier", "args": {"source": source, "fragment": 1}},
+                                "lecture_integrale_disponible": True}
+        except Exception as e:
+            resultat={**resultat,"lecture_integrale_disponible":False,"avertissement_lecture":"Lecture intégrale non enregistrée ("+type(e).__name__+"). Utilise ajouter_source_dossier avant une synthèse complète."}
         from skills.affichage import garantir_fichier_lu
         return garantir_fichier_lu(resultat, vrai_nom, binaire, proprietaire, mime)
     except Exception as e:  # noqa: BLE001
@@ -1699,8 +1816,102 @@ def _paginer_mixte(dossiers: list, fichiers: list, taille: int, page: int) -> tu
     return (pages[page - 1] if page <= len(pages) else []), len(pages)
 
 
+async def _chercher_fichiers_pages(service, requete: str, max_pages: int = 20):
+    """Consomme les pages du fournisseur ; la borne est toujours signalée."""
+    fichiers = []; jeton = None; vus = set(); partiel = False
+    timeout = globals().get("_DRIVE_REQUEST_TIMEOUT_S", 25)
+    for _ in range(max_pages):
+        def appel():
+            args = dict(q=requete, spaces="drive", corpora="allDrives",
+                        includeItemsFromAllDrives=True, supportsAllDrives=True,
+                        fields="nextPageToken,incompleteSearch,files(id,name,parents,modifiedTime)", pageSize=200)
+            if jeton: args["pageToken"] = jeton
+            return service.files().list(**args).execute()
+        try:
+            reponse = await asyncio.wait_for(
+                asyncio.to_thread(appel), timeout=timeout)
+        except Exception:
+            if fichiers: return fichiers, True
+            raise
+        partiel = partiel or bool(reponse.get("incompleteSearch"))
+        fichiers.extend(reponse.get("files") or [])
+        jeton = reponse.get("nextPageToken")
+        if not jeton: return fichiers, partiel
+        if jeton in vus: return fichiers, True
+        vus.add(jeton)
+    return fichiers, True
+
+
+async def _chemins_cibles(service, elements: list[dict], drives: dict[str, str]) -> dict[str, str]:
+    """Construit les chemins des seuls résultats d'une recherche.
+
+    Une recherche par nom ne doit pas payer l'arborescence complète du Drive :
+    le catalogue global (12 000 dossiers chez Symbiose) prenait plus d'une
+    minute à froid avant même de demander au modèle de répondre. On remonte
+    uniquement les parents des fichiers/dossiers trouvés, avec un cache local
+    borné au tour.
+    """
+    infos: dict[str, dict] = {}
+    chemins: dict[str, str] = {}
+    timeout = globals().get("_DRIVE_REQUEST_TIMEOUT_S", 25)
+
+    async def info(identifiant: str) -> dict:
+        if identifiant in infos:
+            return infos[identifiant]
+        def appel():
+            return service.files().get(
+                fileId=identifiant, fields="id,name,parents,mimeType",
+                supportsAllDrives=True).execute()
+        try:
+            valeur = await asyncio.wait_for(
+                asyncio.to_thread(appel), timeout=timeout)
+        except Exception:
+            valeur = {"id": identifiant, "name": identifiant, "parents": []}
+        infos[identifiant] = valeur
+        return valeur
+
+    async def chemin(identifiant: str) -> str:
+        if not identifiant:
+            return ""
+        if identifiant in chemins:
+            return chemins[identifiant]
+        morceaux: list[str] = []
+        courant = identifiant
+        vus: set[str] = set()
+        for _ in range(MAX_PROFONDEUR):
+            if not courant or courant in vus:
+                break
+            vus.add(courant)
+            if courant == "root":
+                morceaux.append("Mon Drive")
+                break
+            if courant in drives:
+                morceaux.append(str(drives[courant]))
+                break
+            valeur = await info(courant)
+            nom = str(valeur.get("name") or "")
+            if nom:
+                morceaux.append(nom)
+            parents = valeur.get("parents") or []
+            courant = parents[0] if parents else ""
+        resultat = "/".join(reversed([m for m in morceaux if m]))
+        chemins[identifiant] = resultat
+        return resultat
+
+    for element in elements:
+        identifiant = str(element.get("id") or "")
+        parents = element.get("parents") or []
+        parent_chemin = await chemin(parents[0] if parents else "")
+        element["chemin"] = parent_chemin
+        if element.get("dossier"):
+            element["chemin"] = "/".join(
+                x for x in (parent_chemin, str(element.get("nom") or "")) if x
+            )
+    return chemins
+
+
 async def chercher(motif: str, perimetres: Optional[list] = None,
-                   page: int = 1, identite=None, genre: Optional[str] = None) -> dict:
+                   page: int = 1, identite=None, genre: Optional[str] = None, dans_contenu: bool = False) -> dict:
     """Dossiers ET fichiers dont le NOM porte le motif, à TOUTES les profondeurs.
 
     Demande de Noa du 01/09 : quand une information sur un client n'est pas en
@@ -1731,6 +1942,7 @@ async def chercher(motif: str, perimetres: Optional[list] = None,
         raise DriveRefuse(
             "Aucun dossier du Drive n'est ouvert à l'assistant pour ce rôle.")
     service = await _service(identite)
+    champ = "fullText" if dans_contenu else "name"
     cible = _nu(motif)
     jetons = [t for t in cible.split() if len(t) >= 3]
 
@@ -1742,63 +1954,50 @@ async def chercher(motif: str, perimetres: Optional[list] = None,
     partiel = False
 
     if _tout_le_drive(perimetres):
-        catalogue, partiel, _comptes, _fp = await _catalogue(service, identite)
+        # Pour une recherche par nom, interroger directement l'index Google est
+        # beaucoup plus rapide que reconstruire les 12 000 dossiers du Drive.
+        # Le catalogue complet reste réservé à `arborescence`, qui en a besoin.
         drives = {d["id"]: d.get("name") for d in await _drives_nommes(service)}
-
-        def _chemin(did: Optional[str]) -> str:
-            morceaux: list[str] = []
-            cour = did
-            for _ in range(MAX_PROFONDEUR):
-                if not cour:
-                    break
-                if cour in drives:
-                    morceaux.append(str(drives[cour]))
-                    break
-                d = catalogue.get(cour)
-                if not d:
-                    break
-                morceaux.append(str(d.get("nom") or ""))
-                parents = d.get("parents") or []
-                cour = parents[0] if parents else None
-            return "/".join(reversed([m for m in morceaux if m]))
-
-        for did, d in catalogue.items():
-            if _correspond(d.get("nom")):
-                trouves.append({"nom": d.get("nom"), "chemin": _chemin(did),
-                                "dossier": True})
-
-        # Les fichiers : motif entier d'abord ; s'il est composé et que rien ne
-        # sort, son mot le plus long — « Davy SAINT LAURENT » ne matche aucun
-        # nom de devis, « SAINT LAURENT » si.
         essais = [motif]
         if len(jetons) > 1:
             essais.append(max(jetons, key=len))
-        vus: set[str] = set()
+        ids_vus: set[str] = set()
         for essai in essais:
-            if any(not t["dossier"] for t in trouves):
-                break
-
-            def _appel(nom=essai):
-                return service.files().list(
-                    q=(f"mimeType != '{_MIME_DOSSIER}' and trashed = false "
-                       f"and name contains '{_echappe(nom)}'"),
-                    spaces="drive", corpora="allDrives",
-                    includeItemsFromAllDrives=True, supportsAllDrives=True,
-                    fields="files(id,name,parents,modifiedTime)",
-                    pageSize=200,
-                ).execute()
+            requete_base = f"trashed = false and {champ} contains '{_echappe(essai)}'"
             try:
-                for f in (await asyncio.to_thread(_appel)).get("files", []):
-                    if f["id"] in vus:
+                dossiers_page, incomplet = await _chercher_fichiers_pages(
+                    service, requete_base + f" and mimeType = '{_MIME_DOSSIER}'")
+                partiel = partiel or incomplet
+                for d in dossiers_page:
+                    if d.get("id") in ids_vus or not _correspond(d.get("name")):
                         continue
-                    vus.add(f["id"])
-                    parents = f.get("parents") or []
-                    trouves.append({"nom": f.get("name"),
-                                    "chemin": _chemin(parents[0] if parents else None),
-                                    "dossier": False,
-                                    "modifie_le": f.get("modifiedTime")})
+                    ids_vus.add(d["id"])
+                    trouves.append({"id": d.get("id"), "nom": d.get("name"),
+                                    "parents": d.get("parents") or [],
+                                    "dossier": True})
+                if not dans_contenu:
+                    fichiers_page, incomplet = await _chercher_fichiers_pages(
+                        service, requete_base + f" and mimeType != '{_MIME_DOSSIER}'")
+                    partiel = partiel or incomplet
+                    for f in fichiers_page:
+                        # Le fournisseur a déjà appliqué `name/fullText
+                        # contains`. Ne pas refaire un filtre local ici :
+                        # l'API peut avoir normalisé accents et ponctuation
+                        # différemment de `_nu`, et un fichier trouvé par le
+                        # mot de repli reste une correspondance utile.
+                        if f.get("id") in ids_vus:
+                            continue
+                        ids_vus.add(f["id"])
+                        trouves.append({"id": f.get("id"), "nom": f.get("name"),
+                                        "parents": f.get("parents") or [],
+                                        "dossier": False,
+                                        "modifie_le": f.get("modifiedTime")})
             except Exception as e:  # noqa: BLE001
-                logger.warning("Drive : recherche fichiers « %s » échouée : %s", essai, e)
+                partiel = True
+                logger.warning("Drive : recherche « %s » échouée : %s", essai, e)
+            if trouves:
+                break
+        await _chemins_cibles(service, trouves, drives)
     else:
         # ── Cloisonné : on descend, on ne sort JAMAIS des racines ─────────
         chemins: dict[str, str] = {}
@@ -1815,34 +2014,31 @@ async def chercher(motif: str, perimetres: Optional[list] = None,
                     chemin = (chemins.get(pid, "") + "/" + str(sd.get("nom") or "")).strip("/")
                     chemins[sd["id"]] = chemin
                     total += 1
-                    if _correspond(sd.get("nom")):
+                    if not dans_contenu and _correspond(sd.get("nom")):
                         trouves.append({"nom": sd.get("nom"), "chemin": chemin,
                                         "dossier": True})
                     prochain.append(sd["id"])
             niveau = prochain
 
-        ids = ([d for d, _ in perimetres if d] + list(chemins))[:1000]
+        tous_ids = list(dict.fromkeys([d for d, _ in perimetres if d] + list(chemins)))
+        partiel = partiel or len(tous_ids) > 1000
+        ids = tous_ids[:1000]
         for i in range(0, len(ids), 15):
             paquet = ids[i:i + 15]
             ou = " or ".join(f"'{_echappe(p)}' in parents" for p in paquet)
 
-            def _appel(requete=(f"({ou}) and mimeType != '{_MIME_DOSSIER}' "
-                                f"and trashed = false "
-                                f"and name contains '{_echappe(motif)}'")):
-                return service.files().list(
-                    q=requete, spaces="drive", corpora="allDrives",
-                    includeItemsFromAllDrives=True, supportsAllDrives=True,
-                    fields="files(id,name,parents,modifiedTime)",
-                    pageSize=MAX_TROUVAILLES,
-                ).execute()
             try:
-                for f in (await asyncio.to_thread(_appel)).get("files", []):
+                pages_fichiers, incomplet = await _chercher_fichiers_pages(service,
+                    f"({ou}) and mimeType != '{_MIME_DOSSIER}' and trashed = false and {champ} contains '{_echappe(motif)}'")
+                partiel = partiel or incomplet
+                for f in pages_fichiers:
                     parents = f.get("parents") or []
                     trouves.append({"nom": f.get("name"),
                                     "chemin": chemins.get(parents[0] if parents else "", ""),
                                     "dossier": False,
                                     "modifie_le": f.get("modifiedTime")})
             except Exception as e:  # noqa: BLE001
+                partiel = True
                 logger.warning("Drive : recherche cloisonnée « %s » échouée : %s", motif, e)
 
     trouves = [t for t in trouves if not _parasite(t.get("nom"))]
@@ -1886,6 +2082,8 @@ async def chercher(motif: str, perimetres: Optional[list] = None,
                           "Le filtre fichiers est sensible aux accents : un seul "
                           "mot du nom, ou une autre orthographe, peut suffire. "
                           "Une recherche vide ne prouve pas l'absence.").strip()
+    sortie["partiel"] = partiel
+    sortie["recherche_dans"] = "contenu indexé par Google Drive" if dans_contenu else "noms"
     return sortie
 
 

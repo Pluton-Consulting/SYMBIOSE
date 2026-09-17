@@ -112,6 +112,63 @@ async def drive_lister(data: dict, user) -> dict:
     return garantir_listage(resultat, dossier, ouvreur="drive_ouvrir")
 
 
+
+async def drive_lister_lot(data: dict, user) -> dict:
+    """Liste plusieurs dossiers du Drive en parallèle, en une seule action."""
+    from outils.drive import lister_lot
+    dossiers = data.get("dossiers")
+    if isinstance(dossiers, str):
+        dossiers = [x.strip() for x in dossiers.replace("\n", ",").split(",") if x.strip()]
+    elif not isinstance(dossiers, list):
+        dossier = (data.get("dossier") or data.get("chemin") or "").strip()
+        dossiers = [dossier] if dossier else []
+    dossiers = [str(x).strip() for x in dossiers if str(x).strip()]
+    if not dossiers:
+        _echec("Donne la liste des dossiers à inspecter dans dossiers.")
+    resultat = await _drive(
+        lister_lot, dossiers,
+        perimetres=_perimetres(user),
+        identite=_identite(user),
+        motif=(data.get("motif") or "").strip() or None,
+    )
+    lots = resultat.get("lots") or []
+    rows = []
+    for lot in lots:
+        if not lot.get("ok"):
+            rows.append([lot.get("dossier") or "?", "Erreur", "", lot.get("erreur") or ""])
+            continue
+        noms = [str(e.get("nom") or "?") for e in (lot.get("entrees") or [])]
+        suffixe = " …" if lot.get("tronque") else ""
+        rows.append([
+            lot.get("dossier") or "?",
+            int(lot.get("sous_dossiers") or 0),
+            int(lot.get("fichiers") or 0),
+            ", ".join(noms[:30]) + suffixe,
+        ])
+    resultat["bloc_ui"] = {
+        "type": "table",
+        "titre": "Inspection des dossiers du Drive",
+        "columns": ["Dossier", "Sous-dossiers", "Fichiers", "Entrées"],
+        "rows": rows,
+    }
+    resultat["bloc_garanti"] = True
+    resultat["message_final"] = (
+        f"{resultat.get('dossiers_inspectes', 0)} dossier(s) inspecté(s) sur "
+        f"{resultat.get('dossiers_demandes', 0)}."
+    )
+    if resultat.get("dossiers_en_erreur"):
+        resultat["message_final"] += (
+            f" {resultat['dossiers_en_erreur']} dossier(s) n'ont pas pu être lus ; "
+            "la raison est indiquée sur leur ligne."
+        )
+    resultat["a_faire"] = (
+        "Le tableau est déjà affiché par le serveur. Ne recopie pas ses lignes. "
+        "Dis exactement combien de dossiers ont été inspectés et distingue les "
+        "dossiers en erreur ou dont le contenu dépassait la première page."
+    )
+    return resultat
+
+
 async def drive_photos(data: dict, user) -> dict:
     """LES PHOTOS d'un dossier du Drive, rangées au dépôt et prêtes à l'écran.
 
@@ -172,13 +229,20 @@ async def drive_chercher(data: dict, user) -> dict:
     """
     from outils.drive import chercher
     from skills.affichage import garantir_recherche
+    import asyncio
     motif = (data.get("motif") or data.get("nom") or data.get("client") or "").strip()
     if not motif:
         _echec("Donne le `motif` à chercher (nom de client, de chantier, de fichier).")
-    resultat = await _drive(chercher, motif, perimetres=_perimetres(user),
-                            identite=_identite(user),
-                            page=data.get("page") or 1,
-                            genre=data.get("type") or data.get("genre"))
+    try:
+        resultat = await asyncio.wait_for(
+            _drive(chercher, motif, perimetres=_perimetres(user),
+                   identite=_identite(user),
+                   page=data.get("page") or 1,
+                   genre=data.get("type") or data.get("genre")),
+            timeout=45)
+    except asyncio.TimeoutError:
+        _echec("La recherche Drive a dépassé 45 secondes. Le service Google ne "
+               "répond pas assez vite ; aucun fichier n'a été modifié.")
     return garantir_recherche(resultat, motif, ouvreur="drive_ouvrir")
 
 
@@ -339,6 +403,18 @@ SKILLS = {
         requis=["dossier"], optionnels=["page"],
         effet="lecture",
         libelle="je liste le contenu du dossier"),
+    "drive_lister_lot": Declaration(
+        fonction=drive_lister_lot,
+        description=(
+            "LISTE PLUSIEURS DOSSIERS DU DRIVE EN UNE SEULE ACTION, EN PARALLELE. "
+            "A utiliser pour « chacun », « tous les dossiers clients » ou toute "
+            "demande portant sur au moins trois dossiers. Passe dossiers=[...], "
+            "et motif pour ne garder que les noms correspondants. Le tableau "
+            "s'affiche automatiquement ; ne rappelle pas drive_lister dossier "
+            "par dossier."),
+        requis=["dossiers"], optionnels=["motif"],
+        effet="lecture",
+        libelle="j'inspecte les dossiers du Drive en parallèle"),
     "drive_photos": Declaration(
         fonction=drive_photos,
         description=(

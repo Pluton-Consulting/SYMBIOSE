@@ -73,6 +73,23 @@ _EXPORTABLE = {
     "application/vnd.google-apps.presentation": "text/plain",
 }
 
+# Les appels du client Google utilisent httplib2, dont le délai par défaut peut
+# être illimité. Une recherche Drive bloquée immobilisait alors le tour et
+# donnait l'impression que l'interface s'était arrêtée. Le délai s'applique à
+# chaque requête réseau ; le code appelant peut ensuite signaler la panne ou
+# passer à son secours sans perdre le worker.
+_DRIVE_HTTP_TIMEOUT_S = 25
+
+
+def _build_drive_client(build, credentials):
+    """Construit un client Drive authentifié avec un délai réseau borné."""
+    import httplib2
+    from google_auth_httplib2 import AuthorizedHttp
+
+    http = AuthorizedHttp(credentials,
+                          http=httplib2.Http(timeout=_DRIVE_HTTP_TIMEOUT_S))
+    return build("drive", "v3", http=http, cache_discovery=False)
+
 
 def _build_service(scopes=None):
     # `scopes` : lecture par défaut ; le client du dépôt passe l'écriture.
@@ -102,7 +119,7 @@ def _build_service(scopes=None):
             creds = creds.with_subject(sujet)
         logger.info("Google Drive : compte de service%s",
                     f" (au nom de {sujet})" if sujet else " (Drive partages)")
-        return build("drive", "v3", credentials=creds)
+        return _build_drive_client(build, creds)
 
     # 2. JETON OAUTH DONNÉ PAR L'ENVIRONNEMENT. Déposer un fichier de secret sur
     #    un serveur suppose un accès au disque ET les bons droits : le dossier
@@ -154,7 +171,7 @@ def _build_service(scopes=None):
                     "production » : sinon le jeton meurt tous les 7 jours."
                 ) from e
         logger.info("Google Drive : jeton OAuth lu dans l'environnement")
-        return build("drive", "v3", credentials=creds)
+        return _build_drive_client(build, creds)
 
     # 3. Sinon, consentement OAuth d'un utilisateur par FICHIER (voie historique).
     if not os.path.exists(settings.google_credentials_file):
@@ -179,7 +196,7 @@ def _build_service(scopes=None):
         os.makedirs(os.path.dirname(settings.google_token_file) or ".", exist_ok=True)
         with open(settings.google_token_file, "w") as f:
             f.write(creds.to_json())
-    return build("drive", "v3", credentials=creds)
+    return _build_drive_client(build, creds)
 
 
 def _build_service_ecriture():
@@ -548,7 +565,17 @@ async def sync(folder_id: Optional[str] = None, avancer=None, incremental: bool 
     # SUPPRIMÉ ni ce dont l'accès a été retiré, puisque ces fichiers ne sont
     # simplement plus listés. Avec un curseur, on lit ce que Google a noté.
     from ingestion import drive_changes
-    if incremental and not folder_id and drive_changes.lire_curseur().get("token"):
+    import hashlib as _hashlib
+    import json as _json
+    from datetime import datetime as _datetime, timezone as _timezone
+    empreinte_perimetres = _hashlib.sha256(_json.dumps(cibles, sort_keys=True).encode()).hexdigest()
+    curseur = drive_changes.lire_curseur()
+    try:
+        recent = (_datetime.now(_timezone.utc) - _datetime.fromisoformat(curseur.get("inventaire_le") or "")).total_seconds() < 86400
+    except (ValueError, TypeError):
+        recent = False
+    if (incremental and not folder_id and curseur.get("token") and recent
+            and curseur.get("perimetres") == empreinte_perimetres):
         niveaux = {d: n for d, n in cibles if d}
         bilan = await drive_changes.appliquer(service, niveaux,
                                               (settings.google_drive_access_level or "all").strip())
@@ -568,7 +595,7 @@ async def sync(folder_id: Optional[str] = None, avancer=None, incremental: bool 
 
     # LE CURSEUR SE PREND AVANT L'INVENTAIRE, jamais après : ce qui change
     # PENDANT la lecture doit être rattrapé au passage suivant.
-    depart = await drive_changes.poser_depart(service)
+    depart = await drive_changes.poser_depart(service) if not folder_id else None
 
     async def _prevenir(traites, total, etape):
         if avancer is None:
@@ -580,6 +607,8 @@ async def sync(folder_id: Optional[str] = None, avancer=None, incremental: bool 
 
     total_vus = total_ingeres = total_lents = 0
     inchanges = lents_sautes = trop_gros = non_examines = 0
+    lectures_echouees = 0
+    presents = set()
     connus = await _dates_ingerees()
     lents = _lire_lents()
     detail = []
@@ -589,6 +618,9 @@ async def sync(folder_id: Optional[str] = None, avancer=None, incremental: bool 
                                           declares - {dossier} if dossier else frozenset())
         ingeres = 0
         for i, f in enumerate(fichiers):
+            presents.add(f["id"])
+            from vectorstore.client import vectorstore
+            await vectorstore.requalifier_drive(f["id"], niveau)
             if _inchange(f, connus.get(f["id"])):
                 inchanges += 1
                 continue
@@ -632,6 +664,8 @@ async def sync(folder_id: Optional[str] = None, avancer=None, incremental: bool 
                     text=text, source_type="drive", source_id=f["id"],
                     source_filename=f["name"], access_level=niveau):
                 ingeres += 1
+            else:
+                lectures_echouees += 1
             if i % 10 == 0:
                 await _prevenir(total_ingeres + ingeres, None,
                                 f"j'ingère {f.get('name', '')[:60]}")
@@ -656,11 +690,20 @@ async def sync(folder_id: Optional[str] = None, avancer=None, incremental: bool 
     # LE CURSEUR NE S'ÉCRIT QUE SI L'INVENTAIRE EST ALLÉ AU BOUT. Le poser
     # après un parcours tronqué reviendrait à déclarer à jour ce qu'on n'a
     # jamais lu : les fichiers non examinés ne reviendraient plus jamais.
-    complet = all(d.get("parcours_complet") for d in detail) and not non_examines
+    complet = (all(d.get("parcours_complet") for d in detail) and not
+               (non_examines or lectures_echouees or total_lents or lents_sautes or trop_gros))
+    # Un inventaire limité à un dossier ne touche ni le curseur global ni les
+    # autres sources. Seul un relevé global terminé prouve une disparition.
+    if complet and not folder_id:
+        from vectorstore.client import vectorstore
+        sortie["retires"] = await vectorstore.reconcilier_drive(presents)
+    sortie["complet"] = complet
+    sortie["lectures_echouees"] = lectures_echouees
     if depart and complet:
         drive_changes.ecrire_curseur(
             depart, inventaire_le=__import__("datetime").datetime.now(
-                __import__("datetime").timezone.utc).isoformat(timespec="seconds"))
+                __import__("datetime").timezone.utc).isoformat(timespec="seconds"),
+            perimetres=empreinte_perimetres)
         sortie["curseur_pose"] = True
     elif depart:
         sortie["curseur_pose"] = False
@@ -700,7 +743,7 @@ def _build_service_perso(credentials, scopes=None):
             "Paramètres > Mon compte Google.") from e
     logger.info("Client Drive personnel construit (%s)",
                 "écriture" if scopes == _SCOPES_ECRITURE else "lecture")
-    return build("drive", "v3", credentials=credentials, cache_discovery=False)
+    return _build_drive_client(build, credentials)
 
 
 def _build_service_delegue(courriel: str, scopes=None):
@@ -739,5 +782,4 @@ def _build_service_delegue(courriel: str, scopes=None):
     creds = service_account.Credentials.from_service_account_file(
         settings.google_service_account_file, scopes=scopes)
     logger.info("Google Drive : délégation de domaine au nom de %s", adresse)
-    return build("drive", "v3", credentials=creds.with_subject(adresse),
-                 cache_discovery=False)
+    return _build_drive_client(build, creds.with_subject(adresse))

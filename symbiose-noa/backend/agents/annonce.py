@@ -41,8 +41,6 @@ def _sans_accent(texte: str) -> str:
     return texte.translate(_ACCENTS)
 
 
-# Futur proche explicite : aucune ambiguïté, c'est une promesse.
-#
 # UN PRONOM PEUT S'INTERCALER entre « je » et le verbe. « Je vous prépare ça »
 # et « Je vous liste ça dans un tableau » sont des promesses aussi nettes que
 # « je prépare » — elles passaient toutes les deux, parce que chaque motif
@@ -50,6 +48,8 @@ def _sans_accent(texte: str) -> str:
 # elle laissait passer n'importe quel verbe dès qu'un pronom s'y glissait.
 _PRON = r"(?:vous |me |te |nous |y |le |la |les |leur |lui |en |m['’]|l['’])?"
 
+# Futur proche explicite : aucune ambiguïté, c'est une promesse.
+#
 # La règle « maintenant ... je » a été RETIRÉE : elle attrapait n'importe quel
 # « je » à moins de 25 caractères de « maintenant », quel que soit le verbe —
 # « Maintenant que j'ai les chiffres, je peux vous répondre : 42 000 € » était
@@ -120,17 +120,18 @@ ANNONCE_SANS_ACTE = re.compile(rf"\b(?:{_FUTUR}|{_PRODUCTION})", re.IGNORECASE)
 # porte « je vais », mais n'annonce aucun acte : elle attend une réponse. Sans
 # cette exclusion, la phrase était remplacée par « je n'ai pas réussi à
 # exécuter l'action » — et la question posée à l'utilisateur disparaissait.
+#
+# LA PHRASE QUI LIVRE. « Je liste ci-dessous les cinq dernières factures :
+# F-2031, F-2032 » emploie le même verbe que « Je vous liste ça dans un
+# tableau », et les deux ne demandent pas le même traitement : la première
+# porte déjà son résultat. Un marqueur de livraison — ci-dessous, ci-joint,
+# voici — dit que le contenu est LÀ, donc qu'il n'y a rien à forcer.
 _PAS_UNE_PROMESSE = re.compile(
     r"\?"
     r"|\b(?:voulez-vous|souhaitez-vous|dois-je|puis-je|faut-il|preferez-vous"
     r"|est-ce que|pouvez-vous|pourriez-vous|lequel|laquelle|lesquels)\b"
     r"|j['’]ai besoin|je vais avoir besoin|il me faut|il me manque"
     r"|je vais devoir|precisez|indiquez-moi|de quel"
-    # LA PHRASE QUI LIVRE. « Je liste ci-dessous les cinq dernières factures :
-    # F-2031, F-2032 » emploie le même verbe que « Je vous liste ça dans un
-    # tableau », et les deux ne demandent pas le même traitement : la première
-    # porte déjà son résultat. Un marqueur de livraison — ci-dessous, ci-joint,
-    # voici — dit que le contenu est LÀ, donc qu'il n'y a rien à forcer.
     r"|\bci-dessous\b|\bci-joint|\bvoici\b|\bvoila\b"
     # 09/09 : une réponse qui ATTEND quelque chose de la personne n'est pas
     # une promesse non tenue — « dès que vous me donnez la photo, je m'en
@@ -157,16 +158,23 @@ CLOTURES = {
 
 # UNE CLÔTURE PEUT ÊTRE SATISFAITE AUTREMENT QUE PAR L'ACTION QU'ON NOMME.
 #
-# Relevé sur le projet jumeau, dont le serveur de fichiers offre un geste
-# composé « finalise ET dépose » : absent de cette table, il laissait la
-# clôture insatisfaite après un dépôt réussi, et le rappel poussait vers la
-# fermeture SEULE — document jamais déposé. Le jour attendu est arrivé le
-# 30/08 : `drive_deposer_document` finalise ET dépose en un geste, il ferme
-# donc le document au passage. Le dépôt reste une action à effet EXTERNE (il
-# suspend le tour pour la validation humaine) : ce n'est pas un contournement
-# du garde-fou, c'est la reconnaissance qu'il clôt le travail.
-SATISFAIT_PAR: dict[str, set[str]] = {
-    "terminer_document": {"terminer_document", "drive_deposer_document"},
+# `nas_deposer_document` finalise ET dépose en UN geste : c'est exactement
+# l'outil de « crée un docx dans /Drive ». Il ne figurait nulle part ici, avec
+# deux conséquences mesurées :
+#
+#   1. pendant tout le remplissage, le rappel de clôture répétait « il reste
+#      `terminer_document` à exécuter » — le modèle était donc poussé vers la
+#      fermeture SEULE, et une fois fermée, plus rien n'attendait : le tour se
+#      concluait, document jamais déposé. « Il crée, parfois il remplit, mais
+#      jamais il ne dépose », mot pour mot ;
+#   2. quand le modèle utilisait quand même le geste composé, la clôture
+#      restait insatisfaite — on lui réclamait une fermeture déjà faite.
+#
+# Le dépôt reste une action à effet EXTERNE : il suspend le tour pour la
+# validation humaine. Ce n'est pas un contournement de ce garde-fou, c'est la
+# reconnaissance qu'il ferme le document au passage.
+SATISFAIT_PAR = {
+    "terminer_document": {"terminer_document", "nas_deposer_document"},
 }
 
 
@@ -544,8 +552,8 @@ _SANS_COMMANDE = re.compile(
     r"il n['’]existe pas (?:de |d['’])(?:commande|outil|fonction|action)",
     re.I)
 _OFFRE_DE_FAIRE = re.compile(
-    r"(?:voulez-vous|souhaitez-vous|préférez-vous|preferez-vous|que préférez-vous|que preferez-vous|"
-    r"dois-je|puis-je|faut-il que je|je peux (?:vous proposer|commencer par)|je peux ?:)",
+    r"(?:veux-tu|souhaites-tu|tu veux|tu souhaites|voulez-vous|souhaitez-vous|préférez-vous|preferez-vous|que préférez-vous|que preferez-vous|"
+    r"dois-je|puis-je|faut-il que je|je (?:le|la|les) fais|je peux (?:vous proposer|commencer par)|je peux ?:)",
     re.I)
 
 
@@ -565,7 +573,7 @@ def propose_au_lieu_d_agir(texte: str) -> bool:
         # « lequel » — demande une DONNÉE : on ne force pas.
         demande_une_donnee = re.search(
             r"\b(?:quel|quelle|quels|quelles|lequel|laquelle|lesquels|lesquelles|combien|"
-            r"ou|quand|a qui|a quel|a quelle|pour qui|comment)\b", t, re.I)
+            r"quand|a qui|a quel|a quelle|pour qui|comment)\b", t, re.I) or re.search(r"(?:^|[.!?\n])\s*ou\b[^?]*\?", t, re.I)
         return not demande_une_donnee
     return False
 

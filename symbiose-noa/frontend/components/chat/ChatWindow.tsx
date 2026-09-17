@@ -1,4 +1,6 @@
 "use client"
+import SuiviTravail from "./SuiviTravail"
+import SuiviRedactions from "./SuiviRedactions"
 import { useEffect, useRef, useState } from "react"
 import { useSession } from "next-auth/react"
 import { CLE_CONTEXTE, EVENEMENT_CONTEXTE, type ContextePrealable } from "@/components/tableau/TableauDeBord"
@@ -161,7 +163,7 @@ function etapeDuSkill(skill: string): string | null {
 
 export default function ChatWindow({ threadId: initialThreadId = null, token: tokenProp }: ChatWindowProps) {
   const { data: session } = useSession()
-  const token = tokenProp || (session as any)?.backendToken
+  const token = (session as any)?.backendToken || tokenProp
   const [messages, setMessages] = useState<Message[]>([])
   // Les conversations de la personne, telles que le serveur les connaît : les
   // mêmes sur tous ses appareils (09/09).
@@ -252,6 +254,8 @@ export default function ChatWindow({ threadId: initialThreadId = null, token: to
   // Le fil courant, lisible au DÉMONTAGE (l'état React n'est plus fiable à ce
   // moment-là) : c'est lui qui permet de détacher un tour en vol.
   const threadIdRef = useRef<string | null>(initialThreadId)
+  const choixConversationRef = useRef(0)
+  const restaurationFaiteRef = useRef(false)
 
   // Enregistre le thread courant (state + localStorage) dès qu'il est connu.
   const userKey = (session as any)?.user?.email || null
@@ -821,7 +825,8 @@ export default function ChatWindow({ threadId: initialThreadId = null, token: to
 
   const chargerHistorique = (tid: string) =>
     apiRequest<any[]>(`/api/chat/threads/${tid}/messages`, { token })
-      .then((rows) =>
+      .then((rows) => {
+        if (threadIdRef.current !== tid) return
         setMessages(
           (rows || []).map((m) => ({
             id: String(m.id),
@@ -830,7 +835,7 @@ export default function ChatWindow({ threadId: initialThreadId = null, token: to
             pieces: piecesDesMetadonnees(m.metadata),
           }))
         )
-      )
+      })
 
   // ── Re-brancher un tour détaché (retour de Paramètres ou d'ailleurs) ──
   // Le démontage de ce composant ne tue plus un tour en vol : sa connexion et
@@ -925,9 +930,13 @@ export default function ChatWindow({ threadId: initialThreadId = null, token: to
   // reste le repli quand le serveur ne répond pas.
   useEffect(() => {
     if (!token) return
+    // Un rafraîchissement de jeton ne doit pas changer le fil choisi.
+    if (restaurationFaiteRef.current || choixConversationRef.current > 0) return
     let annule = false
+    const choixInitial = choixConversationRef.current
     const ouvrir = (tid: string) => {
-      if (annule) return
+      if (annule || choixConversationRef.current !== choixInitial) return
+      restaurationFaiteRef.current = true
       rememberThread(tid)
       chargerHistorique(tid)
         .catch(() => {})
@@ -954,6 +963,7 @@ export default function ChatWindow({ threadId: initialThreadId = null, token: to
   // ── Changer de conversation, en commencer une nouvelle ───────────────
   const nouvelleConversation = () => {
     if (loading || principalOccupeRef.current) return
+    choixConversationRef.current += 1
     forgetThread()
     setMessages([])
     setTraceReflexion([]); setThinkingSteps([]); setThinkingNode(null); setActivite("")
@@ -962,6 +972,7 @@ export default function ChatWindow({ threadId: initialThreadId = null, token: to
 
   const reprendreConversation = (tid: string) => {
     if (loading || principalOccupeRef.current || !tid || tid === threadIdRef.current) return
+    choixConversationRef.current += 1
     rememberThread(tid)
     setMessages([])
     setTraceReflexion([]); setThinkingSteps([]); setThinkingNode(null); setActivite("")
@@ -984,6 +995,7 @@ export default function ChatWindow({ threadId: initialThreadId = null, token: to
       if (!tid || loading || principalOccupeRef.current || document.visibilityState !== "visible") return
       apiRequest<any[]>(`/api/chat/threads/${tid}/messages`, { token })
         .then((rows) => {
+          if (threadIdRef.current !== tid || principalOccupeRef.current) return
           // L'AUTRE APPAREIL A ÉCRIT (09/09). Le fil est au repos ici, mais
           // le serveur porte plus de messages que l'écran : la personne a
           // continué sur son téléphone. On relit le fil entier — jamais
@@ -1087,17 +1099,16 @@ export default function ChatWindow({ threadId: initialThreadId = null, token: to
 
   /** Le corps HTTP des pièces jointes.
    *
-   * `attachments` porte le lot ; les trois champs au singulier désignent le
-   * PREMIER fichier et restent là pour les chemins qui ne comptent pas encore
-   * (un backend pas encore redéployé, une reprise de tâche). Ils ne coûtent
-   * rien et évitent qu'une version décalée perde la pièce en silence.
+   * `attachments` porte le lot. Le champ base64 historique reste pour une
+   * pièce seule ; dans un lot, le répéter pouvait dépasser la limite HTTP.
    */
   const corpsPieces = (pieces?: PieceJointe[]) =>
     !pieces?.length ? undefined : {
       attachments: pieces.map((p) => ({ nom: p.name, mime: p.mime, b64: p.b64 })),
       attachment_name: pieces[0].name,
       attachment_mime: pieces[0].mime,
-      attachment_b64: pieces[0].b64,
+      // Le premier fichier ne doit pas doubler le poids du lot.
+      ...(pieces.length === 1 ? { attachment_b64: pieces[0].b64 } : {}),
     }
 
   // `afficherDemande` : faux quand le message est DEJA dans le fil — cas du
@@ -1106,7 +1117,33 @@ export default function ChatWindow({ threadId: initialThreadId = null, token: to
   // LA PIÈCE JOINTE VOYAGE EN FILE (04/09, Noa : « tout ce qu'on fait en chat
   // classique doit se faire en file d'attente, c'est pareil »). Elle part avec
   // la demande ; le serveur la range sur le disque et la relit à l'exécution.
-  const lancerEnFile = async (text: string, afficherDemande = true, pieces?: PieceJointe[]) => {
+  const lancerEnFile = async (text: string, afficherDemande = true, pieces?: PieceJointe[], demandeExistante?: string) => {
+    // Une socket peut se fermer pendant que le serveur continue le même tour.
+    // Dans ce cas, rejoindre la demande existante est obligatoire : la remettre
+    // dans `file:<id>` lancerait une seconde analyse et doublerait les coûts.
+    if (demandeExistante) {
+      try {
+        let suivi = await apiRequest<{ response?: string; reprise?: boolean; status?: string }>(
+          `/api/chat/demandes/${encodeURIComponent(demandeExistante)}`, { token })
+        const fin = Date.now() + 40 * 60 * 1000
+        while (suivi.reprise && Date.now() < fin) {
+          await new Promise((resolve) => setTimeout(resolve, 1500))
+          suivi = await apiRequest<{ response?: string; reprise?: boolean; status?: string }>(
+            `/api/chat/demandes/${encodeURIComponent(demandeExistante)}`, { token })
+        }
+        if (suivi.reprise) throw new Error("Le traitement est toujours en cours ; il reste suivi dans l'historique.")
+        const fil = threadIdRef.current
+        if (fil) await chargerHistorique(fil)
+        setLoading(false)
+        setThinkingNode(null)
+        return
+      } catch (e: any) {
+        // 404 = aucune demande enregistrée : c'est une nouvelle demande,
+        // qui peut normalement entrer dans la file. Les autres erreurs restent
+        // visibles au lieu de déclencher un doublon silencieux.
+        if (e?.status !== 404) throw e
+      }
+    }
     if (afficherDemande) {
       const idQuestion = newId()
       idDerniereQuestionRef.current = idQuestion
@@ -1161,6 +1198,7 @@ export default function ChatWindow({ threadId: initialThreadId = null, token: to
   }
 
   const sendMessage = (texteAffiche: string, pieces?: PieceJointe[]) => {
+    choixConversationRef.current += 1
     // Ce qui part porte le contexte pré-inscrit ; ce qui s'affiche reste ce
     // que la personne a écrit. Le contexte ne sert qu'une fois.
     const text = contexte
@@ -1305,7 +1343,7 @@ ${texteAffiche}`)
       closeWs()
       const post = (threadForCall: string) =>
         apiRequest<{
-          response: string; thread_id: string; status?: string
+          response: string; thread_id: string; status?: string; reprise?: boolean
           validation_id?: string | null
         }>(
           "/api/chat/",
@@ -1331,6 +1369,17 @@ ${texteAffiche}`)
           forgetThread()
           res = await post(newId())
         }
+        // Un POST de secours rejoint le tour d'origine. Ne pas finir avec
+        // response=null : attendre son résultat sous le même request_id.
+        const finReprise = Date.now() + 300_000
+        while (res.reprise && Date.now() < finReprise) {
+          await new Promise((resolve) => setTimeout(resolve, 1500))
+          res = await apiRequest<{
+            response: string; thread_id: string; status?: string; reprise?: boolean
+            validation_id?: string | null
+          }>(`/api/chat/demandes/${encodeURIComponent(demandeId)}`, { token })
+        }
+        if (res.reprise) throw new Error("Le traitement est toujours en cours ou a été interrompu. Consultez l'historique avant de relancer une action.")
         if (res.thread_id) rememberThread(res.thread_id)
         const attend =
           res.status === "pending_validation" || res.status === "validation_required" || Boolean(res.validation_id)
@@ -1356,7 +1405,7 @@ ${texteAffiche}`)
         if (err?.status === 409) {
           // Fil occupe : la demande part en file plutot que d'echouer.
           libérer()
-          lancerEnFile(text, false, pieces)
+          lancerEnFile(text, false, pieces, demandeId)
           if (!monteRef.current) majTourDetache({ fini: true })
           return
         }
@@ -1398,7 +1447,9 @@ ${texteAffiche}`)
         onEvent: (event: ChatEvent) => {
           clearStall()  // le WS répond → on annule le repli anti-blocage
           const t = event.type
-          if (t === "final" || (t === undefined && event.response !== undefined)) {
+          if (t === "reprise") {
+            void fallbackPost()
+          } else if (t === "final" || (t === undefined && event.response !== undefined)) {
             finish(event.response ?? "")
           } else if (t === "pending_validation") {
             suspendre(String(event.validation_id ?? "") || undefined)
@@ -1420,7 +1471,7 @@ ${texteAffiche}`)
             clearStall()
             closeWs()
             libérer()
-            lancerEnFile(text, false, pieces)
+            lancerEnFile(text, false, pieces, demandeId)
             if (!monteRef.current) majTourDetache({ fini: true })
           } else if (t === "error") {
             fallbackPost()
@@ -1490,8 +1541,22 @@ ${texteAffiche}`)
       })
         .then((ws) => { wsRef.current = ws })
         .catch(() => fallbackPost())
-      // Si aucun événement n'arrive (WS bloqué / injoignable), on bascule sur POST.
-      stallTimer = setTimeout(() => { if (!settled) fallbackPost() }, WS_STALL_MS)
+      // Un gros lot peut encore être en train de quitter le navigateur.
+      // Tant que le tampon diminue, le transport progresse : le couper à
+      // 14 s imposait de renvoyer toutes les pièces par HTTP.
+      let tamponPrecedent = Number.POSITIVE_INFINITY
+      const debutEnvoi = Date.now()
+      const surveillerEnvoi = () => {
+        if (settled) return
+        const restant = wsRef.current?.bufferedAmount ?? 0
+        if (restant > 0 && restant < tamponPrecedent && Date.now() - debutEnvoi < 180000) {
+          tamponPrecedent = restant
+          stallTimer = setTimeout(surveillerEnvoi, WS_STALL_MS)
+          return
+        }
+        void fallbackPost()
+      }
+      stallTimer = setTimeout(surveillerEnvoi, WS_STALL_MS)
     } catch {
       fallbackPost()
     }
@@ -1512,6 +1577,12 @@ ${texteAffiche}`)
           d'écart et l'écran paraissait plat. */}
       <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0,
                     background: "var(--marque-chat-fond)" }}>
+        <SuiviTravail threadId={threadId} token={token || null} enCours={loading} />
+        <SuiviRedactions threadId={threadId} token={token || null} enCours={loading} actualiser={async (tid) => {
+          if (threadIdRef.current !== tid || loading || principalOccupeRef.current) return false
+          await chargerHistorique(tid)
+          return threadIdRef.current === tid
+        }} />
         <MessageList messages={messages} onAction={sendMessage}
                      apiUrl={process.env.NEXT_PUBLIC_API_URL || ""} backendToken={token} />
 

@@ -439,11 +439,18 @@ CATALOGUE_AGENT1: dict[str, tuple[str, list[str], list[str]]] = {
         "page de garde et sommaire selon le style — n'ecris ni page de garde ni sommaire "
         "toi-meme. VARIE la page : encadre, chiffres, citation, colonnes (photo a cote du "
         "texte), images des chantiers. REDIGE en paragraphes (3 a 6 phrases) ; une liste "
-        "seulement pour une vraie enumeration courte. Ne produit aucun fichier",
+        "seulement pour une vraie enumeration courte. Si la demande veut un NOUVEAU "
+        "contenu en reprenant la mise en page d'un DOCX existant, passe sa reference "
+        "exacte dans `modele_fichier` (rendue par `drive_ouvrir`, `drive_lister` "
+        "ou une piece jointe) : le gabarit est ouvert, vide de son ancien corps, "
+        "puis `ajouter_document` verse le nouveau texte en conservant styles, "
+        "en-tetes, pieds et images. N'utilise pas `reproduire_document` dans ce "
+        "cas : il ne remplace que des textes deja presents. Ne produit aucun fichier",
 
         ["titre"], ["format", "sous_titre", "entete", "pied", "paysage", "numeroter",
                     "entete_image", "pied_image", "page_de_garde", "sommaire",
-                    "style", "image_couverture"]),
+                    "style", "image_couverture", "modele_fichier",
+                    "verifier_entete_pied"]),
     "ajouter_document": (
         # LA TAILLE PAR APPEL MANQUAIT ICI. Le catalogue disait « autant de
         # fois qu'il le faut » sans jamais dire COMBIEN par fois : le modele a
@@ -519,14 +526,16 @@ CATALOGUE_AGENT1: dict[str, tuple[str, list[str], list[str]]] = {
         "AAAA-MM-JJ pour REMONTER LE TEMPS page par page — le résultat donne "
         "`plus_ancien` et `pour_continuer` : redonne cette date en `avant` pour les 25 "
         "précédents. Le DÉTAIL est borné à 25 par appel ; le TOTAL ne l'est pas, "
-        "c'est lui qu'on cite pour « combien ». Sans `depuis` ni `recherche` : les "
+        "c'est lui qu'on cite pour « combien ». Une recherche simple rend une page "
+        "pour rester rapide ; passe `exhaustif:true` (ou `tous:true`) seulement "
+        "si la demande exige toutes les correspondances. Sans `depuis` ni `recherche` : les "
         "plus récents et le total du dossier. N'en tire jamais de conclusion sur "
         "l'entreprise entière (pour cela, `lancer_enrichissement`). dossier : recus "
         "(défaut) ou envoyes ; limite : 1 à 25. Sans mailbox, la boîte de la personne "
         "connectée. Chaque `apercu` rendu est un EXTRAIT, pas le message : pour le "
         "corps complet, `lire_mail` avec la `ref`. Pour un POINT complet avec "
         "résumés et propositions de réponse, préfère `check_mails`",
-        [], ["mailbox", "dossier", "limite", "depuis", "recherche", "avant"]),
+        [], ["mailbox", "dossier", "limite", "depuis", "recherche", "avant", "curseur", "exhaustif"]),
     "lire_mail": (
         "OUVRE UN message EN ENTIER : le corps complet (jusqu'à 10 000 caractères) et "
         "ses pièces jointes nommées. L'`apercu` rendu par `lire_mails` ou `check_mails` "

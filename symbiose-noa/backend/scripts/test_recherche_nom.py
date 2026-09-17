@@ -77,9 +77,24 @@ if not nas_cote:
 
     class _Fichiers:
         def list(self, **kwargs):
+            if "mimeType = 'application/vnd.google-apps.folder'" in kwargs.get("q", ""):
+                return _Liste({"files": [
+                    {"id": identifiant, "name": valeur["nom"],
+                     "parents": valeur.get("parents") or []}
+                    for identifiant, valeur in CATALOGUE.items()
+                ]})
             return _Liste({"files": [
                 {"id": "x1", "name": "Devis SAINT LAURENT.pdf",
                  "parents": ["f2"], "modifiedTime": "2026-08-30"}]})
+        def get(self, **kwargs):
+            identifiant = kwargs.get("fileId")
+            valeur = CATALOGUE.get(identifiant)
+            if identifiant == "root":
+                valeur = {"nom": "Mon Drive", "parents": []}
+            valeur = valeur or {"nom": identifiant, "parents": []}
+            return _Liste({"id": identifiant, "name": valeur["nom"],
+                           "parents": valeur.get("parents") or [],
+                           "mimeType": "application/vnd.google-apps.folder"})
 
     class _Service:
         def files(self):
@@ -108,7 +123,7 @@ if not nas_cote:
         "_MIME_DOSSIER": "application/vnd.google-apps.folder",
         "MAX_DOSSIERS_ARBRE": 3000,
     }
-    extraire(drive_py, {"chercher", "_paginer_mixte", "_nu", "_echappe", "_ACCENTS", "_parasite",
+    extraire(drive_py, {"chercher", "_chercher_fichiers_pages", "_chemins_cibles", "_paginer_mixte", "_nu", "_echappe", "_ACCENTS", "_parasite",
                         "MAX_TROUVAILLES", "MAX_PROFONDEUR", "asyncio"}, espace_d)
     chercher = espace_d["chercher"]
     peri = [(None, "all")]

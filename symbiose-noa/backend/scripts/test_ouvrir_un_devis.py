@@ -187,6 +187,11 @@ if not nas_cote and drive_py.exists():
 
     class _Fichiers:
         def list(self, **kwargs):
+            q = kwargs.get("q", "")
+            if "mimeType = 'application/vnd.google-apps.folder'" in q:
+                return _Liste({"files": [
+                    {"id": f"dv{i}", "name": "Devis", "parents": ["f1"]}
+                    for i in range(300)]})
             return _Liste({"files": [
                 {"id": f"x{i}", "name": f"Devis abri {i} - REF LEFEVRE.pdf",
                  "parents": ["f1"], "modifiedTime": "2026-08-30"} for i in range(12)]})
@@ -208,12 +213,18 @@ if not nas_cote and drive_py.exists():
     async def _drives(service):
         return [{"id": "dr1", "name": "Symbiose Paysage"}]
 
+    async def _chemins_cibles_stub(service, elements, drives):
+        for element in elements:
+            element["chemin"] = "Symbiose Paysage/33 TALENCE - LEFEVRE"
+        return {}
+
     esp_c = {"DriveRefuse": _Refus, "logger": logging.getLogger("banc"),
              "_service": _srv, "_drives_nommes": _drives, "_catalogue": _catalogue_double,
              "_tout_le_drive": lambda p: True, "_enfants_par_lots": None,
+             "_chemins_cibles": _chemins_cibles_stub,
              "Optional": __import__("typing").Optional,
              "_MIME_DOSSIER": "application/vnd.google-apps.folder", "MAX_DOSSIERS_ARBRE": 3000}
-    extraire(drive_py, {"chercher", "_paginer_mixte", "_nu", "_echappe", "_ACCENTS", "_parasite",
+    extraire(drive_py, {"chercher", "_chercher_fichiers_pages", "_paginer_mixte", "_nu", "_echappe", "_ACCENTS", "_parasite",
                         "MAX_TROUVAILLES", "MAX_PROFONDEUR", "asyncio"}, esp_c)
     rc = asyncio.run(esp_c["chercher"]("devis", [(None, "all")]))
     fichiers_p1 = [t for t in rc["resultats"] if not t["dossier"]]
