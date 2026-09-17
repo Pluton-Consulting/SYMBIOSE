@@ -62,6 +62,15 @@ def _identite(user) -> str:
     return str(getattr(user, "id", "") or "")
 
 
+# UNE RECHERCHE NE SE BLOQUE PAS EN TEMPS (règle du 01/09). Le délai posé le 17/09
+# au matin — 45 s, contre un Google muet — était plus court que le travail NORMAL :
+# « entretien » porte des centaines de fichiers à replacer dans 12 150 dossiers, la
+# recherche a été déclarée en échec, le modèle l'a redemandée, et le tour s'est
+# fermé sur « a échoué et redonnerait le même résultat ». Ce garde ne vise que le
+# service qui ne répond PLUS : il se compte en minutes.
+DELAI_RECHERCHE_DRIVE_S = 300
+
+
 async def _drive(fonction, *args, **kwargs):
     """Appelle un geste Drive et rend un échec comme un ÉCHEC.
 
@@ -239,10 +248,11 @@ async def drive_chercher(data: dict, user) -> dict:
                    identite=_identite(user),
                    page=data.get("page") or 1,
                    genre=data.get("type") or data.get("genre")),
-            timeout=45)
+            timeout=DELAI_RECHERCHE_DRIVE_S)
     except asyncio.TimeoutError:
-        _echec("La recherche Drive a dépassé 45 secondes. Le service Google ne "
-               "répond pas assez vite ; aucun fichier n'a été modifié.")
+        _echec(f"La recherche Drive a dépassé {DELAI_RECHERCHE_DRIVE_S // 60} minutes : Google ne "
+               "répond pas. Aucun fichier n'a été modifié. Un motif plus précis (un nom "
+               "entier, une année) rendra la main plus vite.")
     return garantir_recherche(resultat, motif, ouvreur="drive_ouvrir")
 
 

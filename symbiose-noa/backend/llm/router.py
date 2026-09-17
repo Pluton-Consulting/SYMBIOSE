@@ -638,6 +638,49 @@ def sante_cascade() -> list[dict]:
     return etat
 
 
+# LA RÉFLEXION SE BRIDE, MODÈLE PAR MODÈLE (mesuré le 17/09 sur Ollama Cloud, porté
+# du projet jumeau le jour même).
+#
+# Trace du fil d13ff0ac, 17/09 : pour écrire un bloc d'action de CENT caractères,
+# deepseek-v4-pro rendait 2 000 à 13 770 jetons de sortie — il réfléchissait à
+# chaque passe, 10 à 60 s l'appel, et quatre fois en vingt minutes il a dépassé
+# ses 120 s : « délai dépassé — candidat suivant », deux minutes perdues à chaque
+# fois. Un tour de trente passes y laissait plus de dix minutes.
+# La bride n'est pas la même partout, et la mauvaise valeur est PIRE que rien
+# (glm « none » : 6 000 jetons de pensée en clair ; deepseek flash « low » :
+# réponse vide) : la table ne porte que ce qui a été MESURÉ.
+#   famille            texte court/extraction   palier COMPLEX     vision
+#   deepseek-v4 flash  none  (5,6 s, 11/12)     none               low (4,7 s)
+#   deepseek-v4 pro    none  (24 s, 8/12)       low (61 s, 11/12)  —
+#   kimi-k3            low   (13 s, 10/12)      low                low (8,3 s)
+#   glm-5.3*           low   (12,6 s, 9/12)     low                low (10,2 s)
+#   minimax-m3         none  (13,7 s)           none               —
+# Tout autre modèle : rien n'est envoyé. `OLLAMA_CLOUD_REFLEXION=libre` dans le
+# .env rend la main aux modèles.
+_BUDGET_REFLEXION_BASSE = 12000   # « low » pense encore : 5 885 jetons mesurés
+
+
+def reflexion_mesuree(provider: str, model: Optional[str], palier: str = "standard",
+                      usage: str = "texte") -> Optional[str]:
+    """La valeur de `reasoning_effort` à envoyer, ou None pour ne rien envoyer."""
+    if provider != "ollama_cloud":
+        return None
+    if str(getattr(settings, "ollama_cloud_reflexion", "mesuree")).strip().lower() == "libre":
+        return None
+    n = (model or "").lower()
+    if n.startswith("deepseek-v4"):
+        if usage == "vision":
+            return "low"
+        if "pro" in n and palier == "complex":
+            return "low"
+        return "none"
+    if n.startswith("kimi-k3") or n.startswith("glm-5.3"):
+        return "low"
+    if n.startswith("minimax-m3"):
+        return "none"
+    return None
+
+
 class ResilientLLM:
     """LLM résilient : parcourt la cascade du palier, retry+backoff par candidat, fallback au suivant."""
 
@@ -704,8 +747,20 @@ class ResilientLLM:
                             # la rédaction et la relecture restent au palier puissant.
                             # Cette option n’est envoyée qu’aux modèles testés
                             # qui savent explicitement désactiver le raisonnement.
+                            effort = reflexion_mesuree(provider, model, self.tier.value)
                             if extraction_documentaire and provider == "ollama_cloud" and (model or "").startswith("deepseek-v4"):
-                                options.update(reasoning_effort="none", max_tokens=8192)
+                                effort = "none"
+                                options.setdefault("max_tokens", 8192)
+                            if effort and not budget_double:
+                                options.setdefault("reasoning_effort", effort)
+                                if effort == "low":
+                                    options.setdefault("max_tokens", max(tier_max_tokens(self.tier.value),
+                                                                         _BUDGET_REFLEXION_BASSE))
+                            elif effort:
+                                # La relance après une réponse vide coupe la réflexion :
+                                # doubler le budget d'un modèle qui pense ne fait que
+                                # doubler ce qu'il pense.
+                                options["reasoning_effort"] = "none"
                             result = await llm.ainvoke(messages, **options)
                     # CE QUE L'APPEL A COÛTÉ, compté ICI parce que c'est le seul
                     # endroit que TOUS les appels traversent. Les nœuds du
@@ -843,7 +898,11 @@ def get_vision_candidates() -> list[tuple[Any, str]]:
             logger.warning("Modèle texte ignoré pour la vision : %s", model)
             continue
         try:
-            sortie.append((_build_model(provider, model), f"{provider}:{model}"))
+            llm_vision = _build_model(provider, model)
+            effort = reflexion_mesuree(provider, model, usage="vision")
+            if effort:
+                llm_vision = llm_vision.bind(reasoning_effort=effort, max_tokens=4096)
+            sortie.append((llm_vision, f"{provider}:{model}"))
         except Exception as e:  # noqa: BLE001
             logger.warning("Modèle vision %s non constructible : %s", provider, e)
     return sortie

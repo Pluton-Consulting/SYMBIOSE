@@ -809,6 +809,7 @@ async def _balayer_dossiers(service) -> tuple[dict, bool]:
 # pendant sa reconstruction de fond, et chauffé au démarrage par la carte du
 # classement (`classement.carte`) pour le compte de service.
 CATALOGUE_DRIVE_DUREE_S = 3600
+_CONSTRUCTIONS: dict = {}               # clé -> tâche de construction à froid, partagée
 _CATALOGUES: dict = {}                  # clé -> {"dossiers", "partiel", "comptes", "fichiers_partiels", "construit_le", "en_cours"}
 
 
@@ -855,7 +856,17 @@ async def _catalogue(service, identite=None) -> tuple[dict, bool, dict, bool]:
             except RuntimeError:
                 pass
         return _copie_catalogue(c)
-    await _construire_catalogue(service, cle)
+    # À FROID, LA CONSTRUCTION EST PARTAGÉE ET NE MEURT PAS AVEC SON APPELANT (17/09).
+    # Elle était attendue directement : un appelant annulé (délai du geste, tour
+    # arrêté) l'emportait avec lui — soixante secondes de balayage perdues, et tout
+    # à refaire au geste suivant. Et un SECOND appelant, pendant ce temps, voyait
+    # `en_cours`, n'attendait rien, et recevait un catalogue VIDE : une recherche
+    # qui ne trouve aucun dossier, sans le dire.
+    tache = _CONSTRUCTIONS.get(cle)
+    if tache is None or tache.done():
+        tache = asyncio.ensure_future(_construire_catalogue(service, cle))
+        _CONSTRUCTIONS[cle] = tache
+    await asyncio.shield(tache)
     return _copie_catalogue(_CATALOGUES[cle])
 
 

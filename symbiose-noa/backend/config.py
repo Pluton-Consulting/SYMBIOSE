@@ -194,6 +194,9 @@ class Settings(BaseSettings):
     # images, un très gros lecteur et un très rapide.
     model_ollama_cloud_vision: str = "qwen3.5:397b"
     model_ollama_cloud_vision_secours: str = "glm-5.3-flash"
+    # « mesuree » : la bride de réflexion par modèle (`llm/router.py::reflexion_mesuree`).
+    # « libre » : rien n'est envoyé, le modèle réfléchit autant qu'il veut.
+    ollama_cloud_reflexion: str = "mesuree"
 
     # ── Appels de modèle simultanés (llm/concurrence.py) ─────────────────
     # L'abonnement autorise 10 appels de front ; au-delà, le fournisseur met en
