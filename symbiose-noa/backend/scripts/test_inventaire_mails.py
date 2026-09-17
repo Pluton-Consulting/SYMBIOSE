@@ -143,7 +143,7 @@ esp3 = esp2
 exec("\n".join(ast.get_source_segment(sk, n) for n in ast.parse(sk).body
                if (isinstance(n, ast.Assign) and getattr(n.targets[0], "id", "") in ("CATEGORIES_MAILS", "LOT_CLASSEMENT"))
                or (isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))
-                   and n.name in ("_categories_voulues", "_lire_classement", "_classer_les_mails", "_jour_lisible", "_livrer_inventaire"))), esp3)
+                   and n.name in ("_categories_voulues", "_lire_classement", "_classer_les_mails", "_jour_lisible", "_expediteur_lisible", "_livrer_inventaire"))), esp3)
 r4 = asyncio.run(lire_mails({"depuis": "7j", "classer": True, "fichier": True}, user))
 blocs = r4["bloc_ui"]
 table = next(b for b in blocs if b["type"] == "table")
@@ -211,6 +211,12 @@ verifier("le catalogue annonce `classer`, `categories`, `fichier` et dit de NE P
 a1 = (BACKEND / "agents" / "agent1.py").read_text(encoding="utf-8")
 verifier("le résultat d'un inventaire n'est pas recoupé après avoir été parcouru en entier",
          "action['skill']=='lire_mails' and isinstance(sortie,dict) and sortie.get('inventaire'):plafond=190000" in a1)
+
+nomme = esp3["_expediteur_lisible"]
+verifier("l'expéditeur se dit « Prénom Nom (adresse) » quand la messagerie donne le nom (18/09)",
+         nomme({"de": "d.j@europiscine.fr", "de_nom": "David J."}) == "David J. (d.j@europiscine.fr)"
+         and nomme({"de": "facture@sfr.fr", "de_nom": "facture@sfr.fr"}) == "facture@sfr.fr"
+         and nomme({"de": "x@y.fr"}) == "x@y.fr")
 
 print("\n" + "═" * 70)
 if echecs:
