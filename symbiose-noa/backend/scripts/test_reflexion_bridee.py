@@ -63,6 +63,17 @@ verifier("la vision est bridée elle aussi",
 verifier("le réglage existe dans config.py, à « mesuree » par défaut",
          'ollama_cloud_reflexion: str = "mesuree"' in (BACKEND / "config.py").read_text(encoding="utf-8"))
 
+# LES MODÈLES CHOISIS SUR MESURE (17/09).
+cfg = (BACKEND / "config.py").read_text(encoding="utf-8")
+verifier("vision : kimi-k3 par défaut (6 s, 5/5 sur page scannée), glm-5.3-flash en secours",
+         'model_ollama_cloud_vision: str = "kimi-k3"' in cfg and 'model_ollama_cloud_vision_secours: str = "glm-5.3-flash"' in cfg)
+vis = src[src.index("def get_vision_candidates"):]
+vis = vis[:vis.index("\ndef ", 10)]
+verifier("le modèle de vision choisi à l'écran passe DEVANT — et reste sur Ollama Cloud",
+         'tuple(c for c in choisi if c[0] == "ollama_cloud") + (' in vis)
+verifier("un modèle choisi identique au défaut n'est pas construit deux fois",
+         'if any(etiquette == f"{provider}:{model}" for _, etiquette in sortie):' in vis)
+
 print("\n" + "═" * 70)
 if echecs:
     print(f"✗ {len(echecs)} échec(s) : " + ", ".join(echecs))

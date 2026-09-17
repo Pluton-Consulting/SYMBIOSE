@@ -54,9 +54,13 @@ verifier("le commentaire explique pourquoi les confondre serait une erreur",
 verifier("Ollama Cloud est en tête des TROIS paliers",
          routeur.count('("ollama_cloud", s.model_ollama_cloud_rapide)') == 2
          and routeur.count('("ollama_cloud", s.model_ollama_cloud_puissant)') == 1)
-verifier("la vision le propose, DERRIÈRE le modèle d'OCR mesuré",
-         re.search(r'"openrouter", s\.model_openrouter_vision\).*?'
-                   r'"ollama_cloud", s\.model_ollama_cloud_vision\)', routeur, re.S))
+# 17/09 : Symbiose passe TOUTE sa vision par Ollama Cloud (décision de Noa), le
+# modèle choisi à l'écran devant, puis le modèle mesuré et son secours.
+verifier("la vision ne passe que par Ollama Cloud : le choix de l'écran, le modèle mesuré, son secours",
+         re.search(r'tuple\(c for c in choisi if c\[0\] == "ollama_cloud"\) \+ \(\s*'
+                   r'\("ollama_cloud", s\.model_ollama_cloud_vision\),\s*'
+                   r'\("ollama_cloud", s\.model_ollama_cloud_vision_secours\)\)', routeur, re.S)
+         and '("openrouter", s.model_openrouter_vision)' not in routeur)
 verifier("le catalogue de l'écran le montre en premier",
          '("ollama_cloud", "Ollama Cloud"' in routeur)
 
@@ -198,8 +202,12 @@ verifier("l'état se lit pour l'écran d'administration",
 
 # ── 3. Le branchement : les trois points d'appel de modèle ───────────────
 verifier("la porte entoure l'appel de la cascade, PAS la cascade elle-même",
-         re.search(r"async with porte_llm\(\):\s*\n\s*result = await llm\.ainvoke\(messages",
-                   routeur))
+         # l'appel vit DANS le bloc de la porte (la bride de réflexion s'y prépare, 17/09),
+         # et la porte reste à l'intérieur du délai du candidat, pas autour de la cascade.
+         re.search(r"async with porte_llm\(\):\n(?:[ ]{28,}.*\n)+?[ ]{28}result = await llm\.ainvoke\(messages",
+                   routeur)
+         and routeur.index("async with asyncio.timeout(delai_disponible(tier_timeout(self.tier.value))):")
+             < routeur.index("async with porte_llm():"))
 verifier("le backoff reste HORS de la porte",
          routeur.index("await asyncio.sleep(delai_disponible(delay))") > routeur.index("async with porte_llm()"))
 a2 = (BACKEND / "agents" / "agent2.py").read_text(encoding="utf-8")

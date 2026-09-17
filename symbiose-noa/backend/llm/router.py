@@ -889,9 +889,15 @@ def get_vision_candidates() -> list[tuple[Any, str]]:
     # Anthropic, Google et Groq pouvaient envoyer des pièces jointes vers un
     # fournisseur différent du modèle de texte choisi ; ils sont donc refusés
     # ici, même si une clé existe encore dans la base.
-    candidats_ollama = (("ollama_cloud", s.model_ollama_cloud_vision),
-                        ("ollama_cloud", s.model_ollama_cloud_vision_secours))
+    # LE CHOIX FAIT À L'ÉCRAN PASSE DEVANT (17/09) : le patch du matin calculait
+    # `choisi`… puis ne le lisait plus — le réglage « modèle de vision » de
+    # Paramètres ne servait à rien. Il reste soumis à la même règle : Ollama Cloud.
+    candidats_ollama = tuple(c for c in choisi if c[0] == "ollama_cloud") + (
+        ("ollama_cloud", s.model_ollama_cloud_vision),
+        ("ollama_cloud", s.model_ollama_cloud_vision_secours))
     for provider, model in candidats_ollama:
+        if any(etiquette == f"{provider}:{model}" for _, etiquette in sortie):
+            continue   # le modèle choisi à l'écran est souvent aussi celui du défaut
         if not _provider_available(provider):
             continue
         if any(m in str(model).lower() for m in ("deepseek-v4", "deepseek-chat", "deepseek-reasoner")):
