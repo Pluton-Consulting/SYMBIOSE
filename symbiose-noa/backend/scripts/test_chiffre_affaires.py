@@ -151,6 +151,9 @@ verifier("« A définir » est un devis qui ATTEND (691 devis étaient invisible
 verifier("« Transformé », « Devis Archivé », « Perdu » n'attendent plus",
          not routines._statut_attend("Transformé") and not routines._statut_attend("Devis Archivé")
          and not routines._statut_attend("Perdu") and not routines._statut_attend("Partiellement transformé"))
+src_r = (BACKEND / "skills" / "routines.py").read_text(encoding="utf-8")
+verifier("les devis en attente ont un PLAFOND d'ancienneté et leur montant total, calculé par le serveur",
+         '"age_max_jours"' in src_r and "montant_total_en_attente" in src_r and "trop_anciens += 1" in src_r)
 from skills import affichage  # noqa: E402
 res_l = affichage.garantir_listage({"chemin": "1-ÉTUDES", "entrees": [
     {"nom": "Devis.pdf", "dossier": False, "octets": 2048, "modifie_le": "2026-09-16T08:12:03.000Z"},

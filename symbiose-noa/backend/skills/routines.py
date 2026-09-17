@@ -990,6 +990,14 @@ async def dossiers_en_attente(data: dict, user) -> dict:
     except ValueError:
         seuil = JOURS_PAR_DEFAUT
     seuil = max(0, min(seuil, 3650))
+    # L'ANCIENNETÉ A AUSSI UN PLAFOND (17/09). Depuis que « A définir » compte comme une attente,
+    # 692 devis sortent, dont les plus anciens ont cinq ans : triés du plus ancien au plus récent,
+    # les quarante premiers étaient tous de 2021 — personne ne relance un devis de 2021.
+    try:
+        age_max = int(str(data.get("age_max_jours") or data.get("pas_plus_de") or data.get("jusqu_a") or 0).split()[0])
+    except (ValueError, IndexError):
+        age_max = 0
+    age_max = age_max if age_max > seuil else 0
     demande_jeu = str(data.get("source_type") or data.get("jeu") or "").strip()
     statuts = data.get("statuts") or None
     if isinstance(statuts, str):
@@ -1031,7 +1039,7 @@ async def dossiers_en_attente(data: dict, user) -> dict:
         logger.warning("Suivi des dossiers impossible : %s", e)
         raise SkillError("Les données des dossiers sont momentanément indisponibles.")
 
-    en_attente, sans_date, clos = [], 0, 0
+    en_attente, sans_date, clos, trop_anciens = [], 0, 0, 0
     for jeu, d in lignes:
         if not _statut_attend(_valeur(d, "statut"), statuts):
             clos += 1
@@ -1039,6 +1047,9 @@ async def dossiers_en_attente(data: dict, user) -> dict:
         age = age_en_jours(_valeur(d, "date"))
         if age is None:
             sans_date += 1
+            continue
+        if age >= seuil and age_max and age > age_max:
+            trop_anciens += 1
             continue
         if age >= seuil:
             en_attente.append({
@@ -1057,6 +1068,12 @@ async def dossiers_en_attente(data: dict, user) -> dict:
     en_attente.sort(key=lambda x: -x["jours"])
     total = len(en_attente)
     montres = en_attente[:MAX_DOSSIERS_AFFICHES]
+    # LE MONTANT TOTAL EN ATTENTE, calculé ici : « indique le montant total » ne se confie pas à
+    # un modèle qui n'a que quarante lignes sous les yeux sur six cents.
+    from skills.lecture import est_un_nombre, lire_montant
+    montant_total = round(sum(lire_montant(x["montant"]) for x in en_attente if est_un_nombre(x["montant"])), 2)
+    recents = sum(1 for x in en_attente if x["jours"] <= 180)
+    vieux = sum(1 for x in en_attente if x["jours"] > 365)
 
     if not total:
         return {
@@ -1072,6 +1089,9 @@ async def dossiers_en_attente(data: dict, user) -> dict:
 
     return {
         "trouve": True, "nombre": total, "seuil_jours": seuil,
+        "age_max_jours": age_max or None, "ecartes_car_trop_anciens": trop_anciens or None,
+        "montant_total_en_attente": _euros(montant_total) if montant_total else None,
+        "dont_moins_de_6_mois": recents, "dont_plus_d_un_an": vieux,
         "dossiers_examines": len(lignes), "dossiers_clos": clos,
         "sans_date_lisible": sans_date or None,
         "dossiers": montres,
@@ -1086,6 +1106,8 @@ async def dossiers_en_attente(data: dict, user) -> dict:
         "message_final": (
             f"{total} dossier(s) attendent une réponse depuis plus de {seuil} jours"
             + (f", le plus ancien depuis {montres[0]['jours']} jours." if montres else ".")
+            + (f" Montant total en attente : {_euros(montant_total)}." if montant_total else "")
+            + (f" {vieux} ont plus d'un an, {recents} moins de six mois." if total > MAX_DOSSIERS_AFFICHES else "")
             + (f" {sans_date} dossier(s) n'ont pas de date lisible et n'ont pas pu être "
                f"examinés." if sans_date else "")),
         "a_faire": (
@@ -1509,8 +1531,11 @@ SKILLS = {
             "ceux qui portent des affaires en cours. `statuts` : les statuts qui "
             "comptent comme « en attente », si la maison a son propre "
             "vocabulaire. Le resultat donne un bloc ```ui a inserer TEL QUEL. "
+            "`age_max_jours` : ne garder que ce qui attend depuis MOINS de N jours (180 pour « les "
+            "devis recents a relancer ») — sans lui, les plus anciens sortent en tete. Le MONTANT "
+            "TOTAL en attente est calcule par le serveur. "
             "N'envoie AUCUNE relance : ce geste ne fait que regarder"),
-        requis=[], optionnels=["jours", "source_type", "statuts"],
+        requis=[], optionnels=["jours", "age_max_jours", "source_type", "statuts"],
         effet="lecture",
         libelle="je regarde les dossiers en attente"),
     "prix_observes": Declaration(
