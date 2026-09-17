@@ -92,6 +92,16 @@ cherche = src[src.index("async def chercher("):]
 verifier("`chercher` essaie le motif entier puis les mots UTILES", "essais = [motif] + _mots_de_repli(jetons, list(drives.values()))" in cherche
          and "max(jetons, key=len)" not in cherche)
 
+# LA RECHERCHE DE CONTENU RENDAIT ZÉRO POUR TOUT (17/09) : la condition était à l'envers — les
+# dossiers interrogés en plein texte, les fichiers jamais.
+bloc = cherche[cherche.index("requete_base = f\"trashed = false"):cherche.index("await _chemins_cibles(service, trouves, drives)")]
+verifier("en recherche de CONTENU, ce sont les FICHIERS qu'on interroge — et pas les dossiers",
+         "([], False) if dans_contenu else await _chercher_fichiers_pages" in bloc
+         and "if not dans_contenu:\n                    fichiers_page" not in bloc
+         and "max_pages=3 if dans_contenu else 20" in bloc)
+verifier("le plein texte garde l'ordre de pertinence de l'index (pas de tri par nom)",
+         "if not dans_contenu:\n        trouves.sort(" in cherche)
+
 a1 = (BACKEND / "agents" / "agent1.py").read_text(encoding="utf-8")
 voie = a1[a1.index("if question_meta(str(state.get(\"query\")"):][:1200]
 verifier("la voie rapide évite l'appel d'orientation, pas la réflexion : une suite courte part au palier qui raisonne",

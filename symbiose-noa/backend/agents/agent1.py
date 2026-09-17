@@ -2839,6 +2839,19 @@ def _blocs_garantis(texte: str, state: AgentState) -> str:
         du_genre = [g for g in garantis if g.get("type") == genre]
         if len(du_genre) > 1:
             garantis = [g for g in garantis if g.get("type") != genre] + [du_genre[-1]]
+    # LE MÊME GESTE REFAIT REMPLACE SON BLOC, IL NE L'EMPILE PAS (17/09, fil ca57dd3e). « Mets-moi
+    # ça dans un Excel » : `lire_mails` a tourné cinq fois dans le tour, et le tableau des 98 mails
+    # s'est affiché CINQ fois (105 000 caractères de message). Les résumés, rédigés par le modèle
+    # à chaque passe, différaient d'un mot : aucune signature exacte ne les rapprochait. Deux
+    # blocs garantis de même type ET de même titre sont le même objet : on garde le DERNIER.
+    derniers: dict = {}
+    for rang, g in enumerate(garantis):
+        titre_g = " ".join(str(g.get("titre") or g.get("title") or "").split()).lower()
+        if titre_g:
+            derniers[(g.get("type"), titre_g)] = rang
+    garantis = [g for rang, g in enumerate(garantis)
+                if not " ".join(str(g.get("titre") or g.get("title") or "").split())
+                or derniers[(g.get("type"), " ".join(str(g.get("titre") or g.get("title") or "").split()).lower())] == rang]
     types_uniques_garantis = {g.get("type") for g in garantis if g.get("type") in uniques}
     if not garantis:
         return texte

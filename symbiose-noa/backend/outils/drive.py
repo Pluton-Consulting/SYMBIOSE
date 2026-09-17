@@ -2069,7 +2069,12 @@ async def chercher(motif: str, perimetres: Optional[list] = None,
         for essai in essais:
             requete_base = f"trashed = false and {champ} contains '{_echappe(essai)}'"
             try:
-                dossiers_page, incomplet = await _chercher_fichiers_pages(
+                # LA CONDITION ÉTAIT À L'ENVERS (17/09) : en recherche de CONTENU, seuls les
+                # dossiers étaient interrogés — or un dossier n'a pas de contenu — et les
+                # fichiers jamais. `drive_chercher_contenu` rendait zéro pour tout, « facture »
+                # compris, depuis sa création. Le contenu se cherche dans les FICHIERS ; les
+                # dossiers ne se cherchent que par leur nom.
+                dossiers_page, incomplet = ([], False) if dans_contenu else await _chercher_fichiers_pages(
                     service, requete_base + f" and mimeType = '{_MIME_DOSSIER}'")
                 partiel = partiel or incomplet
                 for d in dossiers_page:
@@ -2080,23 +2085,25 @@ async def chercher(motif: str, perimetres: Optional[list] = None,
                     trouves.append({"id": d.get("id"), "nom": d.get("name"),
                                     "parents": d.get("parents") or [],
                                     "dossier": True})
-                if not dans_contenu:
-                    fichiers_page, incomplet = await _chercher_fichiers_pages(
-                        service, requete_base + f" and mimeType != '{_MIME_DOSSIER}'")
-                    partiel = partiel or incomplet
-                    for f in fichiers_page:
-                        # Le fournisseur a déjà appliqué `name/fullText
-                        # contains`. Ne pas refaire un filtre local ici :
-                        # l'API peut avoir normalisé accents et ponctuation
-                        # différemment de `_nu`, et un fichier trouvé par le
-                        # mot de repli reste une correspondance utile.
-                        if f.get("id") in ids_vus:
-                            continue
-                        ids_vus.add(f["id"])
-                        trouves.append({"id": f.get("id"), "nom": f.get("name"),
-                                        "parents": f.get("parents") or [],
-                                        "dossier": False,
-                                        "modifie_le": f.get("modifiedTime")})
+                # Plein texte : trois pages suffisent (600 fichiers), l'index de Google est
+                # classé par pertinence et un mot courant en ramènerait des milliers.
+                fichiers_page, incomplet = await _chercher_fichiers_pages(
+                    service, requete_base + f" and mimeType != '{_MIME_DOSSIER}'",
+                    max_pages=3 if dans_contenu else 20)
+                partiel = partiel or incomplet
+                for f in fichiers_page:
+                    # Le fournisseur a déjà appliqué `name/fullText
+                    # contains`. Ne pas refaire un filtre local ici :
+                    # l'API peut avoir normalisé accents et ponctuation
+                    # différemment de `_nu`, et un fichier trouvé par le
+                    # mot de repli reste une correspondance utile.
+                    if f.get("id") in ids_vus:
+                        continue
+                    ids_vus.add(f["id"])
+                    trouves.append({"id": f.get("id"), "nom": f.get("name"),
+                                    "parents": f.get("parents") or [],
+                                    "dossier": False,
+                                    "modifie_le": f.get("modifiedTime")})
             except Exception as e:  # noqa: BLE001
                 partiel = True
                 logger.warning("Drive : recherche « %s » échouée : %s", essai, e)
@@ -2149,9 +2156,11 @@ async def chercher(motif: str, perimetres: Optional[list] = None,
     trouves = [t for t in trouves if not _parasite(t.get("nom"))]
     # L'exact d'abord, puis le chemin court : le dossier « Davy SAINT LAURENT »
     # doit précéder « Anciens clients/2019/SAINT LAURENT ancien devis ».
-    trouves.sort(key=lambda t: (0 if _nu(t.get("nom")) == cible else 1,
-                                len(t.get("chemin") or ""),
-                                _nu(t.get("nom"))))
+    # En recherche de CONTENU, le nom ne dit rien : on garde l'ordre de pertinence de l'index.
+    if not dans_contenu:
+        trouves.sort(key=lambda t: (0 if _nu(t.get("nom")) == cible else 1,
+                                    len(t.get("chemin") or ""),
+                                    _nu(t.get("nom"))))
     # DOSSIERS ET FICHIERS SE PARTAGENT CHAQUE PAGE (08/09 soir) : triés
     # dossiers d'abord, « devis » cachait tous les fichiers derrière des
     # centaines de dossiers « Devis ». `genre` (« fichiers » / « dossiers »)
