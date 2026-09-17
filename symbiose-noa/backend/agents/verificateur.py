@@ -135,12 +135,22 @@ def lire_verdict(brut) -> dict | None:
 
 
 def suite(verification: dict | None, gestes_connus, forcages: int, max_forcages: int,
-          redaction_deja_reprise: bool) -> str:
+          redaction_deja_reprise: bool, aucun_geste: bool = False) -> str:
     """rehydrate | forcer | rediger — ce que le graphe fait du verdict."""
     if not verification or verification.get("statut") != "a_corriger":
         return "rehydrate"
     action = verification.get("action_manquante") or ""
     if action and action in (gestes_connus or ()) and forcages < max_forcages:
+        return "forcer"
+    # UN ACTE AFFIRMÉ, AUCUN GESTE DANS LE TOUR : CE QUI MANQUE EST LE GESTE, PAS UNE MEILLEURE
+    # PHRASE (17/09, « fais-moi l'intérieur des angles des margelles arrondis »). Le modèle avait
+    # imité le texte de la carte d'accord (« Voici la retouche que je vais produire… ») sans
+    # émettre l'action ; le relecteur l'a vu, mais n'a pas NOMMÉ le geste. On partait alors
+    # réécrire — et c'est dans cette passe de rédaction que le modèle a enfin écrit la bonne
+    # action, là où un bloc d'action n'est plus exécutable. Le tour finissait en « je n'ai pas pu
+    # traiter cette demande ». Sans aucun geste au compteur, on force : le forceur repart d'un
+    # contexte neuf, catalogue et images du fil sous les yeux.
+    if aucun_geste and not action and forcages < max_forcages:
         return "forcer"
     if not redaction_deja_reprise:
         return "rediger"

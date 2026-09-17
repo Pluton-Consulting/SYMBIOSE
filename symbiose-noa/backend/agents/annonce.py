@@ -185,6 +185,11 @@ SATISFAIT_PAR = {
 }
 
 
+_VOICI_CE_QUE_JE_VAIS = re.compile(
+    r"\bvoi(?:ci|la)\b[^.!?\n]{0,80}\bque je vais (?:produire|realiser|faire|generer|creer|appliquer|"
+    r"lancer|envoyer|deposer|preparer|modifier|retoucher)\b", re.IGNORECASE)
+
+
 def est_une_annonce(texte: str) -> bool:
     """Le texte promet-il une action au lieu de la faire ?
 
@@ -203,6 +208,12 @@ def est_une_annonce(texte: str) -> bool:
     if not isinstance(texte, str):
         texte = str(texte or "")
     nu = _sans_accent(texte)
+    # LE TEXTE DE LA CARTE D'ACCORD, IMITÉ SANS L'ACTION (17/09). « Voici la retouche que je vais
+    # produire. » est la phrase qui précède une carte d'accord ; après quatre retouches dans le
+    # fil, le modèle l'a recopiée SEULE, sans émettre le geste. « Voici » la faisait passer pour
+    # une phrase qui livre. Un « voici » suivi d'un futur à la première personne ne livre rien.
+    if _VOICI_CE_QUE_JE_VAIS.search(nu) and "?" not in nu:
+        return True
     if _PAS_UNE_PROMESSE.search(nu):
         return False
     return bool(ANNONCE_SANS_ACTE.search(nu))

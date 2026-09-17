@@ -84,6 +84,19 @@ if V:
              V.suite({**v, "action_manquante": "geste_invente"}, connus, 0, 2, False) == "rediger")
     verifier("budget de forçage épuisé → rédiger", V.suite(v, connus, 2, 2, False) == "rediger")
     verifier("verdict ok → afficher", V.suite({"statut": "ok"}, connus, 0, 2, False) == "rehydrate")
+    # 17/09 : « fais l'intérieur des angles des margelles arrondis ». Le modèle a recopié le texte
+    # de la carte d'accord SANS émettre le geste ; le relecteur a vu la faute sans nommer le geste ;
+    # le tour est parti en rédaction, où le bon `modifier_visuel` écrit n'est plus exécutable.
+    sans_nom = {**v, "action_manquante": ""}
+    verifier("AUCUN geste dans le tour, faute vue, geste non nommé → forcer (la rédaction ne peut plus agir)",
+             V.suite(sans_nom, connus, 0, 2, False, aucun_geste=True) == "forcer")
+    verifier("… mais si un geste a déjà tourné, on rédige comme avant",
+             V.suite(sans_nom, connus, 0, 2, False, aucun_geste=False) == "rediger"
+             and V.suite(sans_nom, connus, 0, 2, False) == "rediger")
+    verifier("… et budget de forçage épuisé → rédiger",
+             V.suite(sans_nom, connus, 2, 2, False, aucun_geste=True) == "rediger")
+    verifier("un verdict ok n'est jamais forcé, même sans geste",
+             V.suite({"statut": "ok"}, connus, 0, 2, False, aucun_geste=True) == "rehydrate")
     txt = V.pour_la_redaction(v)
     verifier("la rédaction reprise reçoit ce que le relecteur a vu", "RELECTEUR" in txt and "a" in txt and "dis-le" in txt)
     c = V.consigne("apprends ma signature", "1. apprendre_signature() → ok", "- apprendre_signature : …",
