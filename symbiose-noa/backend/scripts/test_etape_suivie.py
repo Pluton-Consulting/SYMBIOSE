@@ -69,6 +69,13 @@ verifier("l'écran affiche l'étape à CHAQUE sondage (libellé, frise, étape d
          tsx.count("montrerEtape(suivi)") == 2 and "if (e.libelle) setActivite(e.libelle)" in tsx
          and "etapeDuSkill(e.skill ?? \"\")" in tsx)
 
+# Le PLAN APPROUVÉ : l'étape était sondée et reçue, mais rendue nulle part au téléphone.
+verifier("le bandeau d'étape s'affiche aussi pendant un accord en cours et une reprise suivie",
+         "enCours={loading || accordEnCours !== null || repriseSuivie}" in tsx)
+verifier("la reprise suivie après un POST perdu allume la frise ET se referme à la fin",
+         "setRepriseSuivie(true)" in tsx and tsx.count("setRepriseSuivie(false)") >= 2
+         and tsx.count("setThinkingSteps((prev) => (prev[prev.length - 1] === n ? prev : [...prev, n]))") >= 2)
+
 print("\n" + "═" * 70)
 if echecs:
     print(f"✗ {len(echecs)} échec(s) : " + ", ".join(echecs))
