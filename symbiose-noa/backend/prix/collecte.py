@@ -57,7 +57,7 @@ async def _recenser(service) -> dict[str, dict]:
                     q=f"name contains '{mot}' and mimeType='application/pdf' and trashed=false",
                     spaces="drive", corpora="allDrives", includeItemsFromAllDrives=True,
                     supportsAllDrives=True, pageSize=200,
-                    fields="nextPageToken,files(id,name,size,modifiedTime)")
+                    fields="nextPageToken,files(id,name,size,modifiedTime,parents)")
                 if jeton:
                     args["pageToken"] = jeton
                 return service.files().list(**args).execute()
@@ -96,16 +96,20 @@ async def _ecrire(conn, fichier: dict, etat_piece: str, niveau: str, piece: Opti
     async with conn.transaction():
         await conn.execute(
             "INSERT INTO pieces_chiffrees(fichier_id, fichier_nom, modifie_le, etat, nature, numero, "
-            "date_piece, titre, total_ht, somme_lignes, controle, methode, lignes, access_level, lu_le) "
-            "VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14, now()) "
+            "date_piece, titre, total_ht, somme_lignes, controle, methode, lignes, access_level, "
+            "client, code_client, dossier_id, lu_le) "
+            "VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17, now()) "
             "ON CONFLICT (fichier_id) DO UPDATE SET fichier_nom=$2, modifie_le=$3, etat=$4, nature=$5, "
             "numero=$6, date_piece=$7, titre=$8, total_ht=$9, somme_lignes=$10, controle=$11, "
-            "methode=$12, lignes=$13, access_level=$14, lu_le=now()",
+            "methode=$12, lignes=$13, access_level=$14, client=$15, code_client=$16, dossier_id=$17, "
+            "lu_le=now()",
             fichier["id"], str(fichier.get("name") or "")[:300], _instant(fichier.get("modifiedTime")),
             etat_piece, (piece or {}).get("nature"), (piece or {}).get("numero"),
             (piece or {}).get("date"), ((piece or {}).get("titre") or "")[:200] or None,
             total, somme if lignes else None, controle if piece else None,
-            f"{(piece or {}).get('methode') or '-'}/{VERSION}", len(lignes), niveau)
+            f"{(piece or {}).get('methode') or '-'}/{VERSION}", len(lignes), niveau,
+            ((piece or {}).get("client") or "")[:120] or None, (piece or {}).get("code_client") or None,
+            (fichier.get("parents") or [None])[0])
         await conn.execute("DELETE FROM lignes_chiffrees WHERE fichier_id=$1", fichier["id"])
         if lignes:
             await conn.executemany(

@@ -1326,7 +1326,7 @@ LISTAGE_PAR_PAGE = 200  # entrées d'un dossier rendues par appel
 
 
 async def lister(dossier: str, perimetres: Optional[list] = None, identite=None,
-                 page: int = 1) -> dict:
+                 page: int = 1, tri: Optional[str] = None) -> dict:
     """Le CONTENU d'un dossier, NOMMÉ : sous-dossiers et fichiers, taille et date.
 
     08/09 soir : « il y a quoi dans le dossier ? » → « 1 fichier, pdf ×1 » ;
@@ -1356,8 +1356,13 @@ async def lister(dossier: str, perimetres: Optional[list] = None, identite=None,
     def _tri(e):
         return _nu(e.get("name") or "")
 
+    # `tri: "date"` : le plus récemment modifié d'abord (17/09). Par défaut l'alphabet, comme avant.
+    if str(tri or "").lower().startswith("date"):
+        def _tri(e):  # noqa: F811 — même nom, autre clé
+            return tuple(-ord(c) for c in str(e.get("modifiedTime") or ""))
+
     entrees = [{"nom": e.get("name") or "?", "chemin": f"{dossier}/{e.get('name') or '?'}",
-                "dossier": True}
+                "dossier": True, "modifie_le": e.get("modifiedTime")}
                for e in sorted(dossiers, key=_tri)]
     entrees += [{"nom": f.get("name") or "?", "chemin": f"{dossier}/{f.get('name') or '?'}",
                  "dossier": False, "octets": int(f.get("size") or 0),
@@ -1702,6 +1707,7 @@ async def _binaire(fichier: dict, service, vrai_nom: str, mime: str) -> tuple:
 # et lu, mais sans carte, sans aperçu, et sans jeton à reprendre pour le
 # retenir comme trame.
 MAX_OCTETS_AFFICHAGE = 60 * 1024 * 1024
+MAX_LIGNES_TABLEAU_OUVERT = 5000
 
 
 async def _deposer_pour(fichier: dict, service, proprietaire: str | None, resultat: dict) -> dict:
@@ -1732,6 +1738,25 @@ async def _deposer_pour(fichier: dict, service, proprietaire: str | None, result
                                 "lecture_integrale_disponible": True}
         except Exception as e:
             resultat={**resultat,"lecture_integrale_disponible":False,"avertissement_lecture":"Lecture intégrale non enregistrée ("+type(e).__name__+"). Utilise ajouter_source_dossier avant une synthèse complète."}
+        # UN CLASSEUR OUVERT SE TRAITE EN ENTIER, COMME UN CLASSEUR JOINT (17/09). « La liste des
+        # clients est dans le fichier Excel du Drive » : le modèle n'en recevait que le texte, et
+        # pour écrire à chacun il RECOPIAIT les lignes — il s'arrête vers trente (déjà payé le 03/09
+        # avec un fichier joint : 95 clients, 30 mails). Les lignes partent donc À CÔTÉ du texte ;
+        # la boucle d'actions les range dans l'état du fil, et `@tableau` les désigne toutes.
+        if vrai_nom.lower().endswith((".xlsx", ".xlsm", ".xls", ".csv")):
+            try:
+                from ingestion.parsers import lire_csv, lire_excel
+                lecteur = lire_csv if vrai_nom.lower().endswith(".csv") else lire_excel
+                colonnes, lignes = await asyncio.to_thread(lecteur, binaire)
+                if lignes:
+                    resultat = {**resultat, "tableau_du_fichier": {
+                        "nom": vrai_nom, "colonnes": list(colonnes), "lignes": list(lignes)[:MAX_LIGNES_TABLEAU_OUVERT]},
+                        "tableau": (f"{len(lignes)} ligne(s), colonnes : " + ", ".join(str(c) for c in colonnes)[:400]
+                                    + ". Pour agir sur TOUTES ses lignes (un mail à chacun, un planning), écris "
+                                      "`\"@tableau\"` à la place de la liste : le serveur y met le tableau entier. "
+                                      "Ne recopie jamais ses lignes.")}
+            except Exception as e:  # noqa: BLE001 — un classeur illisible reste un fichier ouvert
+                logger.info("Tableau du classeur ouvert illisible : %s", str(e)[:120])
         from skills.affichage import garantir_fichier_lu
         return garantir_fichier_lu(resultat, vrai_nom, binaire, proprietaire, mime)
     except Exception as e:  # noqa: BLE001
@@ -1740,13 +1765,25 @@ async def _deposer_pour(fichier: dict, service, proprietaire: str | None, result
 
 
 async def ouvrir(nom: str, perimetres: Optional[list] = None, identite=None,
-                 proprietaire: str | None = None) -> dict:
+                 proprietaire: str | None = None, exact: bool = False) -> dict:
     """Lit un fichier depuis son NOM, sans en connaître l'identifiant.
 
     La voie normale pour lire un fichier : personne ne connaît par cœur un
     identifiant Drive, et un modèle qui n'en a pas sous les yeux l'INVENTE.
+
+    `exact` (17/09, prompt « ouverture certaine ») : la résolution cherche l'exact PUIS
+    l'approché, ce qui sert « ouvre le devis Dupont » — et trahit « ouvre CE fichier et aucun
+    autre ». Avec `exact`, un nom qui n'est pas celui demandé fait REFUSER, et les noms les
+    plus proches sont proposés au lieu d'être ouverts.
     """
     fichier, service, autres = await _resoudre_fichier(nom, perimetres, identite)
+    if exact:
+        voulu = _nu(nom.replace("\\", "/").rstrip("/").split("/")[-1])
+        if _nu(fichier.get("name") or "") != voulu:
+            proches = [f.get("name") for f in [fichier] + list(autres or []) if f.get("name")][:5]
+            raise DriveRefuse(
+                f"Aucun fichier ne s'appelle exactement « {nom} » : rien n'a été ouvert. "
+                "Noms les plus proches : " + " ; ".join(f"« {p} »" for p in proches) + ".")
     from ingestion.connectors.google_drive import _download_text
     texte = await asyncio.to_thread(_download_text, service, fichier)
     if texte is None:
@@ -2499,6 +2536,129 @@ async def deposer(dossier: str, nom: str, contenu: bytes,
             + (" (La réponse du Drive s'était perdue : le fichier avait bien été "
                "créé, il n'a pas été envoyé deux fois.)" if reconcilie else "")),
     }
+
+
+# CRÉER UN DOSSIER, ET Y COPIER LE DOSSIER TYPE (17/09). Demandé trois fois en prod (« crée-moi un
+# dossier étude avec le fichier type 33-MODELE », « nouveau dossier ») : aucun geste ne savait le
+# faire, l'assistant montrait les dossiers voisins puis s'arrêtait. Mêmes règles que le dépôt :
+# DANS le périmètre, jamais de doublon (le Drive accepte deux dossiers du même nom côte à côte —
+# c'est pire qu'un refus), et une copie bornée pour qu'un modèle mal choisi ne duplique pas un
+# Drive entier.
+MAX_COPIES_DOSSIER_TYPE = 150
+MAX_PROFONDEUR_COPIE = 4
+
+
+async def voisins(parent: str, perimetres: Optional[list] = None, identite=None, combien: int = 6) -> list[str]:
+    """Quelques dossiers DÉJÀ présents dans `parent` : le nommage de la maison se lit sur eux."""
+    service = await _service(identite)
+    perimetres = perimetres or []
+    racines = ([d for d, _ in perimetres if d]
+               or (await _racines(service) if _tout_le_drive(perimetres) else []))
+    cible = await _resoudre(service, parent, racines, partout=_tout_le_drive(perimetres))
+    _garde_perimetre(cible, perimetres)
+
+    def _lire():
+        return service.files().list(
+            q=f"'{cible}' in parents and trashed=false and mimeType='{_MIME_DOSSIER}'",
+            spaces="drive", fields="files(name,modifiedTime)", corpora="allDrives", orderBy="modifiedTime desc",
+            includeItemsFromAllDrives=True, supportsAllDrives=True, pageSize=max(1, combien)).execute()
+    return [f.get("name") for f in (await asyncio.to_thread(_lire)).get("files") or [] if f.get("name")]
+
+
+async def creer_dossier(parent: str, nom: str, modele: Optional[str] = None,
+                        perimetres: Optional[list] = None, identite=None) -> dict:
+    """Crée `nom` dans `parent` et, si `modele` est donné, y copie le CONTENU de ce dossier type.
+    ÉCRITURE — ne crée jamais un second dossier du même nom."""
+    parent, nom = (parent or "").strip(), " ".join((nom or "").split())
+    if not parent or not nom:
+        raise DriveRefuse("Il faut le dossier parent et le nom du dossier à créer.")
+    if "/" in nom or "\\" in nom:
+        raise DriveRefuse("Le nom d'un dossier ne contient pas de barre oblique : donne le nom seul, "
+                          "et le dossier parent à part.")
+    perimetres = perimetres or []
+    if not perimetres:
+        raise DriveRefuse("Aucun dossier du Drive n'est ouvert à l'assistant pour ce rôle : "
+                          "la création est impossible.")
+    service = await _service(identite)
+    racines = ([d for d, _ in perimetres if d]
+               or (await _racines(service) if _tout_le_drive(perimetres) else []))
+    cible = await _resoudre(service, parent, racines, partout=_tout_le_drive(perimetres))
+    _garde_perimetre(cible, perimetres)
+    source = None
+    if modele:
+        source = await _resoudre(service, str(modele).strip(), racines, partout=_tout_le_drive(perimetres))
+        _garde_perimetre(source, perimetres)
+        if source == cible:
+            raise DriveRefuse("Le dossier type et le dossier parent sont le même dossier.")
+
+    def _freres():
+        return service.files().list(
+            q=f"'{cible}' in parents and trashed=false and mimeType='{_MIME_DOSSIER}'",
+            spaces="drive", fields="nextPageToken,files(id,name)", corpora="allDrives",
+            includeItemsFromAllDrives=True, supportsAllDrives=True, pageSize=1000).execute()
+    freres = (await asyncio.to_thread(_freres)).get("files") or []
+    # « Aucune variante si un dossier proche existe déjà » : on compare sans casse ni accents.
+    proches = [f["name"] for f in freres if _nu(f.get("name")) == _nu(nom)]
+    if proches:
+        raise DriveRefuse(f"Un dossier « {proches[0]} » existe déjà dans « {parent} » : rien n'a été créé.")
+
+    ecriture = _un_fil_a_la_fois(await _build_service_pour(identite, ecriture=True))
+
+    def _creer(nom_dossier: str, dans: str):
+        return ecriture.files().create(
+            body={"name": nom_dossier, "mimeType": _MIME_DOSSIER, "parents": [dans]},
+            fields="id,name,webViewLink", supportsAllDrives=True).execute()
+
+    try:
+        cree = await asyncio.to_thread(_creer, nom, cible)
+    except Exception as e:  # noqa: BLE001 — l'API Google lève ses propres types
+        texte = str(e)
+        if "insufficient" in texte.lower() or "403" in texte or "invalid_scope" in texte:
+            raise DriveRefuse(
+                "Le Drive refuse l'ÉCRITURE : l'accès configuré est en lecture seule. Un "
+                "administrateur doit rejouer le consentement Google (scripts/google_consentement.py) "
+                "et recoller le résultat dans GOOGLE_TOKEN_JSON.") from e
+        raise DriveRefuse(f"La création du dossier a échoué : {texte[:200]}") from e
+
+    copies: list[str] = []
+    ecartes: list[str] = []
+    if source:
+        async def _copier(depuis: str, vers: str, chemin: str, profondeur: int) -> None:
+            def _enfants():
+                return service.files().list(
+                    q=f"'{depuis}' in parents and trashed=false", spaces="drive",
+                    fields="files(id,name,mimeType)", corpora="allDrives",
+                    includeItemsFromAllDrives=True, supportsAllDrives=True, pageSize=1000).execute()
+            for enfant in (await asyncio.to_thread(_enfants)).get("files") or []:
+                libelle = f"{chemin}{enfant.get('name')}"
+                if len(copies) >= MAX_COPIES_DOSSIER_TYPE:
+                    ecartes.append(libelle)
+                    continue
+                try:
+                    if enfant.get("mimeType") == _MIME_DOSSIER:
+                        if profondeur >= MAX_PROFONDEUR_COPIE:
+                            ecartes.append(libelle + "/")
+                            continue
+                        sous = await asyncio.to_thread(_creer, enfant["name"], vers)
+                        copies.append(libelle + "/")
+                        await _copier(enfant["id"], sous["id"], libelle + "/", profondeur + 1)
+                    else:
+                        await asyncio.to_thread(lambda e=enfant: ecriture.files().copy(
+                            fileId=e["id"], body={"name": e["name"], "parents": [vers]},
+                            fields="id", supportsAllDrives=True).execute())
+                        copies.append(libelle)
+                except Exception as e:  # noqa: BLE001 — une copie ratée se DIT, elle n'arrête pas les autres
+                    ecartes.append(f"{libelle} ({str(e)[:60]})")
+        await _copier(source, cree["id"], "", 0)
+
+    logger.info("Drive : dossier « %s » créé dans %s (%d élément(s) copié(s), %d écarté(s))",
+                nom, cible, len(copies), len(ecartes))
+    return {"cree": True, "nom": cree.get("name") or nom, "id": cree.get("id"), "parent": parent,
+            "chemin": f"{parent.rstrip('/')}/{cree.get('name') or nom}", "lien": cree.get("webViewLink"),
+            "copies": copies, "non_copies": ecartes,
+            "message_final": (f"Le dossier « {nom} » est créé dans « {parent} »"
+                              + (f", avec {len(copies)} élément(s) repris du dossier type" if modele else "")
+                              + (f" ; {len(ecartes)} élément(s) n'ont pas pu être copiés" if ecartes else "") + ".")}
 
 
 def _reponse_perdue(e: Exception) -> bool:

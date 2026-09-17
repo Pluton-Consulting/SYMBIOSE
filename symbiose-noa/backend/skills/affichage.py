@@ -295,6 +295,12 @@ def garantir_fichier_lu(resultat: dict, nom: str, octets: bytes, proprietaire: s
     return resultat
 
 
+def _jour(instant) -> str:
+    """« 2026-09-16T08:12:03.000Z » → « 16/09/2026 ». Illisible → tel quel, jamais une invention."""
+    t = str(instant or "")
+    return f"{t[8:10]}/{t[5:7]}/{t[0:4]}" if len(t) >= 10 and t[4] == "-" and t[7] == "-" else t
+
+
 def garantir_listage(resultat: dict, quoi: str, ouvreur: str = "nas_ouvrir") -> dict:
     """Le contenu d'un dossier en tableau MÉCANIQUE : nom, type, taille.
 
@@ -311,15 +317,30 @@ def garantir_listage(resultat: dict, quoi: str, ouvreur: str = "nas_ouvrir") -> 
     entrees = [e for e in (resultat.get("entrees") or []) if isinstance(e, dict)]
     if not entrees:
         return resultat
+    # LA DATE, QUAND LE STOCKAGE LA DONNE (17/09, prompt « Inventaire d'un dossier ») : le Drive
+    # rend la date de modification, elle n'était pas montrée. Là où elle n'existe pas (le NAS du
+    # jumeau ne la rend pas), le tableau garde ses trois colonnes d'avant.
+    date_connue = any(e.get("modifie_le") for e in entrees)
     lignes = [[str(e.get("nom") or ""),
                "Dossier" if e.get("dossier") else "Fichier",
                ("" if e.get("dossier") else octets_lisibles(e.get("octets") or 0))]
+              + ([_jour(e.get("modifie_le"))] if date_connue else [])
               for e in entrees]
+    # Deux entrées du même nom dans un même dossier : le Drive le permet, et personne ne sait
+    # ensuite laquelle fait foi. Compté par le serveur, pas deviné par le modèle.
+    vus: dict = {}
+    for e in entrees:
+        cle = " ".join(str(e.get("nom") or "").lower().split())
+        vus[cle] = vus.get(cle, 0) + 1
+    doublons = sorted({str(e.get("nom")) for e in entrees
+                       if vus.get(" ".join(str(e.get("nom") or "").lower().split()), 0) > 1})
+    if doublons:
+        resultat["doublons_de_nom"] = doublons
     dossiers = sum(1 for e in entrees if e.get("dossier"))
     fichiers = len(entrees) - dossiers
     resultat["bloc_ui"] = {"type": "table",
                            "titre": f"Contenu — {(resultat.get('chemin') or quoi or '').rsplit('/', 1)[-1]}",
-                           "columns": ["Nom", "Type", "Taille"],
+                           "columns": ["Nom", "Type", "Taille"] + (["Modifié le"] if date_connue else []),
                            "rows": lignes}
     resultat["bloc_garanti"] = True
     resultat["message_final"] = (f"{dossiers} dossier(s) et {fichiers} fichier(s) dans "

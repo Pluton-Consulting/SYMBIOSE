@@ -233,11 +233,11 @@ else:
     _poser("security", __path__=[str(BACKEND / "security")])
     drive = (BACKEND / "outils" / "drive.py").read_text(encoding="utf-8")
     verifier("`outils.drive.ouvrir` accepte un propriétaire et passe par `_deposer_pour`",
-             "proprietaire: str | None = None) -> dict:" in drive and drive.count("_deposer_pour(fichier, service, proprietaire") == 2)
+             "proprietaire: str | None = None, exact: bool = False) -> dict:" in drive and drive.count("_deposer_pour(fichier, service, proprietaire") == 2)
     verifier("`_binaire` est partagé par `octets()` (mail) et `ouvrir()` (chat)",
              "async def _binaire(" in drive and "return await _binaire(fichier, service, vrai_nom, mime)" in drive)
     outils_sk = (BACKEND / "skills" / "outils.py").read_text(encoding="utf-8")
-    verifier("le skill `drive_ouvrir` passe le propriétaire", "proprietaire=_proprietaire(user))" in outils_sk)
+    verifier("le skill `drive_ouvrir` passe le propriétaire", "proprietaire=_proprietaire(user)," in outils_sk and "exact=exact)" in outils_sk)
     # `_deposer_pour` exécutée contre un `_binaire` doublé
     src = drive[drive.find("async def _deposer_pour"):drive.find("async def ouvrir(")]
     # 15/09 : la carte d'un fichier ouvert a sa propre borne (MAX_OCTETS_AFFICHAGE,

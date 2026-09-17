@@ -139,7 +139,7 @@ def _recoller_milliers(rangee: list[Mot]) -> list[Mot]:
 
 # LA VERSION DU LECTEUR. La collecte la range avec chaque pièce : quand le lecteur apprend un
 # gabarit de plus, les pièces lues par une version plus ancienne sont rouvertes d'elles-mêmes.
-VERSION = 3
+VERSION = 4
 
 
 def _gabarit_tva_au_milieu(mots: list[Mot]) -> Optional[dict]:
@@ -334,6 +334,34 @@ def titre_de_la_piece(lignes: list[str]) -> str:
     return ""
 
 
+# LE CLIENT DE LA PIÈCE (17/09). Le logiciel l'écrit toujours au même endroit : la première
+# rangée du bloc d'adresse, « [Code client : 90DUPON] … Adresse Chantier : M. DUPONT Jean ».
+# Sans lui, ni chiffre d'affaires par client, ni « dernière prestation réalisée chez lui ».
+# Le CODE client, quand il est écrit, regroupe mieux que le nom (« Mme DUPONT », « DUPONT Anne »).
+_CODE_CLIENT = re.compile(r"code\s*client\s*:?\s*([A-Z0-9][A-Z0-9_\-]{2,19})", re.IGNORECASE)
+_NOM_CLIENT = re.compile(r"adresse\s*(?:de\s*)?(?:chantier|livraison|facturation)\s*:\s*(.+)$", re.IGNORECASE)
+MAX_CLIENT = 80
+
+
+def client_de_la_piece(lignes: list[str]) -> tuple[str, str]:
+    """(nom du client, code client) — chacun vide s'il n'est pas écrit. Jamais deviné."""
+    nom, code = "", ""
+    for t in lignes[:40]:
+        if not code:
+            m = _CODE_CLIENT.search(t)
+            if m:
+                code = m.group(1).upper()
+        if not nom:
+            m = _NOM_CLIENT.search(t)
+            if m:
+                # À l'OCR la rangée se prolonge parfois par l'étiquette voisine (« … Email »).
+                brut = re.split(r"\s+(?:email|e-mail|mobile|t[ée]l)\b", m.group(1), flags=re.IGNORECASE)[0]
+                nom = " ".join(brut.split())[:MAX_CLIENT].strip(" ,;:-")
+        if nom and code:
+            break
+    return nom, code
+
+
 def lire_pages(pages: list[list[Mot]]) -> Optional[dict]:
     """Une pièce de la maison et ses lignes, depuis les mots de ses pages — ou None."""
     textes = [[_texte(r) for r in rangees(p)] for p in pages]
@@ -351,8 +379,10 @@ def lire_pages(pages: list[list[Mot]]) -> Optional[dict]:
         m = re.search(r"total\s*h\.?\s?t\.?\s*:?\s*(-?\d[\d \u00a0\u202f]*[.,]\d{2})", t, re.IGNORECASE)
         if m and nombre(m.group(1).strip()) is not None:
             total = nombre(m.group(1).strip())
+    client, code_client = client_de_la_piece(textes[0] if textes else [])
     return {"nature": nature, "numero": numero, "date": date_de_la_piece(a_plat),
             "titre": titre_de_la_piece(a_plat), "total_ht": total,
+            "client": client, "code_client": code_client,
             "lignes": lignes[:MAX_LIGNES_PAR_PIECE]}
 
 

@@ -933,12 +933,18 @@ from skills.registre import Declaration
 # « envoye », « envoyée le 12/03 »).
 STATUTS_EN_ATTENTE = ("envoy", "attente", "relanc", "en cours", "encours",
                       "transmis", "propos", "devis", "a_relancer", "a relancer",
-                      "etude", "chiffrage", "pending", "sent")
+                      "etude", "chiffrage", "pending", "sent",
+                      # 17/09 : le logiciel de gestion appelle « A définir » un devis sans réponse.
+                      # 691 devis sur 1 398 portaient ce statut, et le geste en rendait CINQ. Et
+                      # `_plat` écrit « en_cours », « a_relancer » : les formes à espace ne mordaient pas.
+                      "a_definir", "definir", "en_cours", "a_relancer", "sans_reponse", "non_repondu")
 # Ce qui n'attend plus. PRIORITAIRE sur la liste ci-dessus : un statut
 # « devis signé » contient « devis », mais il est clos.
 STATUTS_CLOS = ("sign", "accept", "valid", "gagn", "refus", "perdu", "annul",
                 "abandon", "sold", "pay", "regl", "termin", "clotur", "facture",
-                "won", "lost", "closed")
+                "won", "lost", "closed",
+                # « Transformé » (en commande), « Devis Archivé » : ils n'attendent plus rien.
+                "transform", "archiv")
 
 # Le seuil par défaut, quand personne ne le précise. Quinze jours est la
 # formulation du brief client ; ce n'est pas une règle du métier, c'est un
@@ -1274,6 +1280,11 @@ async def prix_observes(data: dict, user) -> dict:
 
     niveaux = sorted(niveaux_visibles(getattr(user, "role", "")))
     demande_jeu = str(data.get("source_type") or "").strip()
+    # « Référentiel : nos devis et factures des 12 derniers mois » : la période demandée est stricte.
+    try:
+        mois = int(str(data.get("mois") or data.get("periode_mois") or "").strip() or 0) or None
+    except ValueError:
+        mois = None
     releves, base = [], {}
     try:
         async with get_db() as conn:
@@ -1291,12 +1302,12 @@ async def prix_observes(data: dict, user) -> dict:
                 elargi = None
                 try:
                     lignes = await _lignes_du_poste(conn, racines, niveaux) if base else []
-                    par_unite = relever(lignes)
+                    par_unite = relever(lignes, mois=mois)
                     # Trop peu avec tous les mots : on relâche sur le premier, celui qui nomme
                     # l'ouvrage (« abattage » dans « abattage d'arbres morts »), ET ON LE DIT.
                     if base and len(racines) > 1 and not any(r["suffisant"] for r in par_unite):
                         lignes = await _lignes_du_poste(conn, racines[:1], niveaux)
-                        plus_large = relever(lignes)
+                        plus_large = relever(lignes, mois=mois)
                         if any(r["suffisant"] for r in plus_large):
                             par_unite, elargi = plus_large, racines[0]
                 except Exception as e:  # noqa: BLE001
@@ -1516,9 +1527,10 @@ SKILLS = {
             "l'estimation (bas, median, haut) et le total. `poste` seul marche aussi. UN "
             "SEUL appel pour tous les postes d'un pre-devis. Rends une ESTIMATION sourcee "
             "(fourchette + nombre d'observations), jamais un prix ferme ; un poste sans "
-            "observation reste « a chiffrer ». Ne cherche JAMAIS un prix sur le web pour "
+            "observation reste « a chiffrer ». `mois` : la periode imposee par la demande "
+            "(12 pour « les 12 derniers mois ») ; sans elle, 24 mois si c'est assez fourni. Ne cherche JAMAIS un prix sur le web pour "
             "chiffrer une affaire : ce ne sont pas les prix de la maison"),
-        requis=[], optionnels=["poste", "postes", "quantite", "unite", "source_type"],
+        requis=[], optionnels=["poste", "postes", "quantite", "unite", "mois", "source_type"],
         effet="lecture",
         libelle="je relève les prix déjà pratiqués"),
     "check_mails": Declaration(

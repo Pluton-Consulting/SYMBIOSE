@@ -349,12 +349,12 @@ if not nas_cote and drive_py.exists():
     # 4f. Le catalogue et les câblages.
     out = sk_out.read_text(encoding="utf-8")
     verifier("le geste `drive_lister` est au catalogue, effet lecture, `dossier` requis, `page` en option",
-             re.search(r'"drive_lister": Declaration\(.*?requis=\["dossier"\], optionnels=\["page"\].*?effet="lecture"', out, re.S))
+             re.search(r'"drive_lister": Declaration\(.*?requis=\["dossier"\], optionnels=\["page"(?:, "tri")?\].*?effet="lecture"', out, re.S))
     verifier("`drive_lister` passe par `garantir_listage` avec `drive_ouvrir` comme ouvreur",
              'garantir_listage(resultat, dossier, ouvreur="drive_ouvrir")' in out)
     verifier("`drive_ouvrir` accepte `chemin` (le chemin rendu par le listage)",
              'data.get("chemin")' in out.split("async def drive_ouvrir", 1)[1][:600]
-             and re.search(r'"drive_ouvrir": Declaration\(.*?optionnels=\["chemin"\]', out, re.S))
+             and re.search(r'"drive_ouvrir": Declaration\(.*?optionnels=\["chemin"(?:, "exact")?\]', out, re.S))
     verifier("`drive_chercher` accepte `type` (fichiers / dossiers)",
              re.search(r'"drive_chercher": Declaration\(.*?optionnels=\["page", "type"\]', out, re.S)
              and 'genre=data.get("type")' in out)

@@ -117,7 +117,8 @@ async def drive_lister(data: dict, user) -> dict:
     if not dossier:
         _echec("Donne le `dossier` (nom ou chemin) à lister.")
     resultat = await _drive(lister, dossier, perimetres=_perimetres(user),
-                            identite=_identite(user), page=data.get("page") or 1)
+                            identite=_identite(user), page=data.get("page") or 1,
+                            tri=data.get("tri"))
     return garantir_listage(resultat, dossier, ouvreur="drive_ouvrir")
 
 
@@ -269,8 +270,10 @@ async def drive_ouvrir(data: dict, user) -> dict:
             nom = unquote(nom)
     if not nom:
         _echec("Donne le `nom` du fichier à ouvrir.")
+    exact = str(data.get("exact") or "").strip().lower() in ("true", "1", "oui", "vrai")
     return await _drive(ouvrir, nom, perimetres=_perimetres(user),
-                        identite=_identite(user), proprietaire=_proprietaire(user))
+                        identite=_identite(user), proprietaire=_proprietaire(user),
+                        exact=exact)
 
 
 async def drive_lire_lot(data: dict, user) -> dict:
@@ -316,6 +319,19 @@ async def drive_deposer(data: dict, user) -> dict:
     return await _drive(deposer, dossier, nom, contenu,
                         perimetres=_perimetres(user),
                         identite=_identite(user))
+
+
+async def drive_creer_dossier(data: dict, user) -> dict:
+    """Crée un dossier sur le Drive, et y copie au besoin le contenu d'un dossier type. EFFET EXTERNE."""
+    from outils.drive import creer_dossier
+
+    parent = (data.get("parent") or data.get("dossier") or data.get("dans") or "").strip()
+    nom = (data.get("nom") or data.get("nom_dossier") or "").strip()
+    if not parent or not nom:
+        _echec("Il faut `parent` (le dossier où créer) et `nom` (le nom EXACT du dossier à créer).")
+    return await _drive(creer_dossier, parent, nom,
+                        (data.get("modele") or data.get("dossier_type") or "").strip() or None,
+                        perimetres=_perimetres(user), identite=_identite(user))
 
 
 async def drive_deposer_document(data: dict, user) -> dict:
@@ -409,8 +425,9 @@ SKILLS = {
             "NOM, avec taille et date — le tableau S'AFFICHE AUTOMATIQUEMENT. LE "
             "geste pour savoir QUELS fichiers un dossier contient, puis en ouvrir "
             "un (`drive_ouvrir` avec le `chemin` rendu). `dossier` : NOM ou "
-            "CHEMIN ; `page` pour la suite"),
-        requis=["dossier"], optionnels=["page"],
+            "CHEMIN ; `page` pour la suite ; `tri: \"date\"` : le plus recemment "
+            "modifie d'abord. Les doublons de nom sont rendus dans `doublons_de_nom`"),
+        requis=["dossier"], optionnels=["page", "tri"],
         effet="lecture",
         libelle="je liste le contenu du dossier"),
     "drive_lister_lot": Declaration(
@@ -466,8 +483,13 @@ SKILLS = {
         description=("OUVRE et lit un fichier du Drive depuis son NOM, sans en "
                      "connaitre l'identifiant, ou depuis le `chemin` rendu par "
                      "`drive_lister` (le plus sur). La voie normale pour lire un "
-                     "fichier ; le fichier s'affiche avec son apercu"),
-        requis=["nom"], optionnels=["chemin"],
+                     "fichier ; le fichier s'affiche avec son apercu. `exact: true` "
+                     "quand on te donne un nom PRECIS et qu'on interdit d'en ouvrir un "
+                     "autre : un nom approchant est alors REFUSE et les noms proches "
+                     "te sont rendus. Un document long se lit en entier par "
+                     "`lire_source_dossier`, page apres page : enchaine-les quand on "
+                     "demande le contenu integral, ne resume pas a la place"),
+        requis=["nom"], optionnels=["chemin", "exact"],
         effet="lecture",
         libelle="j'ouvre le fichier"),
     "drive_lire_lot": Declaration(
@@ -491,6 +513,20 @@ SKILLS = {
         # l'application : effet EXTERNE, validation humaine obligatoire.
         effet="externe",
         libelle="je dépose le fichier sur le Drive"),
+    "drive_creer_dossier": Declaration(
+        fonction=drive_creer_dossier,
+        description=("CREE un dossier sur le Drive, dans un dossier EXISTANT. `parent` : le "
+                     "dossier ou le creer (nom ou chemin). `nom` : le nom EXACT du nouveau "
+                     "dossier. `modele` (option) : le NOM d'un dossier type dont le CONTENU est "
+                     "copie dans le nouveau dossier. AVANT d'appeler ce geste, LISTE le parent "
+                     "(`drive_lister`) et ecris dans ta reponse deux dossiers voisins dont tu "
+                     "reprends le nommage, casse comprise : c'est ce que la personne lira "
+                     "au-dessus de la carte d'accord. Refuse si un dossier du meme nom existe "
+                     "deja. Ecrit sur le Drive : validation humaine. Ne renomme, ne deplace et "
+                     "ne supprime rien : ne le promets pas"),
+        requis=["parent", "nom"], optionnels=["modele"],
+        effet="externe",
+        libelle="je crée le dossier sur le Drive"),
     "drive_deposer_document": Declaration(
         fonction=drive_deposer_document,
         description=("FINALISE un document en cours et le DEPOSE sur le Drive, "

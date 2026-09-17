@@ -156,6 +156,20 @@ PRESET_REPERE = (
     "IMAGE 2, and keep every change already made in IMAGE 1 unless listed above."
 )
 
+# LA CONCEPTION DU CLIENT, VUE PAR LE MOTEUR (17/09). « Garde la maison de la photo, intègre TOUS
+# les éléments de ma vue SketchUp » : le moteur ne recevait QUE la photo ; la vue 3D, lue par la
+# vision, lui arrivait décrite en mots — il produisait une interprétation, pas la conception
+# (« ton photomontage est incorrect, la barrière Tokyo ne se trouve pas sur cet angle »). Même
+# besoin pour un MODÈLE de produit : « intègre la piscine Molène » avec la photo du modèle.
+PRESET_CONCEPTION = (
+    " A DESIGN REFERENCE image is also supplied, as the LAST image: the client's own design "
+    "for this place (3D view, sketch, or product photo). Reproduce onto IMAGE 1 EVERY element it "
+    "shows, at the layout, proportions and materials it shows, and add NOTHING that is not in "
+    "it. Take from it ONLY what is to be built: never its sky, lighting, rendering style, "
+    "camera angle or surroundings — those stay IMAGE 1's. Where its viewpoint differs from "
+    "IMAGE 1, re-project its elements into IMAGE 1's perspective rather than copying pixels."
+)
+
 # Un repère TRACÉ cité par la demande (écrite en anglais pour le moteur, parfois
 # restée en français).
 _CITE_UN_REPERE = re.compile(
@@ -503,6 +517,19 @@ async def modifier_visuel(data: dict, user) -> dict:
         else:
             logger.info("Photo d'origine %s introuvable : retouche sans repère", originale[:12])
 
+    # La conception à suivre : une image de la conversation (vue 3D, croquis, photo du modèle).
+    # Absente ou illisible, la retouche se fait comme avant — et le résultat le DIT.
+    conception = str(data.get("conception") or data.get("reference_conception") or "").strip()
+    conception_jointe = False
+    if conception and conception not in (reference, originale):
+        vue = lire(conception)
+        if vue:
+            entrees.append(vue)
+            prompt += PRESET_CONCEPTION
+            conception_jointe = True
+        else:
+            logger.info("Conception %s introuvable : retouche sans elle", conception[:12])
+
     try:
         resultat = await generer(prompt, images_entree=entrees,
                                  qualite=(data.get("qualite") or "finale"))
@@ -523,8 +550,11 @@ async def modifier_visuel(data: dict, user) -> dict:
     for c in sortie.get("cles") or []:
         noter_origine(c, racine)
     sortie["source"] = reference
-    if len(entrees) > 1:
+    if len(entrees) > 1 + int(conception_jointe):
         sortie["repere"] = "photo d'origine jointe pour situer les repères tracés"
+    if conception:
+        sortie["conception"] = ("la vue de conception a été transmise au moteur" if conception_jointe else
+                                "la vue de conception est INTROUVABLE : le moteur ne l'a pas vue, dis-le")
 
     sortie["changements"] = changements
     sortie["note"] = ("Retouche de l'image fournie : seuls les points demandés ont été "
@@ -712,9 +742,13 @@ SKILLS = {
             "tout le reste doit rester tel quel. `photo_originale` (option) : la "
             "reference de la photo du client quand `image` est deja une retouche "
             "et que la demande cite un repere trace sur l'original (« le trait "
-            "bleu ») — le serveur la joint seul s'il la retrouve. Le resultat donne un bloc "
+            "bleu ») — le serveur la joint seul s'il la retrouve. `conception` (option) : la "
+            "reference d'une AUTRE image de la conversation que le rendu doit SUIVRE — la vue 3D "
+            "ou le croquis du client, la photo du modele a integrer (une piscine, un abri). Le "
+            "moteur la VOIT : donne-la des qu'on te dit « respecte ma conception », « integre ce "
+            "modele », au lieu de la decrire en mots. Le resultat donne un bloc "
             "```ui a inserer TEL QUEL pour AFFICHER la variante"),
-        requis=["image", "changements"], optionnels=["titre", "qualite", "photo_originale"],
+        requis=["image", "changements"], optionnels=["titre", "qualite", "photo_originale", "conception"],
         # Un rendu qu'on montrera au client : meme porte que le tirage final.
         effet="externe",
         expert="agent2",

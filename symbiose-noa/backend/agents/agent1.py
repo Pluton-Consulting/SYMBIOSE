@@ -153,7 +153,9 @@ TOUR_DUREE_MAX_S = 8 * 60
 # Les gestes qui CONSTRUISENT un document par morceaux sont exemptés : un
 # rapport de douze sections, c'est douze `ajouter_document` légitimes.
 MAX_APPELS_MEME_SKILL = 10
-SKILLS_SANS_PLAFOND = frozenset({"ajouter_document"})
+# `deposer_brouillon`, `enregistrer_relance` : « un brouillon par mail de la revue » en fait vingt
+# d'affilée, chacun pour un message différent — ce n'est pas un geste qui s'acharne (17/09).
+SKILLS_SANS_PLAFOND = frozenset({"ajouter_document", "deposer_brouillon", "enregistrer_relance"})
 # Les gestes à qui le SERVEUR donne la conversation en cours (`_fil`).
 SKILLS_QUI_CONNAISSENT_LE_FIL = frozenset({
     "creer_tache_agent", "redaction_email", "deposer_brouillon", "abandonner_document",
@@ -348,7 +350,7 @@ def _est_jeton_tableau(valeur) -> bool:
     return isinstance(valeur, str) and valeur.strip().lower() in JETONS_TABLEAU
 
 
-RESULTATS_GENEREUX = {"lire_source_dossier", "chercher_source_dossier", "drive_chercher", "nas_chercher", "drive_apercu", "drive_lister", "drive_lister_lot",
+RESULTATS_GENEREUX = {"chiffre_affaires", "prix_observes", "lire_source_dossier", "chercher_source_dossier", "drive_chercher", "nas_chercher", "drive_apercu", "drive_lister", "drive_lister_lot",
                       # 08/09 : les cartes de relance et la liste des factures suivies.
                       "relancer_factures", "factures_suivies", "inventaire_dossier",
                       "courrier_entrant",
@@ -1832,6 +1834,7 @@ async def tools_node(state: AgentState, config=None) -> dict:
     if utilisateur is None:
         return _sortir("ce compte n'est plus actif, aucune action n'a pu être exécutée.")
 
+    tableau_ouvert = None     # posé par un classeur ouvert ; défini ici, un geste qui lève ne le pose pas
     try:
         # UNE PHOTO JOINTE NE SE RÉINVENTE PAS (01/09). « Simulation
         # avant/après, garde tout le reste à l'identique » sur une photo du
@@ -1870,6 +1873,10 @@ async def tools_node(state: AgentState, config=None) -> dict:
                      "id": state.get("thread_id")},
         )
         sortie = brut.get("output")
+        # LE TABLEAU D'UN CLASSEUR OUVERT VOYAGE À CÔTÉ DU RÉSULTAT (17/09) : ses lignes entières
+        # vont dans l'état du fil (`dernier_tableau`, comme pour un classeur joint) et ne passent
+        # jamais sous les yeux du modèle — 137 clients en JSON lui coûteraient tout son contexte.
+        tableau_ouvert = sortie.pop("tableau_du_fichier", None) if isinstance(sortie, dict) else None
         # LE BLOC GARANTI NE PASSE PAS PAR LA COUPE (01/09). Le résultat est
         # tranché pour le modèle ; or un tableau de 40 lignes ou 40 cartes de
         # publipostage pèse 12 000 à 14 000 caractères et tombe au milieu de ce
@@ -2032,6 +2039,8 @@ async def tools_node(state: AgentState, config=None) -> dict:
            "tool_iterations": (state.get("tool_iterations") or 0) if avance else iteration,
            "versements": versements + 1 if a_verse else versements,
            "entity_map": carte_maj}
+    if ok and isinstance(tableau_ouvert, dict) and tableau_ouvert.get("lignes"):
+        maj["dernier_tableau"] = tableau_ouvert
     if ok:
         maj["relance_annonce"] = False
         if (action['skill'] in ('composer_document_dossier','produire_quantitatif','reprendre_redaction')
@@ -3855,7 +3864,21 @@ def _consigne_images(state: AgentState) -> str:
         return ""
     # « clé (nom du fichier) » : le nom est ce qui permet de désigner « le
     # plan » ou « la photo de la terrasse » sans deviner.
-    cles = [f"{c} ({n})" if n else c for c, n in nommees]
+    # LES RENDUS SE NUMÉROTENT (17/09, prompt « itération contrôlée ») : « repars du rendu n° 2 »
+    # n'avait aucun sens pour le modèle — il prenait la dernière image, et après trois ou quatre
+    # essais il repartait de la mauvaise. Un rendu produit ici porte la légende « Après… » : on
+    # les compte dans l'ordre où la personne les a vus, et le numéro voyage avec la référence.
+    rang = 0
+    cles = []
+    for c, n in nommees:
+        if str(n).lower().startswith(("après", "apres")):
+            rang += 1
+            cles.append(f"{c} (RENDU n° {rang})")
+        else:
+            cles.append(f"{c} ({n})" if n else c)
+    numeros = (f" « Le rendu n° N » désigne l'image marquée RENDU n° N ci-dessus ({rang} rendu(s) à ce "
+               "jour) : pars de CELLE-LÀ, jamais d'une autre version ; si le numéro cité n'existe pas, "
+               "dis-le au lieu d'en choisir un." if rang else "")
     # CES IMAGES SONT LES PIÈCES JOINTES (08/09). Sans cette phrase, le modèle
     # lisait « tu disposes du plan en pièce jointe », ne voyait pas de fichier
     # dans l'historique taillé, et allait chercher les pièces dans les mails.
@@ -3885,7 +3908,9 @@ def _consigne_images(state: AgentState) -> str:
             "ajouter ou retirer un élément en gardant tout le reste identique), appelle "
             "`modifier_visuel` avec `image` = cette référence recopiée telle quelle et "
             "`changements` en anglais simple. Sans autre précision, « cette image » "
-            "désigne la dernière. "
+            "désigne la dernière." + numeros + " Quand la personne fournit AUSSI une vue de sa "
+            "conception (3D, croquis) ou la photo d'un modèle à intégrer, passe la référence de CETTE "
+            "image dans `conception` : le moteur la verra, au lieu d'une description. "
             # 07/09 : « enlève les oliviers » → le modèle a réaffiché la photo
             # telle quelle. Une image remontrée n'est une réponse que si on a
             # demandé de la VOIR ; devant un verbe de changement, c'est un geste.

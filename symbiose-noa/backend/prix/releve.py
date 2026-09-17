@@ -140,11 +140,17 @@ def euros(valeur: float) -> str:
     return f"{entier.replace(',', ' ')},{cents} €"
 
 
-def relever(lignes: list[dict], aujourd_hui: Optional[date] = None) -> list[dict]:
+def relever(lignes: list[dict], aujourd_hui: Optional[date] = None, mois: Optional[int] = None) -> list[dict]:
     """Un relevé PAR UNITÉ, le plus fourni d'abord. Chaque ligne d'entrée porte au moins
-    `designation`, `unite`, `quantite`, `pu_ht`, et si possible `date`, `numero`, `nature`."""
+    `designation`, `unite`, `quantite`, `pu_ht`, et si possible `date`, `numero`, `nature`.
+
+    `mois` : la période IMPOSÉE par la demande (« nos devis des 12 derniers mois »). Elle est
+    alors stricte — ce qui est plus ancien ne compte pas, même si le relevé en sort maigre —
+    là où le défaut (24 mois) n'est qu'une préférence qui retombe sur tout l'historique."""
     aujourd_hui = aujourd_hui or date.today()
-    seuil = aujourd_hui - timedelta(days=30 * MOIS_RECENTS)
+    impose = bool(mois and int(mois) > 0)
+    fenetre = int(mois) if impose else MOIS_RECENTS
+    seuil = aujourd_hui - timedelta(days=round(30.44 * fenetre))
     par_unite: dict[str, list[dict]] = {}
     for l in sans_doublons(lignes):
         if float(l.get("pu_ht") or 0) <= 0:
@@ -155,7 +161,11 @@ def relever(lignes: list[dict], aujourd_hui: Optional[date] = None) -> list[dict
     for unite, groupe in par_unite.items():
         recentes = [l for l in groupe if isinstance(l.get("date"), date) and l["date"] >= seuil]
         retenues, periode = groupe, "tout l'historique"
-        if len(recentes) >= MIN_RECENTES:
+        if impose:
+            retenues, periode = recentes, f"les {fenetre} derniers mois"
+            if not retenues:
+                continue
+        elif len(recentes) >= MIN_RECENTES:
             retenues, periode = recentes, f"les {MOIS_RECENTS} derniers mois"
         prix = [float(l["pu_ht"]) for l in retenues]
         dates = [l["date"] for l in retenues if isinstance(l.get("date"), date)]
