@@ -106,6 +106,14 @@ verifier("ce qui n'a pas pu être compté est rendu nommément",
 verifier("une base encore en cours de lecture est DITE", "12 pièce(s)" in res.get("base_en_cours_de_lecture", ""))
 verifier("la consigne interdit d'additionner soi-même et d'extrapoler un mois incomplet",
          "n'additionne rien toi-même" in res["a_faire"] and "n'extrapole aucun mois" in res["a_faire"])
+PIECES.append(dict(fichier_id="h", fichier_nom="FA0007.pdf", nature="facture", numero="FA0007", date_piece=date(2026, 3, 3), total_ht=50000.0, controle="juste", client="", code_client="", lu_le="1"))
+sans = asyncio.run(chiffres.chiffre_affaires({"du": "01/09/2025", "au": "31/08/2026"}, u))
+verifier("une facture dont le client n'a pas été lu compte dans le TOTAL mais n'est pas « un client » du classement",
+         sans["chiffre_affaires_ht"] == "53 800,50 €" and sans["factures_sans_client_lu"] == 1
+         and sans["montant_sans_client_lu"] == "50 000,00 €"
+         and not any("non lu" in l[0] for l in sans["bloc_ui"][1]["rows"])
+         and "DUPONT" in sans["trois_premiers"][0]["client"].upper(), str(sans["trois_premiers"]))
+PIECES.pop()
 an = asyncio.run(chiffres.chiffre_affaires({"annee": "2024"}, u))
 verifier("`annee` borne l'année civile", an["chiffre_affaires_ht"] == "7 777,00 €")
 for mauvais in ({"du": "bientôt"}, {"du": "01/09/2026", "au": "01/01/2026"}):

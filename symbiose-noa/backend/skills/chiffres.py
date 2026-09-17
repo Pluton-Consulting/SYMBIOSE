@@ -159,14 +159,19 @@ async def chiffre_affaires(data: dict, user) -> dict:
     sans_client = sum(c["factures"] for c in r["clients"] if c["client"].startswith("(client non lu"))
     fusions = [{"client": c["client"], "regroupe_aussi": c["variantes"]} for c in r["clients"] if c["variantes"]]
     tableau_mois = [[f"{MOIS[m - 1]} {a}", str(n), _euros(t)] for (a, m), (n, t) in r["mensuel"]]
-    tete = r["clients"][:MAX_CLIENTS_A_L_ECRAN]
+    # LES FACTURES DONT LE CLIENT N'A PAS ÉTÉ LU NE SONT PAS « UN CLIENT ». Premier essai réel : le
+    # lot sortait en tête du classement avec 76 % du chiffre. Il compte dans le TOTAL, il se déclare
+    # à part, et le classement ne porte que des clients nommés.
+    nommes = [c for c in r["clients"] if not c["client"].startswith("(client non lu")]
+    non_lus = [c for c in r["clients"] if c["client"].startswith("(client non lu")]
+    tete = nommes[:MAX_CLIENTS_A_L_ECRAN]
     tableau_clients = [[c["client"], str(c["factures"]), _euros(c["total"]), _euros(c["panier_moyen"]),
                         f"{c['part']:.1f} %".replace(".", ",")] for c in tete]
     blocs = [{"type": "table", "titre": f"Chiffre d'affaires HT {periode} : {_euros(r['total'])}",
               "columns": ["Mois", "Factures", "Total HT"], "rows": tableau_mois},
-             {"type": "table", "titre": f"Les {len(tete)} premiers clients sur {len(r['clients'])}",
+             {"type": "table", "titre": f"Les {len(tete)} premiers clients sur {len(nommes)}",
               "columns": ["Client", "Factures", "Total HT", "Panier moyen", "Part"], "rows": tableau_clients}]
-    queue = r["clients"][-MAX_CLIENTS_A_L_ECRAN:] if len(r["clients"]) > 2 * MAX_CLIENTS_A_L_ECRAN else []
+    queue = nommes[-MAX_CLIENTS_A_L_ECRAN:] if len(nommes) > 2 * MAX_CLIENTS_A_L_ECRAN else []
     if queue and str(data.get("classement") or "").lower() in ("true", "1", "oui", "complet"):
         blocs.append({"type": "table", "titre": f"Les {len(queue)} derniers clients",
                       "columns": ["Client", "Factures", "Total HT", "Panier moyen", "Part"],
@@ -180,9 +185,10 @@ async def chiffre_affaires(data: dict, user) -> dict:
         "factures_sans_total_lisible": [{"numero": p.get("numero"), "fichier": p.get("fichier_nom"),
                                          "date": p["date_piece"].isoformat()} for p in r["illisibles"][:40]],
         "factures_sans_date_lisible": len(r["sans_date"]),
-        "clients": len(r["clients"]), "factures_sans_client_lu": sans_client,
+        "clients": len(nommes), "factures_sans_client_lu": sans_client,
+        "montant_sans_client_lu": _euros(sum(c["total"] for c in non_lus)) if non_lus else None,
         "trois_premiers": [{"client": c["client"], "total": _euros(c["total"]), "part": c["part"]}
-                           for c in r["clients"][:3]],
+                           for c in nommes[:3]],
         "noms_regroupes": fusions[:30],
         "controle": ("la somme des clients égale le total" if abs(r["somme_clients"] - r["total"]) < 0.01
                      else f"ÉCART : clients {_euros(r['somme_clients'])} / total {_euros(r['total'])}"),
@@ -233,7 +239,8 @@ async def chiffre_affaires(data: dict, user) -> dict:
 
     resultat["message_final"] = (
         f"Chiffre d'affaires HT {periode} : {_euros(r['total'])}, sur {len(r['retenues'])} facture(s) "
-        f"et {len(r['clients'])} client(s).")
+        f"et {len(nommes)} client(s) nommé(s)."
+        + (f" {sans_client} facture(s) n'ont pas encore leur client." if sans_client else ""))
     resultat["a_faire"] = (
         "Les tableaux s'affichent AUTOMATIQUEMENT : ne les recopie pas. Donne le total et la MÉTHODE en "
         "une phrase, la part des trois premiers clients, puis DÉCLARE ce que le contrôle exige : le nombre "
