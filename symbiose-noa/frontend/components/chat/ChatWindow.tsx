@@ -1123,13 +1123,32 @@ export default function ChatWindow({ threadId: initialThreadId = null, token: to
     // dans `file:<id>` lancerait une seconde analyse et doublerait les coûts.
     if (demandeExistante) {
       try {
-        let suivi = await apiRequest<{ response?: string; reprise?: boolean; status?: string }>(
+        type Suivi = { response?: string; reprise?: boolean; status?: string
+                       etape?: { node?: string; libelle?: string; skill?: string } | null }
+        // L'ÉTAPE SUIT, MÊME SANS SOCKET (17/09). Le sondage ne montrait rien :
+        // l'écran restait figé sur la dernière étape reçue avant la coupure,
+        // et l'on croyait le tour mort alors qu'il produisait le document.
+        const montrerEtape = (s: Suivi) => {
+          const e = s.etape
+          if (!e || !monteRef.current) return
+          if (e.libelle) setActivite(e.libelle)
+          if (e.node && (e.node !== "anonymize" || e.libelle)) {
+            const n = e.node
+            setThinkingNode(n)
+            setThinkingSteps((prev) => (prev[prev.length - 1] === n ? prev : [...prev, n]))
+          }
+          const pseudo = etapeDuSkill(e.skill ?? "")
+          if (pseudo) setThinkingSteps((prev) => (prev[prev.length - 1] === pseudo ? prev : [...prev, pseudo]))
+        }
+        let suivi = await apiRequest<Suivi>(
           `/api/chat/demandes/${encodeURIComponent(demandeExistante)}`, { token })
+        montrerEtape(suivi)
         const fin = Date.now() + 40 * 60 * 1000
         while (suivi.reprise && Date.now() < fin) {
           await new Promise((resolve) => setTimeout(resolve, 1500))
-          suivi = await apiRequest<{ response?: string; reprise?: boolean; status?: string }>(
+          suivi = await apiRequest<Suivi>(
             `/api/chat/demandes/${encodeURIComponent(demandeExistante)}`, { token })
+          montrerEtape(suivi)
         }
         if (suivi.reprise) throw new Error("Le traitement est toujours en cours ; il reste suivi dans l'historique.")
         const fil = threadIdRef.current
