@@ -123,6 +123,10 @@ async def drive_lister(data: dict, user) -> dict:
 
 
 
+# Un inventaire détaillé à l'écran : au-delà, le tableau dit où il s'arrête.
+MAX_LIGNES_INVENTAIRE_LOT = 2000
+
+
 async def drive_lister_lot(data: dict, user) -> dict:
     """Liste plusieurs dossiers du Drive en parallèle, en une seule action."""
     from outils.drive import lister_lot
@@ -161,6 +165,40 @@ async def drive_lister_lot(data: dict, user) -> dict:
         "columns": ["Dossier", "Sous-dossiers", "Fichiers", "Entrées"],
         "rows": rows,
     }
+    # L'INVENTAIRE LIGNE À LIGNE (18/09, recette pilotée, prompt 10). « Liste tout le contenu :
+    # nom exact, type, date, taille, sous-dossier d'appartenance, trié par date » : ce geste ne
+    # rendait qu'une ligne PAR DOSSIER, avec ses trente premiers noms à la suite. `detail: true`
+    # ajoute le tableau d'une ligne par élément — assemblé ici, le modèle n'a rien à recopier.
+    veut_detail = str(data.get("detail") or data.get("inventaire") or "").strip().lower() in ("true", "1", "oui", "yes")
+    if veut_detail:
+        from skills.affichage import _jour, octets_lisibles
+        elements = [(str(lot.get("dossier") or "?"), e) for lot in lots if lot.get("ok")
+                    for e in (lot.get("entrees") or []) if isinstance(e, dict)]
+        if str(data.get("tri") or "").strip().lower() in ("date", "recent", "récent", "modifie", "modifié"):
+            elements.sort(key=lambda de: str(de[1].get("modifie_le") or ""), reverse=True)
+        vus: dict = {}
+        for _, e in elements:
+            cle = " ".join(str(e.get("nom") or "").lower().split())
+            vus[cle] = vus.get(cle, 0) + 1
+        doublons = sorted({str(e.get("nom")) for _, e in elements
+                           if vus.get(" ".join(str(e.get("nom") or "").lower().split()), 0) > 1})
+        montres = elements[:MAX_LIGNES_INVENTAIRE_LOT]
+        resultat["bloc_ui"] = [resultat["bloc_ui"], {
+            "type": "table",
+            "titre": f"Inventaire détaillé ({len(elements)} éléments)",
+            "columns": ["Sous-dossier", "Nom", "Type", "Taille", "Modifié le"],
+            "rows": [[d, str(e.get("nom") or ""), "Dossier" if e.get("dossier") else "Fichier",
+                      "" if e.get("dossier") else octets_lisibles(e.get("octets") or 0),
+                      _jour(e.get("modifie_le"))] for d, e in montres]}]
+        resultat["elements_total"] = len(elements)
+        resultat["doublons_de_nom"] = doublons[:40]
+        if len(elements) > len(montres):
+            resultat["inventaire_coupe_a"] = len(montres)
+        # Le modèle n'a pas à relire mille lignes : les comptes et les doublons lui suffisent.
+        for lot in lots:
+            if len(lot.get("entrees") or []) > 12:
+                lot["entrees"] = (lot.get("entrees") or [])[:12]
+                lot["entrees_coupees_pour_le_modele"] = True
     resultat["bloc_garanti"] = True
     resultat["message_final"] = (
         f"{resultat.get('dossiers_inspectes', 0)} dossier(s) inspecté(s) sur "
@@ -175,6 +213,11 @@ async def drive_lister_lot(data: dict, user) -> dict:
         "Le tableau est déjà affiché par le serveur. Ne recopie pas ses lignes. "
         "Dis exactement combien de dossiers ont été inspectés et distingue les "
         "dossiers en erreur ou dont le contenu dépassait la première page."
+        + ((" L'inventaire DÉTAILLÉ (une ligne par élément : sous-dossier, nom, type, taille, date) "
+            f"s'affiche aussi : annonce `elements_total` = {resultat.get('elements_total')} et cite "
+            "`doublons_de_nom` tels quels (vide = aucun doublon exact).") if veut_detail else
+           " Pour une ligne PAR ÉLÉMENT (inventaire : nom, type, taille, date, sous-dossier), "
+           "rappelle ce geste avec `detail: true` (et `tri: \"date\"`).")
     )
     return resultat
 
@@ -257,10 +300,51 @@ async def drive_chercher(data: dict, user) -> dict:
     return garantir_recherche(resultat, motif, ouvreur="drive_ouvrir")
 
 
+_STRICT = None
+
+
+def nom_impose_par_la_demande(demande: str) -> str:
+    """Le nom de fichier que la PERSONNE a écrit entre guillemets, quand elle interdit d'en ouvrir
+    un autre (« interdiction d'ouvrir un document approchant », « exactement », « strictement »).
+
+    POURQUOI (18/09, recette pilotée, prompt 11 rejoué avec une faute). Demandé : « Devis symbiose
+    paysage Parkin.pdf », interdiction absolue d'un document approchant. Le modèle a cherché,
+    trouvé « …Parking.pdf », et l'a ouvert sous SON nom corrigé : `exact: true` ne pouvait rien y
+    voir, le nom passé était le bon. C'est le nom ÉCRIT PAR LA PERSONNE qui fait foi."""
+    import re
+    import unicodedata
+    global _STRICT
+    if _STRICT is None:
+        _STRICT = re.compile(r"approchant|exactement|strictement|\bexact\b|et pas un autre|et aucun autre|"
+                             r"ce fichier[- ]la et|nom exact|a la lettre", re.IGNORECASE)
+    texte = str(demande or "")
+    plat = "".join(c for c in unicodedata.normalize("NFD", texte) if unicodedata.category(c) != "Mn")
+    if not _STRICT.search(plat):
+        return ""
+    noms = re.findall(r"[«\"“]\s*([^«»\"“”\n]{3,160}?\.[A-Za-z0-9]{2,5})\s*[»\"”]", texte)
+    return noms[0].strip() if len(noms) == 1 else ""
+
+
+def _meme_nom(a: str, b: str) -> bool:
+    import unicodedata
+
+    def nu(x: str) -> str:
+        x = unicodedata.normalize("NFD", str(x or "").split("/")[-1].strip().lower())
+        return " ".join("".join(c for c in x if unicodedata.category(c) != "Mn").split())
+    return nu(a) == nu(b)
+
+
 async def drive_ouvrir(data: dict, user) -> dict:
     """Lit un fichier du Drive depuis son nom — ou le `chemin` rendu par un listage."""
     from outils.drive import ouvrir
     nom = (data.get("nom") or data.get("chemin") or data.get("fichier") or "").strip()
+    impose = nom_impose_par_la_demande(data.get("_demande_utilisateur") or "")
+    if impose:
+        # Le nom écrit par la personne fait foi : s'il n'existe pas, l'ouverture échoue et
+        # propose les noms proches — elle n'ouvre pas le voisin que le modèle a trouvé.
+        if not _meme_nom(nom, impose):
+            nom = impose
+        data = {**data, "exact": True}
     # Un nom encodé à la façon d'une URL (r%C3%A9emploi) redevient lisible :
     # relevé sur le jumeau le 08/09, le modèle encode parfois les accents.
     if "%" in nom:
@@ -436,10 +520,12 @@ SKILLS = {
             "LISTE PLUSIEURS DOSSIERS DU DRIVE EN UNE SEULE ACTION, EN PARALLELE. "
             "A utiliser pour « chacun », « tous les dossiers clients » ou toute "
             "demande portant sur au moins trois dossiers. Passe dossiers=[...], "
-            "et motif pour ne garder que les noms correspondants. Le tableau "
+            "et motif pour ne garder que les noms correspondants. POUR UN INVENTAIRE (« liste tout "
+            "le contenu : nom, type, date, taille, sous-dossier ») : `detail: true` rend UNE LIGNE "
+            "PAR ELEMENT, `tri: \"date\"` du plus recent au plus ancien. Le tableau "
             "s'affiche automatiquement ; ne rappelle pas drive_lister dossier "
             "par dossier."),
-        requis=["dossiers"], optionnels=["motif"],
+        requis=["dossiers"], optionnels=["motif", "detail", "tri"],
         effet="lecture",
         libelle="j'inspecte les dossiers du Drive en parallèle"),
     "drive_photos": Declaration(

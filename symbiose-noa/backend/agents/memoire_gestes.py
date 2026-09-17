@@ -115,7 +115,10 @@ def resume_geste(resultat: dict) -> str:
         return ""
     skill = resultat.get("skill") or "action illisible"
     args = resultat.get("args") if isinstance(resultat.get("args"), dict) else {}
-    parts = [f"{k}={_valeur(k, v)}" for k, v in args.items() if k not in _CLES_MUETTES]
+    # Tout argument « _… » est posé par le SERVEUR (fil, demande, travail) : le modèle ne l'a pas
+    # écrit, il n'a pas à le relire dans son journal.
+    parts = [f"{k}={_valeur(k, v)}" for k, v in args.items()
+             if k not in _CLES_MUETTES and not str(k).startswith("_")]
     ligne = f"{skill}(" + ", ".join(parts) + ")"
     if len(ligne) > MAX_LIGNE - 40:
         ligne = ligne[: MAX_LIGNE - 41].rstrip() + "…)"

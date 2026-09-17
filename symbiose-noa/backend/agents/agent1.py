@@ -1657,6 +1657,9 @@ async def tools_node(state: AgentState, config=None) -> dict:
     # seulement après la validation perdait le contexte des gestes approuvés.
     if action["skill"] in SKILLS_QUI_CONNAISSENT_LE_FIL:
         args = {**args, "_fil": state.get("thread_id")}
+    if action["skill"] == "drive_ouvrir":
+        # Le nom que la PERSONNE a écrit fait foi quand elle interdit un document approchant (18/09).
+        args = {**args, "_demande_utilisateur": state.get("query") or ""}
     if action["skill"] in ("composer_document_dossier", "produire_quantitatif"):
         args = {**args, "_demande_utilisateur": state.get("query") or "",
                 "_travail": state.get("travail") or {},
