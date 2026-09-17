@@ -4117,7 +4117,11 @@ async def rediger_node(state: AgentState, config=None) -> dict:
     consigne « ta réponse était vide » n'est pas ajoutée (la note explique
     déjà) et le drapeau n'était pas posé non plus — d'où une seconde
     redemande, vers une arête inexistante (KeyError « llm », 31/08)."""
-    return {"tools_finished": True, "redaction_forcee": True}
+    # Ce que l'écran affichera PENDANT la passe d'écriture qui suit (les étapes partent à
+    # la FIN de chaque nœud : ce libellé-ci reste visible tout le temps de la rédaction).
+    from agents.journal import detail_redaction
+    return {"tools_finished": True, "redaction_forcee": True,
+            "redaction_detail": detail_redaction(state)}
 
 
 def route_apres_forcage(state: AgentState) -> str:

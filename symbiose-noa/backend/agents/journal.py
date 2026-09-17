@@ -65,6 +65,11 @@ LIBELLES = {
     # voyait (relevé le 22/08).
     "agent1": "je prends la demande en charge",
     "rediger": "je rédige la réponse",
+    # Le relecteur (15/09) tournait en silence : l'écran gardait la phrase d'avant
+    # pendant un appel entier au modèle puissant.
+    # ⚠️ Une étape part à la FIN de son nœud : cette phrase s'affiche donc APRÈS la
+    # relecture, pendant ce qui suit — d'où le passé.
+    "verifier": "j'ai relu ma réponse",
     "agent2": "je délègue à notre expert conception : plans, photos, chiffrage",
     "agent3": "je délègue à notre atelier : il apprend une compétence nouvelle",
     "preprocess": "je prépare le document",
@@ -334,7 +339,61 @@ def libelle(node: str, update: dict | None = None) -> str:
                 return ""
         except Exception:  # noqa: BLE001 — un libellé ne casse jamais un tour
             pass
+    # LA RÉDACTION DIT SUR QUOI ELLE S'APPUIE (18/09). « je rédige la réponse » restait
+    # à l'écran pendant toute la passe d'écriture — la plus longue du tour — sans rien
+    # apprendre. Le nœud calcule la précision (il a l'état entier ; ici on n'a que sa sortie).
+    if node == "verifier":
+        v = update.get("verification")
+        if isinstance(v, dict) and v.get("statut") == "a_corriger":
+            return "j'ai relu ma réponse : un point ne tient pas, je le reprends"
+    if node == "rediger" and update.get("redaction_detail"):
+        return str(update["redaction_detail"])[:MAX_LIBELLE]
     return LIBELLES.get(node, "")
+
+
+# Une famille d'outils, dite en un mot à l'écran.
+_NOMS_DE_FAMILLE = {"mails": "mails", "agenda": "agenda", "documents": "documents",
+                    "stockage": "fichiers", "donnees": "données", "facturation": "factures",
+                    "web": "web", "visuels": "images", "taches": "tâches",
+                    "memoire": "consignes", "administration": "mémoire documentaire"}
+
+
+def detail_redaction(state: dict | None) -> str:
+    """« je rédige la réponse », avec ce qui la nourrit : combien d'actions, de quelles
+    sortes, combien sans succès, et pourquoi on réécrit quand c'est une reprise.
+
+    Des COMPTES et des SORTES, jamais de contenu (cf. l'en-tête du module)."""
+    state = state if isinstance(state, dict) else {}
+    base = LIBELLES["rediger"]
+    resultats = [r for r in (state.get("tool_results") or []) if isinstance(r, dict)]
+    if not resultats:
+        texte = base + " — aucune action n'a été nécessaire"
+    else:
+        try:
+            from skills.familles import FAMILLES
+        except Exception:  # noqa: BLE001 — un libellé ne casse jamais un tour
+            FAMILLES = {}
+        famille_de = {nom: f for f, noms in FAMILLES.items() for nom in noms}
+        sortes: dict[str, int] = {}
+        for r in resultats:
+            nom = str(r.get("skill") or "")
+            sorte = _NOMS_DE_FAMILLE.get(famille_de.get(nom, ""), "recherche" if nom == "rechercher_documents" else "autres")
+            sortes[sorte] = sortes.get(sorte, 0) + 1
+        rates = sum(1 for r in resultats if r.get("ok") is False)
+        n = len(resultats)
+        detail = ", ".join(f"{s} ×{c}" if c > 1 else s
+                           for s, c in sorted(sortes.items(), key=lambda kv: -kv[1])[:4])
+        texte = f"{base} à partir de {n} action{'s' if n > 1 else ''} ({detail})"
+        if rates:
+            texte += f", dont {rates} sans succès"
+    verification = state.get("verification") or {}
+    if isinstance(verification, dict) and verification.get("statut") == "a_corriger":
+        k = len(verification.get("problemes") or [])
+        texte += (f" — je corrige {k} point{'s' if k > 1 else ''} relevé{'s' if k > 1 else ''} à la relecture"
+                  if k else " — je reprends après relecture")
+    elif state.get("note_sortie"):
+        texte += " — je fais le point sur ce qui a été fait"
+    return texte[:MAX_LIBELLE]
 
 
 def skill_du_moment(node: str, update: dict | None = None) -> str:

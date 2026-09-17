@@ -112,6 +112,7 @@ class AgentState(TypedDict):
     # redemandé une fois. Le drapeau borne la reprise : sans lui, un modèle qui
     # annonce en boucle ferait tourner le tour indéfiniment.
     redaction_forcee: bool
+    redaction_detail: Optional[str]      # ce que l'écran dit pendant la passe d'écriture (comptes, jamais de contenu)
     pending_action: Optional[dict]       # action externe en attente de validation humaine
     besoin_memoire: Optional[bool]       # décision du routeur : consulter la mémoire ?
     requete_memoire: Optional[str]       # termes de recherche choisis par le routeur
