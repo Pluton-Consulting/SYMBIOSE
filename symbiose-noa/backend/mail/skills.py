@@ -1104,6 +1104,16 @@ def _jour_lisible(m: dict) -> str:
     return f"{brut[8:10]}/{brut[5:7]}/{brut[:4]}" + (f" {brut[11:16]}" if len(brut) >= 16 else "") if len(brut) >= 10 else brut
 
 
+def _expediteur_lisible(m: dict) -> str:
+    """« Prénom Nom (adresse) » quand la messagerie donne le nom affiché, l'adresse seule sinon.
+    Un nom qui n'est que l'adresse recopiée (envois automatiques) n'ajoute rien."""
+    adresse = str(m.get("de") or "").strip()
+    nom = str(m.get("de_nom") or "").strip()
+    if not nom or "@" in nom or nom.lower() == adresse.lower():
+        return adresse[:80]
+    return f"{nom} ({adresse})"[:110] if adresse else nom[:80]
+
+
 async def _livrer_inventaire(inventaire: dict, user, *, classer: bool, fichier: bool, categories=None,
                              priorites=None, surlignage=None, cle=None, deja_classe: bool = False) -> dict:
     """Le tableau COMPLET à l'écran, et l'Excel si on le demande — assemblés ligne pour ligne."""
@@ -1123,7 +1133,7 @@ async def _livrer_inventaire(inventaire: dict, user, *, classer: bool, fichier: 
 
     def _ligne(m: dict) -> list:
         base = (([m.get("priorite") or ""] if en_tete else [])
-                + [_jour_lisible(m), str(m.get("de") or "")[:80], str(m.get("objet") or "")[:160]])
+                + [_jour_lisible(m), _expediteur_lisible(m), str(m.get("objet") or "")[:160]])
         if classer:
             return base + [m.get("resume") or "", m.get("categorie") or "à classer"]
         return base + [" ".join(str(m.get("apercu") or "").split())[:200]]

@@ -426,6 +426,9 @@ def _fiche_outlook(m: dict, boite: str, longueur_apercu: int) -> dict:
         "ref": _memoriser(m.get("id") or "", boite),
         "objet": m.get("subject") or "(sans objet)",
         "de": expediteur,
+        # Le NOM affiché de l'expéditeur (18/09) : « liste l'expéditeur avec prénom et nom »
+        # rendait 102 adresses. `de` reste l'adresse — tout le reste du code la lit.
+        "de_nom": str(((m.get("from") or {}).get("emailAddress") or {}).get("name") or "").strip()[:80],
         "expediteur_interne": qualite["interne"],
         "expediteur_automatique": qualite["automatique"],
         "a": ", ".join(filter(None, destinataires))[:120],
