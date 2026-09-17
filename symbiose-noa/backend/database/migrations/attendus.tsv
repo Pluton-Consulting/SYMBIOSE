@@ -65,3 +65,4 @@
 052_versions_et_qualification_skills.sql	SELECT to_regclass('public.skill_versions') IS NOT NULL AND to_regclass('public.skill_evaluations') IS NOT NULL AND EXISTS(SELECT 1 FROM pg_trigger WHERE tgname='skills_archive_version')
 053_quarantaine_skills.sql	SELECT EXISTS(SELECT 1 FROM information_schema.columns WHERE table_name='skills' AND column_name='motif_quarantaine')
 054_generation_vectorielle.sql	SELECT to_regclass('public.embedding_actif') IS NOT NULL AND to_regclass('public.embedding_candidats') IS NOT NULL AND to_regclass('public.embedding_preparations') IS NOT NULL;
+055_lignes_chiffrees.sql	SELECT to_regclass('public.pieces_chiffrees') IS NOT NULL AND to_regclass('public.lignes_chiffrees') IS NOT NULL;

@@ -1188,38 +1188,40 @@ async def principal():
              "que `prechiffrage_node` ne lit jamais : le travail est fait puis jeté")
     # ── LES PRIX : ceux de la maison, jamais ceux du marché ────────────────
     r = await routines.prix_observes({"poste": "terrasse bois"}, User())
+    # 17/09 : le geste relève d'abord les LIGNES des devis et factures (banc
+    # `test_base_prix`) ; ici la base de prix n'existe pas, il reste les TOTAUX
+    # d'affaires des jeux importés — la partie que ce cahier éprouvait déjà.
+    aff = ((r.get("postes") or [{}])[0]).get("affaires_entieres") or {}
     verifier("le relevé des prix déjà pratiqués existe et trouve les affaires",
-             r.get("trouve") and (r.get("observations") or 0) >= 3, r)
+             r.get("trouve") and (aff.get("observations") or 0) >= 3, r)
     verifier("il rend une FOURCHETTE et une médiane, pas un prix unique",
-             all(r.get(k) for k in ("minimum", "median", "maximum")), r)
-    verifier("il dit sur combien d'affaires il s'appuie",
-             "affaire" in (r.get("message_final") or "")
-             and str(r.get("observations")) in (r.get("message_final") or ""),
-             r.get("message_final"))
+             all(aff.get(k) for k in ("plus_bas", "median", "plus_haut")), aff)
+    verifier("il dit sur combien d'affaires il s'appuie, dans un tableau garanti",
+             r.get("bloc_garanti") is True
+             and any(str(aff.get("observations")) == ligne[2] for ligne in r["bloc_ui"]["rows"]),
+             r.get("bloc_ui"))
     verifier("il nomme les fichiers d'où sortent les chiffres",
-             bool(r.get("sources")), r.get("sources"))
-    verifier("il donne la période couverte, pour qu'un prix de 2019 se voie",
-             bool(r.get("periode")), r.get("periode"))
+             bool(aff.get("sources")), aff.get("sources"))
     verifier("les exemples cités sont les plus RÉCENTS d'abord",
-             [_lecture.cle_triable(e["date"]) for e in r["exemples"]]
-             == sorted((_lecture.cle_triable(e["date"]) for e in r["exemples"]),
-                       reverse=True), [e["date"] for e in r["exemples"]])
-    verifier("la consigne interdit d'en déduire un prix unique ou un prix au m²",
-             "JAMAIS un prix unique" in (r.get("a_faire") or "")
-             and "revient à un humain" in (r.get("a_faire") or ""))
+             [_lecture.cle_triable(e["date"]) for e in aff["exemples"]]
+             == sorted((_lecture.cle_triable(e["date"]) for e in aff["exemples"]),
+                       reverse=True), [e["date"] for e in aff["exemples"]])
+    verifier("la consigne demande une ESTIMATION sourcée, jamais un prix ferme ni un prix du web",
+             "ESTIMATION" in (r.get("a_faire") or "") and "jamais comme un prix ferme" in (r.get("a_faire") or "")
+             and "aucun prix du web" in (r.get("a_faire") or ""))
     # Le piège déjà payé une fois : le poste cité dans un commentaire.
     verifier("un montant n'entre dans le relevé que si le poste est dans une "
              "colonne qui le DÉCRIT",
-             all("terrasse" in _plat_test(e["designation"]) for e in r["exemples"]),
-             [e["designation"] for e in r["exemples"]])
+             all("terrasse" in _plat_test(e["designation"]) for e in aff["exemples"]),
+             [e["designation"] for e in aff["exemples"]])
     # Et quand on n'a pas assez d'affaires : aucun chiffre, et on le dit.
     r_vide = await routines.prix_observes({"poste": "piscine à débordement"}, User())
     verifier("sans assez d'affaires, AUCUN chiffre n'est avancé",
-             r_vide.get("trouve") is False
-             and not any(k in r_vide for k in ("minimum", "median", "maximum")),
+             r_vide.get("trouve") is False and "bloc_ui" not in r_vide
+             and not any("prix_unitaires" in f or "affaires_entieres" in f for f in r_vide["postes"]),
              r_vide)
     verifier("et la consigne interdit d'aller chercher un prix de marché",
-             "ni un prix de marché" in (r_vide.get("a_faire") or ""),
+             "ni prix de marché" in (r_vide.get("a_faire") or ""),
              r_vide.get("a_faire"))
     verifier("un poste trop court est refusé plutôt que de ramener n'importe quoi",
              await _leve(routines.prix_observes({"poste": "bo"}, User())))

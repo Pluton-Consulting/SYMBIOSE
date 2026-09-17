@@ -150,6 +150,16 @@ async def lifespan(app: FastAPI):
             asyncio.create_task(demarrer_carte())
         except Exception:
             pass
+    # LA BASE DE PRIX (17/09) : les lignes des devis et factures émis, relues en fond dans les
+    # PDF du classement — une passe après le démarrage (elle ne rouvre que ce qui est neuf),
+    # puis une par jour. Là où le classement n'est pas un Drive, l'import échoue et rien ne part.
+    if travaux_de_fond:
+        try:
+            from outils import drive as _drive_present  # noqa: F401
+            from prix.collecte import demarrer_collecte
+            asyncio.create_task(demarrer_collecte())
+        except Exception:
+            pass
     yield
     from ressources.documents_file import arreter as arreter_documents
     await arreter_documents()

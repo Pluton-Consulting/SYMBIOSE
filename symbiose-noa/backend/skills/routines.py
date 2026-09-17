@@ -22,8 +22,9 @@ LES ROUTINES :
                             appel et à travers TOUS les jeux importés ;
   · `dossiers_en_attente` — ceux qui attendent une réponse depuis plus de N
                             jours, du plus ancien : le suivi, pas la recherche ;
-  · `prix_observes`       — ce que la maison a DÉJÀ facturé pour un poste, avec
-                            sa fourchette et ses sources. Un relevé, pas un tarif ;
+  · `prix_observes`       — les prix que la maison PRATIQUE, lus ligne à ligne dans
+                            ses devis et factures, et l'estimation qui en sort
+                            (quantité × médian, fourchette, sources) ;
   · `check_mails`         — le point sur le courrier récent, prêt à être résumé.
 
 ELLES NE SAVENT RIEN DU MÉTIER. Aucun nom de colonne n'est codé en dur : les
@@ -1092,7 +1093,7 @@ async def dossiers_en_attente(data: dict, user) -> dict:
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-#  LES PRIX DÉJÀ PRATIQUÉS — ce que la maison a facturé pour ce poste
+#  LES PRIX DÉJÀ PRATIQUÉS — ce que la maison a devisé et facturé, et l'estimation qui en sort
 # ═══════════════════════════════════════════════════════════════════════════
 #
 # « Prépare-moi une trame de pré-devis avec les postes et les quantités » : on
@@ -1106,20 +1107,31 @@ async def dossiers_en_attente(data: dict, user) -> dict:
 # d'observations, la fourchette et les affaires d'où cela sort. Un prix sans
 # ces trois choses est une invention polie.
 #
-# CE GESTE NE CHIFFRE RIEN. Il observe. C'est la différence entre « vos huit
-# derniers chantiers de terrasse bois vont de 9 250 à 18 400 € HT, médiane
-# 11 900 » et « comptez environ 12 000 € » : la première phrase se vérifie, la
-# seconde engage l'entreprise sur un chiffre que personne n'a décidé.
+# CE GESTE OBSERVE, PUIS IL ESTIME — ET IL MONTRE D'OÙ (17/09). La première écriture
+# s'interdisait tout chiffre unique : « n'en déduis jamais un prix ». Relevé de Noa après le
+# pré-devis d'abattage resté vide : « j'aimerais qu'il analyse le contenu des factures, les
+# articles, les prix, pour avoir des estimations des montants ». Deux choses manquaient :
+#   * LES LIGNES. Les jeux importés ne portent que des TOTAUX par affaire ; le prix d'un
+#     ouvrage vit dans les lignes des PDF (`prix.collecte` les lit en fond, migration 055).
+#     C'est la source première ; les totaux d'affaires et le catalogue d'articles la complètent.
+#   * LE DROIT D'ESTIMER. Quantité × prix unitaire MÉDIAN de la même unité, avec la fourchette
+#     à côté et le nombre d'observations : c'est une estimation qui se vérifie, pas un prix
+#     qui engage. Ce qui n'a pas deux observations reste « à chiffrer ».
 
 MIN_OBSERVATIONS = 2
 MAX_OBSERVATIONS_CITEES = 8
+MAX_POSTES_PAR_APPEL = 12
+MAX_LIGNES_CANDIDATES = 4000
 
 # Les colonnes où un poste se décrit. On ne cherche PAS dans les montants, les
 # dates ni les références : « 2024 » se retrouverait dans un numéro de devis, et
 # le prix moyen d'un poste inexistant serait rendu avec le plus grand sérieux.
+# « titre » : c'est la colonne où l'export des devis nomme l'affaire (« Abattage d'arbres »).
 FAMILLES_DESCRIPTIVES = ("prestation", "description", "designation", "désignation",
-                         "libelle", "libellé", "objet", "poste", "travaux",
-                         "nature", "intitule", "intitulé", "chantier", "commentaire")
+                         "libelle", "libellé", "objet", "poste", "travaux", "titre",
+                         "nature", "intitule", "intitulé", "chantier")
+# « commentaire » a quitté la liste le 17/09 : un commentaire CITE un ouvrage (« voir abattage
+# du voisin »), il ne décrit pas l'affaire — il faisait entrer le montant d'une autre affaire.
 
 
 def _mediane(valeurs: list) -> float:
@@ -1130,40 +1142,57 @@ def _mediane(valeurs: list) -> float:
     return (ordonnees[milieu - 1] + ordonnees[milieu]) / 2
 
 
-async def prix_observes(data: dict, user) -> dict:
-    """Ce que l'entreprise a facturé pour un poste, d'après ses propres affaires."""
-    from database.connection import get_db
-    from security.acces import niveaux_visibles
-    from skills.erreurs import SkillError
-    from skills.lecture import lire_montant, est_un_nombre, lire_date
+def _postes_demandes(data: dict) -> list[dict]:
+    """Les postes à relever : `poste` seul, ou `postes` — des noms, ou des fiches
+    {poste, quantite, unite} quand on veut l'estimation avec."""
+    bruts = data.get("postes")
+    if isinstance(bruts, str):
+        bruts = [p for p in bruts.replace(";", ",").split(",")]
+    if not isinstance(bruts, list) or not bruts:
+        bruts = [{"poste": data.get("poste") or data.get("prestation") or data.get("recherche"),
+                  "quantite": data.get("quantite"), "unite": data.get("unite")}]
+    postes = []
+    for b in bruts[:MAX_POSTES_PAR_APPEL]:
+        if isinstance(b, dict):
+            nom = b.get("poste") or b.get("designation") or b.get("nom") or b.get("prestation")
+            quantite, unite = b.get("quantite") or b.get("qte"), b.get("unite")
+        else:
+            nom, quantite, unite = b, None, None
+        nom = " ".join(str(nom or "").split())
+        if len(nom) < 3:
+            continue
+        try:
+            quantite = float(str(quantite).replace(",", ".").split()[0]) if quantite not in (None, "") else None
+        except (ValueError, IndexError):
+            quantite = None
+        postes.append({"poste": nom, "quantite": quantite, "unite": str(unite or "").strip()})
+    return postes
 
-    poste = " ".join(str(data.get("poste") or data.get("prestation")
-                         or data.get("recherche") or "").split())
-    if len(poste) < 3:
-        raise SkillError(
-            "Quel poste ? Donne-le dans `poste`, avec les mots du métier "
-            "(« terrasse bois », « engazonnement », « clôture »). Un mot trop "
-            "court ramènerait n'importe quoi.")
 
-    niveaux = sorted(niveaux_visibles(getattr(user, "role", "")))
-    demande_jeu = str(data.get("source_type") or "").strip()
+async def _lignes_du_poste(conn, racines: list, niveaux: list) -> list:
+    """Les lignes chiffrées (devis et factures lus dans le classement) qui décrivent ce poste."""
+    from prix.releve import correspond
+    lignes = await conn.fetch(
+        "SELECT l.designation, l.rubrique, l.unite, l.quantite, l.pu_ht, l.texte_plat, "
+        "       p.nature, p.numero, p.date_piece, p.fichier_id "
+        "FROM lignes_chiffrees l JOIN pieces_chiffrees p USING (fichier_id) "
+        "WHERE p.etat = 'lue' AND p.access_level = ANY($1::text[]) "
+        "  AND p.nature IN ('devis', 'facture', 'commande', 'situation') "
+        "  AND l.texte_plat LIKE ALL($2::text[]) "
+        f"LIMIT {MAX_LIGNES_CANDIDATES}",
+        niveaux, [f"%{r}%" for r in racines])
+    return [{"designation": l["designation"], "unite": l["unite"], "quantite": float(l["quantite"]),
+             "pu_ht": float(l["pu_ht"]), "nature": l["nature"], "numero": l["numero"],
+             "date": l["date_piece"], "fichier_id": l["fichier_id"]}
+            for l in lignes if correspond(l["texte_plat"], racines)]
 
-    try:
-        async with get_db() as conn:
-            existants = await _jeux(conn, niveaux)
-            lignes = await conn.fetch(
-                "SELECT source_type, data, champs FROM document_metadata "
-                "WHERE access_level = ANY($1::text[]) "
-                "  AND (data::text ILIKE $2 OR champs::text ILIKE $2) "
-                "LIMIT 2000",
-                niveaux, f"%{poste}%")
-    except Exception as e:  # noqa: BLE001
-        logger.warning("Relevé des prix impossible : %s", e)
-        raise SkillError("Les données des affaires sont momentanément indisponibles.")
 
-    cible = _plat(poste)
+def _affaires_du_poste(lignes_jeux: list, racines: list, demande_jeu: str) -> dict | None:
+    """Les TOTAUX d'affaires dont l'intitulé décrit ce poste (jeux importés)."""
+    from prix.releve import correspond, plat
+    from skills.lecture import lire_montant, est_un_nombre
     observations = []
-    for l in lignes:
+    for l in lignes_jeux:
         jeu = l["source_type"]
         if demande_jeu and _plat(demande_jeu) not in _plat(jeu):
             continue
@@ -1180,8 +1209,8 @@ async def prix_observes(data: dict, user) -> dict:
         # moyenne — le même piège que la fiche client, payé une fois déjà.
         colonne_trouvee = None
         for colonne, valeur in d.items():
-            if cible in _plat(valeur) and any(f in _plat(colonne)
-                                              for f in FAMILLES_DESCRIPTIVES):
+            if any(f in _plat(colonne) for f in FAMILLES_DESCRIPTIVES) \
+                    and correspond(plat(valeur), racines):
                 colonne_trouvee = colonne
                 break
         if not colonne_trouvee:
@@ -1192,69 +1221,202 @@ async def prix_observes(data: dict, user) -> dict:
         montant = lire_montant(brut)
         if montant <= 0:
             continue
-        observations.append({
-            "jeu": jeu, "montant": montant, "montant_ecrit": brut,
-            "designation": str(d[colonne_trouvee])[:120],
-            "reference": _valeur(d, "reference"),
-            "date": _valeur(d, "date"),
-            "client": _nom_complet(d),
-        })
-
+        observations.append({"jeu": jeu, "montant": montant,
+                             "designation": str(d[colonne_trouvee])[:120],
+                             "reference": _valeur(d, "reference"), "date": _valeur(d, "date")})
     if len(observations) < MIN_OBSERVATIONS:
-        return {
-            "trouve": False, "poste": poste, "observations": len(observations),
-            "jeux_de_donnees": existants,
-            "message": (
-                f"Trop peu d'affaires passées mentionnent « {poste} » pour en tirer un "
-                f"ordre de prix ({len(observations)} trouvée(s), il en faut au moins "
-                f"{MIN_OBSERVATIONS})."),
-            "a_faire": (
-                "Dis-le franchement et n'avance AUCUN chiffre : ni un prix de marché, ni "
-                "une estimation, ni un ordre de grandeur « habituel ». Propose de "
-                "chercher le poste sous un autre nom, ou de laisser la ligne à chiffrer "
-                "à la main dans le devis."),
-        }
-
+        return None
     montants = [o["montant"] for o in observations]
-    dates = [d for d in (lire_date(o["date"])[0] for o in observations) if d]
-    periode = (f"de {min(dates).isoformat()} à {max(dates).isoformat()}"
-               if dates else None)
-    # Les plus récentes d'abord : un prix de l'an dernier vaut mieux qu'un prix
-    # d'il y a cinq ans, et c'est celui qu'on veut citer en exemple.
     observations.sort(key=lambda o: _date_triable(o["date"]), reverse=True)
+    return {"observations": len(observations), "plus_bas": _euros(min(montants)),
+            "median": _euros(_mediane(montants)), "plus_haut": _euros(max(montants)),
+            "sources": sorted({o["jeu"] for o in observations}),
+            "exemples": [{k: o[k] for k in ("designation", "montant", "reference", "date")}
+                         for o in observations[:4]]}
 
-    return {
-        "trouve": True, "poste": poste,
-        "observations": len(observations),
-        "minimum": _euros(min(montants)),
-        "median": _euros(_mediane(montants)),
-        "maximum": _euros(max(montants)),
-        "periode": periode,
-        "sources": sorted({o["jeu"] for o in observations}),
-        "exemples": observations[:MAX_OBSERVATIONS_CITEES],
-        "bloc_ui": {
-            "type": "keyvalue",
-            "rows": [["Poste", poste],
-                     ["Affaires observées", str(len(observations))],
-                     ["Plus bas", _euros(min(montants))],
-                     ["Médiane", _euros(_mediane(montants))],
-                     ["Plus haut", _euros(max(montants))]]
-                    + ([["Période", periode]] if periode else [])
-                    + [["Source", ", ".join(sorted({o["jeu"] for o in observations}))]],
-        },
-        "message_final": (
-            f"Sur {len(observations)} affaire(s) passée(s) mentionnant « {poste} », les "
-            f"montants vont de {_euros(min(montants))} à {_euros(max(montants))}, "
-            f"médiane {_euros(_mediane(montants))}"
-            + (f" ({periode})." if periode else ".")),
-        "a_faire": (
-            "AFFICHE le relevé : insère un bloc ```ui contenant EXACTEMENT le contenu de "
-            "`bloc_ui`. Ce sont des prix DÉJÀ PRATIQUÉS par l'entreprise, pas un tarif : "
-            "présente-les comme une FOURCHETTE et cite le nombre d'affaires observées. "
-            "N'en déduis JAMAIS un prix unique, ne calcule pas de prix au mètre carré à "
-            "partir de ces chiffres, et rappelle que le chiffrage final revient à un "
-            "humain."),
+
+def _articles_du_poste(lignes_jeux: list, racines: list) -> list:
+    """Le TARIF de la maison : les articles du catalogue dont le libellé décrit ce poste et
+    qui portent un prix (la moitié des prestations y sont à zéro : elles ne disent rien)."""
+    from prix.releve import correspond, plat
+    from skills.lecture import lire_montant, est_un_nombre
+    articles = []
+    for l in lignes_jeux:
+        d = _fusion(l)
+        libelle = next((v for c, v in d.items() if "libelle_de_l_article" in _plat(c)), None)
+        if not libelle or not correspond(plat(libelle), racines):
+            continue
+        prix = next((v for c, v in d.items()
+                     if _plat(c).startswith("prix_de_l_article") and _plat(c).endswith("ht")), None)
+        if not est_un_nombre(prix) or lire_montant(prix) <= 0:
+            continue
+        unite = next((v for c, v in d.items() if _plat(c) == "unite"), "")
+        articles.append({"article": str(libelle)[:120], "unite": str(unite or ""),
+                         "prix_ht": _euros(lire_montant(prix))})
+    return articles[:6]
+
+
+async def prix_observes(data: dict, user) -> dict:
+    """Ce que l'entreprise pratique pour un ou plusieurs postes, et l'estimation qui en sort."""
+    from database.connection import get_db
+    from security.acces import niveaux_visibles
+    from skills.erreurs import SkillError
+    from prix.releve import mots_cles, relever, estimer, unite_normale, euros
+
+    postes = _postes_demandes(data)
+    if not postes:
+        raise SkillError(
+            "Quel poste ? Donne-le dans `poste`, ou plusieurs dans `postes`, avec les mots du "
+            "métier (« abattage d'arbre », « terrasse bois », « engazonnement »). Un mot trop "
+            "court ramènerait n'importe quoi.")
+
+    niveaux = sorted(niveaux_visibles(getattr(user, "role", "")))
+    demande_jeu = str(data.get("source_type") or "").strip()
+    releves, base = [], {}
+    try:
+        async with get_db() as conn:
+            existants = await _jeux(conn, niveaux)
+            try:
+                from prix.collecte import bilan
+                base = await bilan(conn, niveaux)
+            except Exception:  # noqa: BLE001 — la base de prix peut ne pas exister (jumeau sans collecte)
+                base = {}
+            for p in postes:
+                racines = mots_cles(p["poste"])
+                if not racines:
+                    releves.append({**p, "trouve": False})
+                    continue
+                elargi = None
+                try:
+                    lignes = await _lignes_du_poste(conn, racines, niveaux) if base else []
+                    par_unite = relever(lignes)
+                    # Trop peu avec tous les mots : on relâche sur le premier, celui qui nomme
+                    # l'ouvrage (« abattage » dans « abattage d'arbres morts »), ET ON LE DIT.
+                    if base and len(racines) > 1 and not any(r["suffisant"] for r in par_unite):
+                        lignes = await _lignes_du_poste(conn, racines[:1], niveaux)
+                        plus_large = relever(lignes)
+                        if any(r["suffisant"] for r in plus_large):
+                            par_unite, elargi = plus_large, racines[0]
+                except Exception as e:  # noqa: BLE001
+                    logger.warning("Lignes chiffrées illisibles : %s", str(e)[:160])
+                    par_unite = []
+                jeux = await conn.fetch(
+                    "SELECT source_type, data, champs FROM document_metadata "
+                    "WHERE access_level = ANY($1::text[]) "
+                    "  AND (data::text ILIKE $2 OR champs::text ILIKE $2) LIMIT 2000",
+                    niveaux, f"%{racines[0]}%")
+                releves.append({**p, "racines": racines, "elargi_a": elargi,
+                                "par_unite": par_unite,
+                                "affaires": _affaires_du_poste(jeux, racines, demande_jeu),
+                                "catalogue": _articles_du_poste(jeux, racines)})
+    except SkillError:
+        raise
+    except Exception as e:  # noqa: BLE001
+        logger.warning("Relevé des prix impossible : %s", e)
+        raise SkillError("Les données des affaires sont momentanément indisponibles.")
+
+    lignes_tableau, lignes_estimation, fiches = [], [], []
+    total = {"bas": 0.0, "median": 0.0, "haut": 0.0}
+    chiffres, sans_prix = 0, []
+    for r in releves:
+        utiles = [u for u in r.get("par_unite") or [] if u["suffisant"]]
+        voulue = unite_normale(r["unite"]) if r.get("unite") else None
+        # L'unité demandée d'abord ; sinon la plus observée.
+        utiles.sort(key=lambda u: (u["unite"] == voulue, u["observations"]), reverse=True)
+        fiche = {"poste": r["poste"], "trouve": bool(utiles or r.get("affaires") or r.get("catalogue"))}
+        if r.get("elargi_a"):
+            fiche["recherche_elargie"] = (
+                f"rien d'assez fourni avec tous les mots : relevé fait sur « {r['elargi_a']}… » seul")
+        if utiles:
+            fiche["prix_unitaires"] = [{
+                "unite": u["unite"], "observations": u["observations"],
+                "dont_factures": u["factures"], "dont_devis": u["devis"],
+                "plus_bas": euros(u["plus_bas"]), "median": euros(u["median"]),
+                "plus_haut": euros(u["plus_haut"]), "periode": u["periode_retenue"],
+                "de": u["de"], "a": u["a"], "exemples": u["exemples"][:4]} for u in utiles[:3]]
+            for u in utiles[:2]:
+                lignes_tableau.append([r["poste"], u["unite"], str(u["observations"]),
+                                       euros(u["plus_bas"]), euros(u["median"]), euros(u["plus_haut"]),
+                                       u["periode_retenue"]])
+        if r.get("affaires"):
+            a = r["affaires"]
+            fiche["affaires_entieres"] = a
+            lignes_tableau.append([r["poste"], "affaire entière", str(a["observations"]),
+                                   a["plus_bas"], a["median"], a["plus_haut"], "tout l'historique"])
+        if r.get("catalogue"):
+            fiche["catalogue_articles"] = r["catalogue"]
+        if r.get("quantite"):
+            e = estimer(utiles[0], r["quantite"]) if utiles and (not voulue or utiles[0]["unite"] == voulue) else None
+            if e:
+                fiche["estimation"] = {"quantite": e["quantite"], "unite": e["unite"],
+                                       "bas": euros(e["bas"]), "median": euros(e["median"]),
+                                       "haut": euros(e["haut"])}
+                lignes_estimation.append([r["poste"], f"{e['quantite']:g} {e['unite']}",
+                                          euros(utiles[0]["median"]), euros(e["bas"]),
+                                          euros(e["median"]), euros(e["haut"])])
+                for k in total:
+                    total[k] += e[k]
+                chiffres += 1
+            else:
+                fiche["estimation"] = None
+                lignes_estimation.append([r["poste"], f"{r['quantite']:g} {r.get('unite') or ''}".strip(),
+                                          "—", "à chiffrer", "à chiffrer", "à chiffrer"])
+        if not fiche["trouve"]:
+            sans_prix.append(r["poste"])
+        fiches.append(fiche)
+
+    trouve = any(f["trouve"] for f in fiches)
+    blocs = []
+    if lignes_tableau:
+        blocs.append({"type": "table", "titre": "Prix déjà pratiqués par la maison (HT)",
+                      "columns": ["Poste", "Unité", "Obs.", "Plus bas", "Médian", "Plus haut", "Période"],
+                      "rows": lignes_tableau})
+    if lignes_estimation:
+        if chiffres > 1:
+            lignes_estimation.append(["TOTAL des postes estimés", "", "", euros(total["bas"]),
+                                      euros(total["median"]), euros(total["haut"])])
+        blocs.append({"type": "table", "titre": "Estimation d'après les prix pratiqués (HT)",
+                      "columns": ["Poste", "Quantité", "PU médian", "Bas", "Médian", "Haut"],
+                      "rows": lignes_estimation})
+
+    resultat = {
+        "trouve": trouve, "postes": fiches, "base_de_prix": base or "absente",
+        "jeux_de_donnees": existants if not trouve else None,
     }
+    if sans_prix:
+        resultat["sans_observation"] = sans_prix
+    if not trouve:
+        resultat["message"] = (
+            "Aucun devis ni facture passé ne décrit " + ", ".join(f"« {p} »" for p in sans_prix)
+            + " au moins deux fois : pas d'ordre de prix à en tirer.")
+        resultat["a_faire"] = (
+            "Dis-le franchement et n'avance AUCUN chiffre : ni prix de marché, ni ordre de "
+            "grandeur « habituel ». Retente UNE fois avec un autre mot du métier (le nom de "
+            "l'ouvrage seul : « abattage », « dessouchage », « élagage »), puis laisse la ligne "
+            "« à chiffrer » dans le pré-devis."
+            + (" La base de prix est encore en cours de lecture : dis-le, le relevé sera plus "
+               "fourni plus tard." if (base or {}).get("reste_a_lire") else ""))
+        return resultat
+
+    resultat["bloc_ui"] = blocs if len(blocs) != 1 else blocs[0]
+    resultat["bloc_garanti"] = True
+    resultat["message_final"] = (
+        f"Relevé des prix pratiqués pour {len([f for f in fiches if f['trouve']])} poste(s)"
+        + (f" ; {len(sans_prix)} sans observation" if sans_prix else "") + ".")
+    resultat["a_faire"] = (
+        "Le ou les tableaux s'affichent AUTOMATIQUEMENT : ne les recopie pas. Ce sont les prix "
+        "que la maison a DÉJÀ pratiqués, lus ligne à ligne dans ses devis et factures. "
+        "POUR ESTIMER un poste : quantité × prix unitaire MÉDIAN de la MÊME unité, et donne la "
+        "fourchette (plus bas – plus haut) à côté, avec le nombre d'observations. Rappelle ce "
+        "geste avec `postes: [{poste, quantite, unite}]` pour que le calcul soit fait par le "
+        "serveur plutôt que de tête. Un FORFAIT ne se transpose que si la désignation de "
+        "l'exemple décrit un ouvrage comparable : lis les `exemples` avant de t'en servir. Ne "
+        "mélange jamais deux unités. Un poste sans observation reste « à chiffrer » : aucun "
+        "prix de marché, aucun prix du web, aucun chiffre de tête. Présente le tout comme une "
+        "ESTIMATION à valider par la personne, jamais comme un prix ferme."
+        + (" La base de prix est encore en cours de lecture : dis-le en une phrase."
+           if (base or {}).get("reste_a_lire") else ""))
+    return resultat
 
 
 SKILLS = {
@@ -1340,17 +1502,20 @@ SKILLS = {
     "prix_observes": Declaration(
         fonction=prix_observes,
         description=(
-            "CE QUE L'ENTREPRISE A DEJA FACTURE pour un poste : le nombre "
-            "d'affaires observees, le montant le plus bas, la mediane, le plus "
-            "haut, la periode et les affaires d'ou cela sort. A appeler des "
-            "qu'on demande un ordre de prix, un pre-chiffrage ou « combien on "
-            "facture d'habitude pour X ». `poste` : le poste avec les mots du "
-            "metier (« terrasse bois », « engazonnement »). C'est un RELEVE, "
-            "pas un tarif : cite la fourchette et le nombre d'affaires, ne "
-            "deduis jamais un prix unique, et n'invente aucun montant si le "
-            "releve est vide. Ne cherche JAMAIS un prix sur le web pour "
+            "LES PRIX QUE L'ENTREPRISE PRATIQUE, lus ligne a ligne dans ses devis et "
+            "factures (designation, unite, prix unitaire HT), plus les totaux d'affaires "
+            "et le catalogue d'articles. A appeler des qu'on demande un ordre de prix, "
+            "une ESTIMATION, un pre-devis, un chiffrage, ou « combien on facture pour X ». "
+            "`postes` : la liste des ouvrages, avec les mots du metier, et pour chacun "
+            "`quantite` et `unite` si on les connait — ex. [{\"poste\": \"abattage "
+            "arbre\", \"quantite\": 3, \"unite\": \"u\"}, {\"poste\": \"terrasse "
+            "bois\", \"quantite\": 40, \"unite\": \"m2\"}] : le SERVEUR calcule alors "
+            "l'estimation (bas, median, haut) et le total. `poste` seul marche aussi. UN "
+            "SEUL appel pour tous les postes d'un pre-devis. Rends une ESTIMATION sourcee "
+            "(fourchette + nombre d'observations), jamais un prix ferme ; un poste sans "
+            "observation reste « a chiffrer ». Ne cherche JAMAIS un prix sur le web pour "
             "chiffrer une affaire : ce ne sont pas les prix de la maison"),
-        requis=["poste"], optionnels=["source_type"],
+        requis=[], optionnels=["poste", "postes", "quantite", "unite", "source_type"],
         effet="lecture",
         libelle="je relève les prix déjà pratiqués"),
     "check_mails": Declaration(
