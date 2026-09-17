@@ -149,7 +149,7 @@ class FausseConnexion:
     async def fetch(self, sql, *args):
         if "DISTINCT source_type" in sql:
             return [{"source_type": t} for t in sorted(BASE)]
-        if "jsonb_each_text" in sql:                      # colonnes de `champs`
+        if "jsonb_each_text(m.champs) AS d" in sql:       # colonnes de `champs` (la clause `contient` en porte un aussi)
             cles = set()
             for d in BASE.get(args[0], []):
                 cles |= set(_champs(d))
@@ -234,10 +234,11 @@ class FausseConnexion:
 
     @staticmethod
     def _paires(reste):
-        """Les paramètres de la recherche partielle : (colonne, « %bout% »)."""
+        """Les paramètres de la recherche partielle : (colonne, clé normalisée, « %bout% ») — trois
+        par colonne depuis le 18/09 (la clé se compare sans casse, accents ni ponctuation)."""
         plats = [a for a in reste if isinstance(a, str)]
-        return [(plats[i], plats[i + 1].strip("%"))
-                for i in range(0, len(plats) - 1, 2)]
+        return [(plats[i], plats[i + 2].strip("%"))
+                for i in range(0, len(plats) - 2, 3)]
 
     @classmethod
     def _filtres(cls, type_source, niveaux, charge, *reste):
@@ -249,9 +250,15 @@ class FausseConnexion:
             # ÉGALITÉ STRICTE, comme l'opérateur JSONB `@>` de la vraie requête.
             if not all(str(fondu.get(k, "")) == str(v) for k, v in critere.items()):
                 continue
-            # ILIKE '%bout%' : insensible à la casse, n'importe où dans la valeur.
-            if not all(bout.lower() in str(fondu.get(col, "")).lower()
-                       for col, bout in partiel):
+            # ILIKE '%bout%' : insensible à la casse, n'importe où dans la valeur — et la
+            # colonne se trouve à la clé près (« Email » ↔ « E-mail »), comme la vraie clause.
+            def _val(col):
+                nu = "".join(c for c in col.lower() if c.isalnum())
+                for k, v in fondu.items():
+                    if "".join(c for c in str(k).lower() if c.isalnum()) == nu:
+                        return str(v or "")
+                return ""
+            if not all(bout.lower() in _val(col).lower() for col, bout in partiel):
                 continue
             out.append(d)
         return out

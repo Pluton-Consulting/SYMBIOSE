@@ -169,12 +169,26 @@ def _clause_contient(fragments: dict, premier: int) -> tuple[str, list]:
     """
     morceaux, params = [], []
     for colonne, bout in fragments.items():
+        # La colonne se cherche À LA CLÉ PRÈS (casse, accents, espaces, ponctuation) — comme
+        # `_valeur_de` le fait en Python : « Email » doit trouver « E-mail ». Le nom exact garde
+        # la voie rapide ; sinon on parcourt les clés de la ligne.
         morceaux.append(
-            f"COALESCE(m.champs->>${premier}::text, m.data->>${premier}::text) "
-            f"ILIKE ${premier + 1}::text")
-        params += [colonne, f"%{bout}%"]
-        premier += 2
+            f"(COALESCE(m.champs->>${premier}::text, m.data->>${premier}::text) ILIKE ${premier + 2}::text "
+            f"OR EXISTS (SELECT 1 FROM jsonb_each_text(COALESCE(m.champs, '{{}}'::jsonb) || COALESCE(m.data, '{{}}'::jsonb)) kv "
+            f"WHERE regexp_replace(translate(lower(kv.key), 'àâäéèêëîïôöùûüç', 'aaaeeeeiioouuuc'), '[^a-z0-9]', '', 'g') = ${premier + 1}::text "
+            f"AND kv.value ILIKE ${premier + 2}::text))")
+        params += [colonne, _sans_s(colonne), f"%{bout}%"]
+        premier += 3
     return (" AND ".join(morceaux) if morceaux else "TRUE"), params
+
+
+def _sans_s(nom: str) -> str:
+    """La forme comparable SANS la règle du pluriel : une clé de colonne se compare telle quelle."""
+    import re
+    import unicodedata
+    plat = "".join(c for c in unicodedata.normalize("NFD", (nom or "").strip().lower())
+                   if unicodedata.category(c) != "Mn")
+    return re.sub(r"[^a-z0-9]", "", plat)
 
 
 # ── La période : elle se lit dans `skills/lecture.py` ─────────────────────
@@ -199,9 +213,14 @@ def _cle_comparaison(nom: str) -> str:
     naturellement « fournisseurs » ou « Devis » là où le type est « fournisseur ».
     Exiger le nom exact ferait dépendre une réponse chiffrée d'un pluriel.
     """
+    import re
     import unicodedata
     plat = "".join(c for c in unicodedata.normalize("NFD", (nom or "").strip().lower())
                    if unicodedata.category(c) != "Mn")
+    # NI ESPACES, NI PONCTUATION (18/09, recette pilotée). « Marge brute (BR) », « E-mail »,
+    # « montant_ht » : le modèle recopie l'en-tête à un espace ou un tiret près, et la colonne
+    # devenait introuvable (« aucune des 687 lignes n'est lisible comme un nombre »).
+    plat = re.sub(r"[^a-z0-9]", "", plat)
     return plat[:-1] if len(plat) > 3 and plat.endswith("s") else plat
 
 
