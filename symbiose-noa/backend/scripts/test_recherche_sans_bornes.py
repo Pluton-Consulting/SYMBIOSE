@@ -147,7 +147,7 @@ if not nas_cote:
         "_chercher_fichiers_pages": _chercher_pages_stub,
     }
     extraire(BACKEND / "outils" / "drive.py",
-             {"chercher", "_paginer_mixte", "_nu", "_echappe", "_ACCENTS", "_parasite",
+             {"chercher", "_mots_de_repli", "_paginer_mixte", "_nu", "_echappe", "_ACCENTS", "_parasite",
               "MAX_TROUVAILLES", "MAX_PROFONDEUR", "asyncio"}, espace_d)
     r1 = asyncio.run(espace_d["chercher"]("durand", [(None, "all")]))
     r3 = asyncio.run(espace_d["chercher"]("durand", [(None, "all")], page=3))

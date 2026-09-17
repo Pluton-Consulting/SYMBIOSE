@@ -224,7 +224,7 @@ if not nas_cote and drive_py.exists():
              "_chemins_cibles": _chemins_cibles_stub,
              "Optional": __import__("typing").Optional,
              "_MIME_DOSSIER": "application/vnd.google-apps.folder", "MAX_DOSSIERS_ARBRE": 3000}
-    extraire(drive_py, {"chercher", "_chercher_fichiers_pages", "_paginer_mixte", "_nu", "_echappe", "_ACCENTS", "_parasite",
+    extraire(drive_py, {"chercher", "_mots_de_repli", "_chercher_fichiers_pages", "_paginer_mixte", "_nu", "_echappe", "_ACCENTS", "_parasite",
                         "MAX_TROUVAILLES", "MAX_PROFONDEUR", "asyncio"}, esp_c)
     rc = asyncio.run(esp_c["chercher"]("devis", [(None, "all")]))
     fichiers_p1 = [t for t in rc["resultats"] if not t["dossier"]]

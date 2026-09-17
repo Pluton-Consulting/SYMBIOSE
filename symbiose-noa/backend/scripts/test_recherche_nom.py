@@ -122,8 +122,11 @@ if not nas_cote:
         "_enfants_par_lots": None, "Optional": __import__("typing").Optional,
         "_MIME_DOSSIER": "application/vnd.google-apps.folder",
         "MAX_DOSSIERS_ARBRE": 3000,
+        # 17/09 : la reconstruction des chemins lit d'abord le catalogue gardé (vide ici :
+        # le banc éprouve donc le chemin par l'API, comme avant) et borne ses appels.
+        "_CATALOGUES": {}, "MAX_APPELS_CHEMINS": 150,
     }
-    extraire(drive_py, {"chercher", "_chercher_fichiers_pages", "_chemins_cibles", "_paginer_mixte", "_nu", "_echappe", "_ACCENTS", "_parasite",
+    extraire(drive_py, {"chercher", "_mots_de_repli", "_chercher_fichiers_pages", "_chemins_cibles", "_paginer_mixte", "_nu", "_echappe", "_ACCENTS", "_parasite",
                         "MAX_TROUVAILLES", "MAX_PROFONDEUR", "asyncio"}, espace_d)
     chercher = espace_d["chercher"]
     peri = [(None, "all")]

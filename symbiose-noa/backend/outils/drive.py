@@ -1909,6 +1909,9 @@ async def _chercher_fichiers_pages(service, requete: str, max_pages: int = 20):
     return fichiers, True
 
 
+MAX_APPELS_CHEMINS = 150
+
+
 async def _chemins_cibles(service, elements: list[dict], drives: dict[str, str]) -> dict[str, str]:
     """Construit les chemins des seuls résultats d'une recherche.
 
@@ -1921,9 +1924,32 @@ async def _chemins_cibles(service, elements: list[dict], drives: dict[str, str])
     infos: dict[str, dict] = {}
     chemins: dict[str, str] = {}
     timeout = globals().get("_DRIVE_REQUEST_TIMEOUT_S", 25)
+    # LE CATALOGUE EST DÉJÀ LÀ (17/09, 18:07). « Symbiose Paysage charte » : le repli sur le mot
+    # « Symbiose » a rendu des milliers de fichiers, et le chemin de CHACUN était reconstruit par
+    # un appel Google par dossier parent — plus de quatre minutes, puis l'échec. Or les 12 000
+    # dossiers du Drive (nom + parents) sont gardés en mémoire, chauffés au démarrage : on y lit
+    # d'abord, et l'API ne sert plus qu'aux dossiers qu'il ne connaît pas encore.
+    connus: dict = {}
+    for garde in _CATALOGUES.values():
+        if garde.get("construit_le"):
+            connus = garde.get("dossiers") or {}
+            if connus:
+                break
+    appels_api = 0
 
     async def info(identifiant: str) -> dict:
+        nonlocal appels_api
         if identifiant in infos:
+            return infos[identifiant]
+        fiche = connus.get(identifiant)
+        if fiche is not None:
+            infos[identifiant] = {"id": identifiant, "name": fiche.get("nom"), "parents": fiche.get("parents") or []}
+            return infos[identifiant]
+        # Hors catalogue : l'API, mais BORNÉE — au-delà, le chemin reste partiel plutôt que
+        # de retenir le tour des minutes durant.
+        appels_api += 1
+        if appels_api > MAX_APPELS_CHEMINS:
+            infos[identifiant] = {"id": identifiant, "name": "…", "parents": []}
             return infos[identifiant]
         def appel():
             return service.files().get(
@@ -1977,6 +2003,19 @@ async def _chemins_cibles(service, elements: list[dict], drives: dict[str, str])
     return chemins
 
 
+def _mots_de_repli(jetons: list[str], noms_des_drives: list) -> list[str]:
+    """Les mots à essayer quand le motif ENTIER ne donne rien — du plus long au plus court, SANS
+    les mots présents partout : ceux du nom des Drive (donc de l'entreprise). « Symbiose Paysage
+    charte » retombait sur « Symbiose » : des milliers de fichiers, des minutes. Le mot utile
+    était « charte ». Si tous les mots sont omniprésents, on n'en essaie AUCUN : mieux vaut
+    « rien trouvé » en deux secondes qu'un inventaire du Drive en cinq minutes."""
+    if len(jetons) < 2:
+        return []
+    partout = {t for nom in noms_des_drives for t in _nu(str(nom or "")).split()}
+    utiles = [t for t in dict.fromkeys(jetons) if t not in partout]
+    return sorted(utiles, key=len, reverse=True)[:3]
+
+
 async def chercher(motif: str, perimetres: Optional[list] = None,
                    page: int = 1, identite=None, genre: Optional[str] = None, dans_contenu: bool = False) -> dict:
     """Dossiers ET fichiers dont le NOM porte le motif, à TOUTES les profondeurs.
@@ -2025,9 +2064,7 @@ async def chercher(motif: str, perimetres: Optional[list] = None,
         # beaucoup plus rapide que reconstruire les 12 000 dossiers du Drive.
         # Le catalogue complet reste réservé à `arborescence`, qui en a besoin.
         drives = {d["id"]: d.get("name") for d in await _drives_nommes(service)}
-        essais = [motif]
-        if len(jetons) > 1:
-            essais.append(max(jetons, key=len))
+        essais = [motif] + _mots_de_repli(jetons, list(drives.values()))
         ids_vus: set[str] = set()
         for essai in essais:
             requete_base = f"trashed = false and {champ} contains '{_echappe(essai)}'"
@@ -2036,7 +2073,8 @@ async def chercher(motif: str, perimetres: Optional[list] = None,
                     service, requete_base + f" and mimeType = '{_MIME_DOSSIER}'")
                 partiel = partiel or incomplet
                 for d in dossiers_page:
-                    if d.get("id") in ids_vus or not _correspond(d.get("name")):
+                    if d.get("id") in ids_vus or not (_correspond(d.get("name")) or (
+                            essai != motif and _nu(essai) in _nu(d.get("name") or ""))):
                         continue
                     ids_vus.add(d["id"])
                     trouves.append({"id": d.get("id"), "nom": d.get("name"),

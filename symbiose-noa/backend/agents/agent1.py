@@ -599,9 +599,15 @@ async def routeur_node(state: AgentState) -> dict:
         "oui", "non", "yes", "no", "au revoir", "bonne journee", "bonne journée",
         "bonne soiree", "bonne soirée", "a bientot", "à bientôt", "bye",
     }
+    # UN « OUI » DANS UNE CONVERSATION EST UN ORDRE D'AGIR (17/09). « oui », « non », « ok »
+    # après une proposition de l'assistant déclenchent le geste proposé — ou sa correction. Ils
+    # sautent toujours l'appel d'orientation, mais partent au palier qui RAISONNE : confiés au
+    # modèle rapide sans réflexion, ces tours-là se trompaient d'image, de fichier, de geste.
+    _ACCORDS = {"oui", "non", "yes", "no", "ok", "okay", "d'accord", "daccord", "ca marche", "ça marche"}
     if _nu in _COURTOISIES:
         logger.info("Routage court-circuité (courtoisie) : « %s »", _nu[:40])
-        return {"besoin_memoire": False, "llm_tier": "standard"}
+        suite_a_agir = _nu in _ACCORDS and bool(state.get("messages"))
+        return {"besoin_memoire": False, "llm_tier": "complex" if suite_a_agir else "standard"}
 
     # LA VOIE RAPIDE (31/08). Une suite courte et sans objet propre — « oui »,
     # « 1 », « es-tu sûr ? » — n'a besoin ni de recherche mémoire (la fenêtre
@@ -614,7 +620,11 @@ async def routeur_node(state: AgentState) -> dict:
     # décide RIEN du fond, elle évite un appel qui ne servait à rien.
     if question_meta(str(state.get("query") or "")) and (state.get("messages") or []):
         logger.debug("Routage : voie rapide (suite courte), aucun appel LLM")
-        return {"besoin_memoire": False, "requete_memoire": "", "llm_tier": "standard"}
+        # La voie rapide évite l'appel d'ORIENTATION, pas la réflexion : « non, pas celui-là »,
+        # « recommence », « fais-la plus haute » sont des suites qui AGISSENT. Le 17/09, 18:07, la
+        # correction « ce n'est pas la bonne charte » est partie au modèle rapide, qui a lancé une
+        # recherche sur le nom de l'entreprise — quatre minutes pour rien.
+        return {"besoin_memoire": False, "requete_memoire": "", "llm_tier": "complex"}
 
     invite = (
         "Tu orientes une demande adressée à l'assistant interne d'une entreprise.\n"
