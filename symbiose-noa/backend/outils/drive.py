@@ -267,6 +267,47 @@ async def _courriel_du_compte(identite) -> str:
         return ""
 
 
+# UN CLIENT GOOGLE, UN FIL À LA FOIS (17/09, 11:07 UTC — le backend entier est tombé).
+#
+# `free(): corrupted unsorted chunks`, processus tué, redémarrage : toutes les
+# conversations en cours perdues, « erreur » à l'écran. Juste avant, six appels
+# Drive de front et « [SSL] record layer failure ». Le client Google (httplib2, une
+# seule connexion TLS) N'EST PAS fait pour être utilisé par plusieurs fils en même
+# temps ; or chaque appel part par `asyncio.to_thread`, et le listage en lot posé
+# le matin même en lançait huit sur LE MÊME client gardé. Deux fils qui écrivent
+# dans la même connexion TLS corrompent la mémoire d'OpenSSL : ce n'est pas une
+# exception Python, c'est la mort du processus.
+#
+# Le garde est posé sur le CLIENT, pas sur les vingt-cinq endroits qui l'appellent :
+# toute requête d'un client passe par `_http.request`, qu'un verrou sérialise. Le
+# parallélisme reste possible — avec des clients DISTINCTS (`_services`).
+def _un_fil_a_la_fois(service):
+    """Sérialise les requêtes de CE client. Idempotent ; ne lève jamais."""
+    import threading
+    try:
+        http = getattr(service, "_http", None)
+        if http is None or getattr(http, "_verrou_pluton", None) is not None:
+            return service
+        verrou = threading.RLock()
+        requete = http.request
+
+        def request(*args, **kwargs):
+            with verrou:
+                return requete(*args, **kwargs)
+        http.request = request
+        http._verrou_pluton = verrou
+    except Exception as e:  # noqa: BLE001 — un client sans garde vaut mieux que pas de client
+        logger.warning("Drive : garde de fil non posé (%s)", type(e).__name__)
+    return service
+
+
+# LE CLIENT IMPOSÉ À UNE TÂCHE : un travail mené de front prend ses clients dans le
+# vivier et en impose UN à chacune de ses tâches ; `_service()` le rend alors au lieu
+# du client gardé. Une variable de contexte est propre à chaque tâche asyncio.
+import contextvars
+_CLIENT_DE_LA_TACHE: contextvars.ContextVar = contextvars.ContextVar("client_drive_de_la_tache", default=None)
+
+
 async def _services(n: int, identite=None) -> list:
     """`n` clients Drive DISTINCTS, pour des lectures menées de front.
 
@@ -283,7 +324,7 @@ async def _services(n: int, identite=None) -> list:
         vivier = _POOLS[cle] = {"services": [], "expire": 0.0}
     if len(vivier["services"]) < n:
         a_creer = n - len(vivier["services"])
-        vivier["services"].extend(await asyncio.gather(
+        vivier["services"].extend(_un_fil_a_la_fois(c) for c in await asyncio.gather(
             *[_build_service_pour(identite) for _ in range(a_creer)]))
         vivier["expire"] = time.monotonic() + _DUREE_CLIENT_S
     return vivier["services"][:n]
@@ -296,11 +337,14 @@ async def _service(identite=None):
     boucle, il gèle tout le backend le temps de l'aller-retour avec Google.
     """
     import time
+    impose = _CLIENT_DE_LA_TACHE.get()
+    if impose is not None and impose[0] == _cle_client(identite):
+        return impose[1]
     cle = _cle_client(identite)
     garde = _CLIENTS.get(cle)
     if garde and time.monotonic() < garde["expire"]:
         return garde["service"]
-    service = await _build_service_pour(identite)
+    service = _un_fil_a_la_fois(await _build_service_pour(identite))
     _evincer(_CLIENTS)
     _CLIENTS[cle] = {"service": service,
                      "expire": time.monotonic() + _DUREE_CLIENT_S}
@@ -1371,10 +1415,19 @@ async def lister_lot(dossiers: list[str], perimetres: Optional[list] = None,
             f"Le lot contient {len(propres)} dossiers ; la limite sûre est "
             f"{MAX_LOT_DOSSIERS}. Découpe la liste en plusieurs lots.")
     motif_n = _nu(str(motif or "").strip()) if motif else ""
-    semaphore = asyncio.Semaphore(MAX_LOT_CONCURRENCE)
+    # CHAQUE TÂCHE DE FRONT A SON CLIENT (17/09). Les huit listages partaient sur le
+    # même client gardé : c'est ce qui a tué le backend. Le vivier donne des clients
+    # distincts ; il y a autant de tâches de front que de clients, jamais plus.
+    clients = await _services(min(MAX_LOT_CONCURRENCE, len(propres)), identite)
+    libres: asyncio.Queue = asyncio.Queue()
+    for c in clients:
+        libres.put_nowait(c)
+    cle_identite = _cle_client(identite)
 
     async def un_dossier(nom: str) -> dict:
-        async with semaphore:
+        client = await libres.get()
+        jeton = _CLIENT_DE_LA_TACHE.set((cle_identite, client))
+        try:
             try:
                 brut = await lister(nom, perimetres=perimetres, identite=identite, page=1)
                 entrees = list(brut.get("entrees") or [])
@@ -1411,6 +1464,9 @@ async def lister_lot(dossiers: list[str], perimetres: Optional[list] = None,
                     "fichiers": 0,
                     "entrees": [],
                 }
+        finally:
+            _CLIENT_DE_LA_TACHE.reset(jeton)
+            libres.put_nowait(client)
 
     lots = await asyncio.gather(*(un_dossier(nom) for nom in propres))
     return {
@@ -2324,7 +2380,7 @@ async def deposer(dossier: str, nom: str, contenu: bytes,
     import mimetypes
     mime = mimetypes.guess_type(nom)[0] or "application/octet-stream"
     from googleapiclient.http import MediaIoBaseUpload
-    ecriture = await _build_service_pour(identite, ecriture=True)
+    ecriture = _un_fil_a_la_fois(await _build_service_pour(identite, ecriture=True))
 
     def _envoi():
         media = MediaIoBaseUpload(io.BytesIO(contenu), mimetype=mime)
