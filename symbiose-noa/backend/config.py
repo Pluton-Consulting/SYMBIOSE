@@ -6,7 +6,14 @@ class Settings(BaseSettings):
     # App
     environment: str = "production"
     debug: bool = False
-    demande_delai_s: int = 600  # budget total partagé par tous les étages d’un tour
+    # 17/09 : 600 s COUPAIT les tours que le projet a toujours laissés durer (plan
+    # approuvé 8 min 43, publipostage 13 min) — et plus court que le plafond
+    # SOUPLE (8 min + rédaction + relecteur), il tombait pendant la rédaction :
+    # tour perdu, rien de persisté. 3600 s = le délai de nginx sur le chat ; le
+    # plafond souple (`TOUR_DUREE_MAX_S`) reste celui qui rend la main proprement.
+    # Relevé chez Symbiose le même jour : « Valide ce plan et lance le travail »
+    # mort à 600 013 ms, erreur vide (TimeoutError), rien à l'écran.
+    demande_delai_s: int = 3600  # budget total partagé par tous les étages d’un tour
     allowed_hosts: str = "100.64.0.1"
     # Sécurité transverse
     max_body_mb: int = 10                          # limite de taille du corps HTTP (anti-DoS mémoire)

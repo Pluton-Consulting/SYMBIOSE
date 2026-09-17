@@ -55,8 +55,15 @@ verifier("l'écran n'oppose plus de refus : les pièces partent avec la demande"
          "ne peuvent pas rejoindre la file d'attente" not in chat_tsx
          and "lancerEnFile(text, true, pieces)" in chat_tsx
          and "attachment_b64: pieces[0].b64" in chat_tsx)
+# 17/09 : le repli porte AUSSI l'identifiant de la demande — une socket perdue
+# rejoint le tour qui continue côté serveur au lieu d'en lancer un second en file
+# (deux traitements en parallèle, le temps imparti atteint, un bilan incomplet).
 verifier("les replis POST → file gardent les pièces du message d'origine",
-         chat_tsx.count("lancerEnFile(text, false, pieces)") == 2)
+         chat_tsx.count("lancerEnFile(text, false, pieces, demandeId)") == 2)
+verifier("…et rejoignent la demande existante avant toute mise en file (404 = demande neuve)",
+         "demandeExistante?: string" in chat_tsx
+         and "/api/chat/demandes/${encodeURIComponent(demandeExistante)}" in chat_tsx
+         and "e?.status !== 404" in chat_tsx)
 
 # ── 2. LA VOIE WEBSOCKET TRANSMET LE TABLEAU ──────────────────────────────
 verifier("`stream_turn` accepte et transmet `attachment_rows`",
@@ -67,7 +74,19 @@ verifier("`stream_turn` accepte et transmet `attachment_rows`",
 verifier("un tour a un temps imparti (8 minutes)", "TOUR_DUREE_MAX_S = 8 * 60" in agent1)
 verifier("l'heure de départ est posée à chaque tour", 'etat["tour_debut"] = time.time()' in runtime)
 verifier("passé le délai, la boucle sort et la rédaction est forcée, en disant ce qui n'a pas été fait",
-         "> TOUR_DUREE_MAX_S" in agent1 and "dire ce qui n'a PAS été fait" in agent1)
+         "> limite_tour" in agent1 and "dire ce qui n'a PAS été fait" in agent1)
+# 17/09 : un tour documentaire lourd (pièces, mémoire, plan approuvé) a trois fois
+# le délai ; le garde des demandes courtes reste à huit minutes.
+# 17/09 : le plafond DUR (`demande_delai_s`, un TimeoutError sans message) valait
+# 600 s — plus court que le délai souple : « Valide ce plan et lance le travail »
+# est mort à 600 013 ms sans rien rendre, et le délai étendu ne pouvait pas servir.
+import re as _re
+_dur = int(_re.search(r"demande_delai_s: int = (\d+)", (BACKEND / "config.py").read_text(encoding="utf-8")).group(1))
+verifier("le plafond dur de la demande laisse le délai étendu rendre la main (rédaction et relecture comprises)",
+         _dur >= 3 * 8 * 60 + 600, f"demande_delai_s = {_dur}")
+verifier("le délai étendu est réservé aux tours lourds, le délai court reste le défaut",
+         "limite_tour = TOUR_DUREE_MAX_S\n" in agent1
+         and "limite_tour = 3 * TOUR_DUREE_MAX_S" in agent1)
 # 15/09 : compté en gestes faits — `iteration` n'avance pas pendant des versements.
 verifier("le délai ne mord qu'après quelques actions (une première action lente n'est pas une boucle)",
          "len(resultats) >= 3 and" in agent1)

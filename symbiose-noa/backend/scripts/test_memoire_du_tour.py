@@ -195,7 +195,7 @@ f = src[src.index("async def forcer_action_node"):]
 f = f[:f.index("\nasync def ", 10)] if "\nasync def " in f[10:] else f
 verifier("le sélecteur d'actions voit le geste, pas seulement « réussie »", "resume_geste(r)" in f)
 verifier("le temps imparti se compte en gestes faits, pas en `iteration` (qu'un versement ne fait pas avancer)",
-         'if debut and len(resultats) >= 3 and (time.time() - float(debut)) > TOUR_DUREE_MAX_S' in src)
+         'if debut and len(resultats) >= 3 and (time.time() - float(debut)) > limite_tour' in src)
 r = src[src.index("def route_apres_llm"):]
 verifier("un fichier réellement ouvert ce tour n'est pas une livraison fantôme",
          "SKILLS_LECTURE_FICHIER" in r[:r.index("if fantome:")])
