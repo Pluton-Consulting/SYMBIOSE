@@ -542,6 +542,63 @@ async def modifier_visuel(data: dict, user) -> dict:
     return sortie
 
 
+_SENS_DE_ROTATION = {"droite": -90, "horaire": -90, "clockwise": -90, "right": -90, "cw": -90,
+                     "gauche": 90, "antihoraire": 90, "anti-horaire": 90, "counterclockwise": 90,
+                     "left": 90, "ccw": 90, "retourner": 180, "demi-tour": 180, "180": 180,
+                     "envers": 180, "90": -90, "-90": 90, "270": 90}
+
+
+def angle_de_rotation(sens) -> int:
+    """L'angle Pillow (sens trigonométrique) pour « droite », « gauche », « 180 »… Défaut : à droite."""
+    return _SENS_DE_ROTATION.get(str(sens if sens is not None else "droite").strip().lower(), -90)
+
+
+async def pivoter_image(data: dict, user) -> dict:
+    """TOURNE une image d'un quart ou d'un demi-tour — mécaniquement, sans moteur d'images.
+
+    17/09 : « tourne l'image pour que je la voie à l'endroit » est parti à
+    `modifier_visuel` — un tirage FACTURÉ, une image REDESSINÉE par le modèle (donc
+    plus la même), et sur la mauvaise photo. Une rotation est de la géométrie : elle
+    se fait ici, au pixel près, gratuitement, en une fraction de seconde.
+    """
+    import io
+    from skills.erreurs import SkillError
+    from visuels.depot import deposer_octets, lire, peut_lire
+    reference = str(data.get("image") or data.get("reference") or data.get("cle") or "").strip()
+    if not reference:
+        raise SkillError("Aucune image à tourner : il n'y en a pas dans cette conversation. "
+                         "Demande à l'utilisateur de joindre la photo.")
+    if not peut_lire(reference, user):
+        raise SkillError(f"L'image « {reference[:16]} » est introuvable dans le dépôt.")
+    source = lire(reference)
+    if not source:
+        raise SkillError(f"L'image « {reference[:16]} » est introuvable dans le dépôt.")
+    try:
+        from PIL import Image
+        img = Image.open(io.BytesIO(source[0]))
+        tournee = img.rotate(angle_de_rotation(data.get("sens")), expand=True)
+        sortie = io.BytesIO()
+        if (source[1] or "").lower().endswith("png"):
+            tournee.save(sortie, format="PNG"); mime = "image/png"
+        else:
+            tournee.convert("RGB").save(sortie, format="JPEG", quality=92); mime = "image/jpeg"
+    except Exception as e:  # noqa: BLE001
+        raise SkillError("Cette image n'a pas pu être tournée (fichier illisible).") from e
+    cle = deposer_octets(sortie.getvalue(), mime, proprietaire=str(getattr(user, "id", "") or "") or None)
+    if not cle:
+        raise SkillError("L'image tournée n'a pas pu être rangée (trop lourde).")
+    titre = str(data.get("titre") or "Image tournée")[:80]
+    return {"tournee": True, "image": cle, "source": reference,
+            "message_final": "L'image a été tournée.",
+            "a_faire": ("Dis en UNE phrase que l'image est tournée. Si elle n'est toujours pas à "
+                        "l'endroit, rappelle `pivoter_image` sur CETTE nouvelle référence avec "
+                        "`sens` : gauche | droite | 180. Pour la suite (retouche, document), "
+                        "c'est cette référence-ci qui vaut."),
+            "bloc_garanti": True,
+            "bloc_ui": {"type": "visuel", "titre": titre, "principale": cle,
+                        "images": [{"cle": cle, "legende": titre}]}}
+
+
 async def tester_visuel(data: dict, user) -> dict:
     """ESSAI rapide : modèle rapide, replis autorisés, on itère librement."""
     from visuels.nano_banana import generer, NanoBananaIndisponible
@@ -625,6 +682,19 @@ SKILLS = {
         effet="lecture",
         expert="agent2",
         libelle="j'essaie le visuel"),
+    "pivoter_image": Declaration(
+        fonction=pivoter_image,
+        description=(
+            "TOURNE une image (photo couchee, rendu a l'envers) d'un quart ou d'un "
+            "demi-tour : « tourne l'image », « remets-la a l'endroit ». GRATUIT, "
+            "immediat, l'image reste IDENTIQUE au pixel pres. JAMAIS `modifier_visuel` "
+            "pour cela (il redessine l'image et coute un tirage). `image` : la reference "
+            "— sans elle, la DERNIERE image de la conversation. `sens` : droite (defaut) "
+            "| gauche | 180."),
+        optionnels=["image", "sens", "titre"],
+        effet="ecriture_interne",
+        expert="agent2",
+        libelle="je tourne l'image"),
     "modifier_visuel": Declaration(
         fonction=modifier_visuel,
         description=(

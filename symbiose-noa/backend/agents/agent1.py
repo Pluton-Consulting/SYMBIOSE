@@ -1606,6 +1606,13 @@ async def tools_node(state: AgentState, config=None) -> dict:
             for k, v in args.items()}
     # LA DEMANDE EXACTE PART AVEC LA RETOUCHE (15/09) — posée par le serveur,
     # avant l'empreinte : ce qui est validé est ce qui part au moteur d'images.
+    # « TOURNE L'IMAGE » = LA DERNIÈRE, ET C'EST LE SERVEUR QUI LE DIT (17/09). Le
+    # modèle avait choisi une photo plus ancienne, décrite plus haut comme « pivotée » ;
+    # sans référence écrite, la dernière image de la conversation s'impose.
+    if action["skill"] == "pivoter_image" and not str(args.get("image") or "").strip():
+        _images = cles_images_du_fil(state)
+        if _images:
+            args = {**args, "image": _images[-1]}
     if action["skill"] == "modifier_visuel" and not str(args.get("demande") or "").strip():
         demande_retouche = _demande_de_retouche(state)
         if demande_retouche:
@@ -3847,7 +3854,10 @@ def _consigne_images(state: AgentState) -> str:
             "TOUTE demande qui CHANGE une de ces images (enlever, ajouter, remplacer, "
             "agrandir, recolorer…) EST un appel à `modifier_visuel` : remontrer la photo "
             "sans la modifier n'est jamais une réponse. On ne remontre une image "
-            "inchangée que si l'on a demandé de l'afficher.")
+            "inchangée que si l'on a demandé de l'afficher. EXCEPTION : la TOURNER "
+            "(« tourne-la », « remets-la à l'endroit ») est `pivoter_image` — gratuit, "
+            "l'image reste identique —, jamais `modifier_visuel` ; sans autre précision "
+            "c'est la DERNIÈRE image, n'écris pas de référence.")
 
 
 async def forcer_action_node(state: AgentState, config=None) -> dict:

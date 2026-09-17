@@ -33,8 +33,11 @@ async def analyser(data,user):
                     resultat.append((i+1,base64.b64encode(pix.tobytes('png')).decode(),reperes))
                 return resultat,len(doc)
         if debut!=1:raise ValueError('Une image ne comporte qu’une page.')
-        from PIL import Image
-        with Image.open(io.BytesIO(octets)) as img:
+        from PIL import Image,ImageOps
+        with Image.open(io.BytesIO(octets)) as brute:
+            # L'orientation EXIF s'applique avant la lecture : une photo de téléphone
+            # prise en portrait serait lue couchée (17/09).
+            img=ImageOps.exif_transpose(brute)
             img.thumbnail((2400,2400));b=io.BytesIO();img.convert('RGB').save(b,format='PNG')
         return [(1,base64.b64encode(b.getvalue()).decode(),None)],1
     pages,total=await asyncio.to_thread(images);candidats=get_vision_candidates()
