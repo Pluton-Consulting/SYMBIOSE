@@ -1001,7 +1001,7 @@ def _xlsx(entete: dict, elements, sortie: str) -> str:
     from openpyxl.styles import Alignment, Font, PatternFill
     from openpyxl.utils import get_column_letter
 
-    from bureautique.modele import MAX_FEUILLES, COULEURS, TAILLES
+    from bureautique.modele import MAX_FEUILLES, COULEURS, TAILLES, SURLIGNAGES
 
     classeur = Workbook()
     classeur.remove(classeur.active)
@@ -1057,12 +1057,15 @@ def _xlsx(entete: dict, elements, sortie: str) -> str:
             poser_image(logo_haut, hauteur_cm=1.5)
         return feuille
 
-    def ecrire(valeurs, gras=False):
+    def ecrire(valeurs, gras=False, teinte=None):
         nonlocal ligne_courante
         for i, v in enumerate(valeurs, 1):
             c = feuille.cell(row=ligne_courante, column=i, value=v)
             if gras:
                 c.font, c.fill = gras_blanc, fond
+            elif teinte:
+                c.fill = PatternFill("solid", fgColor=teinte)
+                c.font = Font(bold=True)
             c.alignment = Alignment(vertical="top", wrap_text=True)
         ligne_courante += 1
 
@@ -1096,8 +1099,10 @@ def _xlsx(entete: dict, elements, sortie: str) -> str:
             if e["entetes"]:
                 ecrire(e["entetes"], gras=True)
                 feuille.freeze_panes = "A2"     # les entêtes restent visibles
-            for ligne in e["lignes"]:
-                ecrire(ligne)
+            en_avant = set(e.get("surlignees") or [])
+            teinte = SURLIGNAGES.get(e.get("surlignage") or "orange")
+            for rang, ligne in enumerate(e["lignes"]):
+                ecrire(ligne, teinte=teinte if rang in en_avant else None)
         elif bloc == "tableau":
             if e.get("legende"):
                 ecrire([e["legende"]])

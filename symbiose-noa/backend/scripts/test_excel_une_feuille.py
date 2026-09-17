@@ -125,6 +125,7 @@ def _fabrique_modules():
     modele.MAX_FEUILLES = 20
     modele.COULEURS = {}
     modele.TAILLES = {}
+    modele.SURLIGNAGES = {"orange": "FCE4C4"}     # 17/09 : le rendu lit aussi les fonds de surlignage
     paquet = types.ModuleType("bureautique")
     paquet.__path__ = []
     return {"openpyxl": op, "openpyxl.styles": styles, "openpyxl.utils": utils,

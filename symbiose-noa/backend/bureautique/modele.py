@@ -53,6 +53,10 @@ def _couleur_de_marque(cle: str, repli: str) -> str:
 # `charte` = la couleur d'accent de la maison (titres, mises en avant) ;
 # `charte_fond` = le ton foncé de l'en-tête. Deux suffisent : au-delà, le
 # modèle choisirait au hasard.
+# LE SURLIGNAGE D'UNE LIGNE DE CLASSEUR (17/09) : « mets les trois priorités en premier et
+# surligne-les en orange ». Des fonds CLAIRS (le texte reste lisible), vocabulaire fermé.
+SURLIGNAGES = {"orange": "FCE4C4", "jaune": "FFF3B0", "vert": "DDEFD9", "rouge": "F8D4D4",
+               "bleu": "D9E5F5", "gris": "E8E8E8"}
 COULEURS["charte"] = _couleur_de_marque("couleur", COULEURS["noir"])
 COULEURS["charte_fond"] = _couleur_de_marque("fond", COULEURS["noir"])
 
@@ -426,6 +430,14 @@ def normaliser_element(brut) -> dict | None:
             sortie["legende"] = _texte(brut.get("legende"), 300)
         else:
             sortie["nom"] = _texte(brut.get("nom"), 31) or "Feuille"
+            # Des lignes mises en avant : leurs RANGS (0 = première ligne de données).
+            rangs = brut.get("surlignees") or brut.get("lignes_surlignees") or []
+            if isinstance(rangs, list):
+                rangs = sorted({i for i in rangs if type(i) is int and 0 <= i < len(lignes)})
+                if rangs:
+                    teinte = _texte(brut.get("surlignage") or brut.get("couleur_surlignage"), 12).lower()
+                    sortie["surlignees"] = rangs
+                    sortie["surlignage"] = teinte if teinte in SURLIGNAGES else "orange"
             colonnes=brut.get("colonnes_numeriques") or []
             if colonnes:
                 import math

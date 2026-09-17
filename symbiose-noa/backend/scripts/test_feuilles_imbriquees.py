@@ -106,6 +106,18 @@ verifier("…avec les lignes de SON tableau", len(rs) == 2 and len(rs[0]["lignes
 verifier("une feuille nue qui n'est PAS suivie d'un tableau ne vole rien",
          [e["bloc"] for e in rendre([{"bloc": "feuille", "titre": "Vide"}, {"bloc": "paragraphe", "texte": "x"}])] == ["paragraphe"])
 
+# 17/09, 16:02 — « surligne-les en orange » : des lignes mises en avant dans un onglet.
+f = normaliser_element({"type": "feuille", "nom": "Mails", "entetes": ["a"], "lignes": [["1"], ["2"], ["3"]],
+                        "surlignees": [0, 2, 9, -1, "x"], "surlignage": "orange"})
+verifier("une feuille porte ses lignes surlignées — rangs hors bornes et valeurs étrangères écartés",
+         f["surlignees"] == [0, 2] and f["surlignage"] == "orange")
+verifier("une teinte inconnue retombe sur l'orange, et sans lignes désignées rien n'est posé",
+         normaliser_element({"type": "feuille", "nom": "x", "entetes": ["a"], "lignes": [["1"]], "surlignees": [0], "surlignage": "fuchsia"})["surlignage"] == "orange"
+         and "surlignees" not in normaliser_element({"type": "feuille", "nom": "x", "entetes": ["a"], "lignes": [["1"]]}))
+rendu_src = (BACKEND / "bureautique" / "rendu.py").read_text(encoding="utf-8")
+verifier("le rendu Excel pose le fond clair sur ces lignes-là seulement",
+         "ecrire(ligne, teinte=teinte if rang in en_avant else None)" in rendu_src and 'PatternFill("solid", fgColor=teinte)' in rendu_src)
+
 atelier = (BACKEND / "bureautique" / "atelier.py").read_text(encoding="utf-8")
 verifier("l'atelier déplie AVANT de normaliser : tous les chemins d'ajout en profitent",
          "normaliser_element(x) for x in deplier_feuilles(elements)" in atelier)

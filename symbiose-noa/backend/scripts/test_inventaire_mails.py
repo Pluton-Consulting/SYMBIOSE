@@ -82,6 +82,13 @@ sys.modules.setdefault("mail", types.ModuleType("mail"))
 esp2 = {"_boite_a_lire": _a_lire, "verifier_acces": _acces, "boite_par_defaut": _defaut, "boites_visibles": _visibles,
         "MailSkillError": _Erreur, "logger": logging.getLogger("banc"), "MAX_INVENTAIRE_MAILS": 250, "APERCU_INVENTAIRE": 200}
 exec(fonctions(sk, {"lire_mails"}), esp2)
+# La mémoire de l'inventaire et les priorités vivent à côté du skill.
+esp2.update({"re": __import__("re")})
+exec("\n".join(ast.get_source_segment(sk, n) for n in ast.parse(sk).body
+               if (isinstance(n, (ast.Assign, ast.AnnAssign)) and getattr(getattr(n, "targets", [getattr(n, "target", None)])[0], "id", "")
+                   in ("DUREE_INVENTAIRE_S", "_INVENTAIRES"))
+               or (isinstance(n, ast.FunctionDef) and n.name in ("_cle_inventaire", "_inventaire_retenu", "_retenir_inventaire",
+                                                                 "_sans_accents", "_mettre_en_tete"))), esp2)
 lire_mails = esp2["lire_mails"]
 user = types.SimpleNamespace(id="u", role="direction")
 
@@ -130,13 +137,13 @@ class _Atelier:
     def terminer(jeton, proprio): return {"octets": 4242}
 sys.modules["bureautique"] = types.ModuleType("bureautique")
 sys.modules["bureautique.atelier"] = _Atelier
-esp3 = {"re": _re, "logger": logging.getLogger("banc"), "_appeler": _appeler, "_protege": _protege,
-        "_rehydrater": lambda v, c: v}
+# UN SEUL espace de noms : le livrable appelle la mémoire de l'inventaire, qui vit avec le skill.
+esp2.update({"re": _re, "_appeler": _appeler, "_protege": _protege, "_rehydrater": lambda v, c: v})
+esp3 = esp2
 exec("\n".join(ast.get_source_segment(sk, n) for n in ast.parse(sk).body
                if (isinstance(n, ast.Assign) and getattr(n.targets[0], "id", "") in ("CATEGORIES_MAILS", "LOT_CLASSEMENT"))
                or (isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))
                    and n.name in ("_categories_voulues", "_lire_classement", "_classer_les_mails", "_jour_lisible", "_livrer_inventaire"))), esp3)
-esp2.update(esp3)
 r4 = asyncio.run(lire_mails({"depuis": "7j", "classer": True, "fichier": True}, user))
 blocs = r4["bloc_ui"]
 table = next(b for b in blocs if b["type"] == "table")
@@ -152,12 +159,45 @@ verifier("l'Excel porte les 97 lignes et un second onglet « Par catégorie »",
          and produits[-1][1]["nom"] == "Par catégorie")
 verifier("la consigne interdit de recopier et demande ce qu'on veut EN PLUS (les priorités)",
          "ne recopie AUCUNE ligne" in r4["a_faire"] and "priorité" in r4["a_faire"] and "Ne rappelle pas" in r4["a_faire"])
-esp3["_appeler"] = None   # un modèle en panne
 async def _panne(prompt, tier="standard"): raise RuntimeError("cascade à terre")
 esp2["_appeler"] = _panne
-r5 = asyncio.run(lire_mails({"depuis": "7j", "classer": True}, user))
+r5 = asyncio.run(lire_mails({"depuis": "7j", "classer": True, "rafraichir": True}, user))
 verifier("un modèle en panne ne fait pas tomber l'inventaire : 97 lignes « à classer », et c'est dit",
          len(r5["bloc_ui"][0]["rows"]) == 97 and r5["classes"] == 0 and {l[4] for l in r5["bloc_ui"][0]["rows"]} == {"à classer"})
+# ── CE QUI VIENT D'ÊTRE LU N'EST PAS RELU (17/09, 16:02) ─────────────────────
+print("\n── la suite d'une demande")
+esp2["_appeler"] = _appeler
+esp2["_INVENTAIRES"].clear()
+appels.clear(); modele = []
+_vrai = esp2["_appeler"]
+async def _compte(prompt, tier="standard"):
+    modele.append(1); return await _vrai(prompt, tier)
+esp2["_appeler"] = _compte
+ra = asyncio.run(lire_mails({"depuis": "7j", "classer": True}, user))
+lectures, classements = len(appels), len(modele)
+rb = asyncio.run(lire_mails({"depuis": "7j", "fichier": True, "priorites": ["message 42", "Message 7", "introuvable xyz"],
+                             "surlignage": "orange"}, user))      # « mets les priorités en premier, surligne en orange »
+verifier("la suite d'une demande ne RELIT pas la boîte et ne RECLASSE rien",
+         len(appels) == lectures and len(modele) == classements, f"lectures {lectures}→{len(appels)}, modèle {classements}→{len(modele)}")
+ta, tb = ra["bloc_ui"][0], next(b for b in rb["bloc_ui"] if b["type"] == "table")
+cat = lambda t: {l[t["columns"].index("Objet")]: l[t["columns"].index("Catégorie")] for l in t["rows"]}
+verifier("les catégories sont EXACTEMENT celles que la personne a lues", cat(ta) == cat(tb) and len(tb["rows"]) == 97)
+verifier("les mails désignés passent EN TÊTE, dans l'ordre demandé, avec leur rang",
+         tb["columns"][0] == "Priorité" and [l[3] for l in tb["rows"][:2]] == ["Message 42", "Message 7"] and [l[0] for l in tb["rows"][:3]] == [1, 2, ""])
+verifier("l'Excel surligne ces lignes-là, en orange", produits[-1][0]["surlignees"] == [0, 1] and produits[-1][0]["surlignage"] == "orange")
+verifier("une priorité introuvable est DITE, jamais inventée", "2 priorité(s) retrouvée(s) sur 3" in (rb.get("priorites_introuvables") or ""))
+verifier("la réponse dit que la liste est reprise, et comment forcer la relecture", "aucune relecture" in (rb.get("repris") or "") and "rafraichir" in rb["repris"])
+asyncio.run(lire_mails({"depuis": "7j", "classer": True, "rafraichir": True}, user))
+verifier("`rafraichir: true` relit bien la boîte", len(appels) > lectures)
+autre = types.SimpleNamespace(id="autre", role="direction")
+avant_autre = len(appels)
+asyncio.run(lire_mails({"depuis": "7j", "exhaustif": True}, autre))
+verifier("la mémoire est PAR PERSONNE : un autre compte relit la boîte", len(appels) > avant_autre)
+met = esp2["_mettre_en_tete"]
+lot = [{"objet": "RE: RELANCE FACTURES IMPAYÉES", "de": "cbp@exemple.fr"}, {"objet": "place Thiers", "de": "mairie@exemple.fr"}, {"objet": "Pub", "de": "x@y.fr"}]
+verifier("un mail se désigne par un fragment d'objet (accents, casse, « RE: » indifférents), par l'expéditeur ou par son rang",
+         met(lot, ["re: relance factures impayees", "MAIRIE", 3]) == 3 and [m["objet"] for m in lot][0].startswith("RE: RELANCE"))
+
 lc = esp3["_lire_classement"]
 verifier("la lecture du classement est tolérante et bornée (rang hors lot, JSON cassé, prose autour)",
          lc('blabla [{"n": 1, "resume": "x", "categorie": "Fournisseur"}, {"n": 9, "resume": "y", "categorie": "fournisseur"}] fin', 3, ["fournisseur"]) == {1: ("x", "fournisseur")}
