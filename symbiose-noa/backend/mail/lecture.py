@@ -344,8 +344,16 @@ SELECT_OUTLOOK = ("id,subject,from,toRecipients,receivedDateTime,bodyPreview,bod
 PREFER_OUTLOOK_TEXTE = 'outlook.body-content-type="text"'
 
 
+def _saut_outlook(curseur) -> int:
+    """Le nombre de messages déjà rendus que porte un curseur « saut:50 », sinon 0."""
+    brut = str(curseur or "").strip().lower()
+    if brut.startswith("saut:") and brut[5:].isdigit():
+        return min(int(brut[5:]), MAX_COMPTE)
+    return 0
+
+
 def _params_outlook(limite: int, depuis: Optional[datetime], recherche: Optional[str] = None,
-                    avant: Optional[datetime] = None) -> dict:
+                    avant: Optional[datetime] = None, saut: int = 0) -> dict:
     """Les paramètres OData d'une lecture Outlook — fonction PURE, testée au banc.
 
     Deux régimes que Graph ne laisse pas mélanger :
@@ -375,6 +383,12 @@ def _params_outlook(limite: int, depuis: Optional[datetime], recherche: Optional
         clauses.append(f"receivedDateTime lt {avant.strftime('%Y-%m-%dT%H:%M:%SZ')}")
     if clauses:
         params["$filter"] = " and ".join(clauses)
+    # LA PAGE SUIVANTE D'OUTLOOK (17/09). « Liste TOUS les mails des 7 derniers jours » :
+    # 97 annoncés, 25 lus, « lecture interrompue ». Le parcours complet de `check_mails`
+    # suit un CURSEUR — que seule la voie IMAP rendait. Ici, `$skip` : même filtre, même
+    # ordre, les messages déjà rendus sont sautés. (Graph le refuse avec `$search`.)
+    if saut:
+        params["$skip"] = saut
     return params
 
 
@@ -439,9 +453,10 @@ def _longueur_apercu(nombre: int, apercu=None) -> int:
 async def _lire_outlook(boite: str, dossier: str, limite: int,
                         depuis: Optional[datetime], recherche: Optional[str] = None,
                         avant: Optional[datetime] = None,
-                        apercu=None) -> tuple[list[dict], Optional[int]]:
+                        apercu=None, curseur=None) -> tuple[list[dict], Optional[int]]:
     import httpx
     from ingestion.connectors.outlook import _jeton
+    saut = 0 if (recherche and str(recherche).strip()) else _saut_outlook(curseur)
 
     jeton = await _jeton()
     # `$count=true` rend le TOTAL de ce que le filtre retient, indépendamment de
@@ -449,7 +464,7 @@ async def _lire_outlook(boite: str, dossier: str, limite: int,
     # rapatriant que les 25 premiers. Il exige l'en-tête ConsistencyLevel.
     url = f"https://graph.microsoft.com/v1.0/users/{boite}/mailFolders/{dossier}/messages"
     async with httpx.AsyncClient(timeout=30) as client:
-        r = await client.get(url, params=_params_outlook(limite, depuis, recherche, avant),
+        r = await client.get(url, params=_params_outlook(limite, depuis, recherche, avant, saut),
                              headers={"Authorization": f"Bearer {jeton}",
                                       "ConsistencyLevel": "eventual",
                                       "Prefer": PREFER_OUTLOOK_TEXTE})
@@ -460,6 +475,9 @@ async def _lire_outlook(boite: str, dossier: str, limite: int,
 
     longueur = _longueur_apercu(len(messages), apercu)
     resultats = [_fiche_outlook(m, boite, longueur) for m in messages]
+    # Le curseur de la page suivante, porté par la dernière fiche comme en IMAP.
+    if resultats and total is not None and saut + len(resultats) < int(total):
+        resultats[-1]["curseur_suivant"] = f"saut:{saut + len(resultats)}"
     return resultats, (int(total) if total is not None else None)
 
 
@@ -762,7 +780,8 @@ async def lire_boite(boite: str, dossier: str = "recus",
                 ", recherche" if mots else "", nom)
     if nom == "outlook":
         messages, total = await _lire_outlook(boite, DOSSIERS["outlook"][cle], limite, debut,
-                                              recherche=mots, avant=borne, apercu=apercu)
+                                              recherche=mots, avant=borne, apercu=apercu,
+                                              curseur=curseur)
     elif nom == "imap":
         messages, total = await _lire_imap(boite, cle, limite, debut,
                                            recherche=mots, avant=borne, apercu=apercu, curseur=curseur)
@@ -777,7 +796,10 @@ async def lire_boite(boite: str, dossier: str = "recus",
     # « 25 messages » et « 84 messages dont voici les 25 derniers » ne sont pas
     # la même information, et c'est la seconde qu'on demande.
     plus_ancien = min((m.get("date_iso") for m in messages if m.get("date_iso")), default=None)
-    suivant=messages[-1].get('curseur_suivant') if messages and total and total>len(messages) else None
+    # Outlook ne pose son curseur (« saut:N ») que s'il RESTE des messages ; la voie IMAP le
+    # pose sur chaque fiche, c'est donc le total qui dit s'il y a une suite.
+    _dernier=str(messages[-1].get('curseur_suivant') or '') if messages else ''
+    suivant=(_dernier or None) if (_dernier.startswith('saut:') or (total and total>len(messages))) else None
     if mots and total is None:
         compte = (f"{len(messages)} message(s) trouvé(s) pour « {mots} »"
                   + (f" (avant le {borne.date().strftime('%d/%m/%Y')})" if borne else "")

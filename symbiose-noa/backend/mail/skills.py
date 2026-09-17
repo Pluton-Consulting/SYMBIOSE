@@ -956,6 +956,12 @@ async def _boite_a_lire(data: dict, user) -> str:
            "depuis Paramètres → Utilisateurs, ou ajouter votre domaine à MS_DOMAIN."))
 
 
+# L'inventaire d'une période : jusqu'à 250 messages en un geste (comme `check_mails`),
+# avec un extrait court — le compte et la liste priment, `lire_mail` ouvre le détail.
+MAX_INVENTAIRE_MAILS = 250
+APERCU_INVENTAIRE = 200
+
+
 async def lire_mails(data: dict, user) -> dict:
     """Lit les derniers messages d'une boîte, EN DIRECT.
 
@@ -990,12 +996,39 @@ async def lire_mails(data: dict, user) -> dict:
         limite = 25 if (_periode or recherche or avant) else 10
     depuis = data.get("depuis") or data.get("periode") or data.get("jours")
     try:
-        return await lire_boite(boite, data.get("dossier") or "recus", limite, depuis=depuis,
-                                recherche=recherche, avant=avant,
-                                # `apercu` : la longueur d'extrait voulue par un
-                                # appelant qui connaît son budget (check_mails).
-                                apercu=data.get("apercu"), curseur=data.get("curseur"),
-                                exhaustif=exhaustif)
+        premier = await lire_boite(boite, data.get("dossier") or "recus", limite, depuis=depuis,
+                                   recherche=recherche, avant=avant,
+                                   # `apercu` : la longueur d'extrait voulue par un
+                                   # appelant qui connaît son budget (check_mails).
+                                   apercu=data.get("apercu") or (APERCU_INVENTAIRE if exhaustif and depuis else None),
+                                   curseur=data.get("curseur"), exhaustif=exhaustif)
+        # UN INVENTAIRE EST UN TRAVAIL DE SKILL, PAS UNE BOUCLE DE MODÈLE (17/09). « Liste
+        # TOUS les mails des 7 derniers jours, aucune troncature » : 97 annoncés, le
+        # modèle a rappelé SEPT fois le même geste sans jamais prendre la page suivante,
+        # la garde du rejeu a coupé, et la réponse disait « lecture interrompue ».
+        # `exhaustif` sur une PÉRIODE parcourt ici toutes les pages, par curseur.
+        if not (exhaustif and depuis and not recherche and not avant and not data.get("curseur")):
+            return premier
+        messages = list(premier.get("messages") or [])
+        suivant, vus = premier.get("curseur_suivant"), set()
+        while suivant and suivant not in vus and len(messages) < MAX_INVENTAIRE_MAILS:
+            vus.add(suivant)
+            page = await lire_boite(boite, data.get("dossier") or "recus",
+                                    min(25, MAX_INVENTAIRE_MAILS - len(messages)), depuis=depuis,
+                                    apercu=APERCU_INVENTAIRE, curseur=suivant, exhaustif=True)
+            messages.extend(page.get("messages") or [])
+            suivant = page.get("curseur_suivant")
+        total = premier.get("total_periode")
+        complet = not suivant and (total is None or len(messages) >= int(total))
+        return {**premier, "messages": messages, "nombre": len(messages),
+                "tronque": not complet, "curseur_suivant": suivant, "inventaire": True,
+                "pour_continuer": (None if complet else
+                                   f"Rappelle lire_mails avec les mêmes filtres et curseur={suivant}."),
+                "compte": (f"{total if total is not None else len(messages)} message(s) sur la période ; "
+                           f"{len(messages)} détaillé(s) ci-dessous"
+                           + (", c'est-à-dire TOUS." if complet else " — le reste suit par `curseur`.")),
+                "a_faire": ("La liste porte TOUS les messages de la période : traite-les TOUS, sans "
+                            "« etc. » ni échantillon. Ne rappelle pas ce geste." if complet else None)}
     except NotImplementedError as e:
         raise MailSkillError(str(e))
     except Exception as e:  # noqa: BLE001 - une messagerie injoignable n'est pas une panne du chat
