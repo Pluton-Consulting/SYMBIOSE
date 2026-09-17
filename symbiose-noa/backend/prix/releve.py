@@ -53,6 +53,12 @@ def unite_normale(unite) -> str:
     return _UNITES.get(u, u or "sans unité")
 
 
+def serre(mot: str) -> str:
+    """Les lettres doublées ramenées à une : « abatage » (écrit tel quel dans un devis du 20/07)
+    et « abattage » sont le même ouvrage, « terasse » et « terrasse » aussi."""
+    return re.sub(r"(.)\1+", r"\1", mot)
+
+
 def mots_cles(poste: str) -> list[str]:
     """Les racines qui portent le sens d'un poste : « abattage d'arbres » → abatt, arbre.
 
@@ -66,7 +72,7 @@ def mots_cles(poste: str) -> list[str]:
         # La racine se compare en DÉBUT de mot, donc « boi » retrouve toujours « bois ».
         if len(mot) >= 4 and mot.endswith("s"):
             mot = mot[:-1]
-        racine = mot[:5]
+        racine = serre(mot)[:5]
         if racine not in racines:
             racines.append(racine)
     return racines[:5]
@@ -75,7 +81,7 @@ def mots_cles(poste: str) -> list[str]:
 def correspond(texte_plat: str, racines: list[str]) -> bool:
     """Toutes les racines sont dans le texte, chacune en DÉBUT de mot (« terra » ne doit pas
     trouver « parterre »)."""
-    mots = texte_plat.split()
+    mots = [serre(m) for m in texte_plat.split()]
     return bool(racines) and all(any(m.startswith(r) for m in mots) for r in racines)
 
 

@@ -1121,7 +1121,7 @@ async def dossiers_en_attente(data: dict, user) -> dict:
 MIN_OBSERVATIONS = 2
 MAX_OBSERVATIONS_CITEES = 8
 MAX_POSTES_PAR_APPEL = 12
-MAX_LIGNES_CANDIDATES = 4000
+MAX_LIGNES_CANDIDATES = 20000
 
 # Les colonnes où un poste se décrit. On ne cherche PAS dans les montants, les
 # dates ni les références : « 2024 » se retrouverait dans un numéro de devis, et
@@ -1180,7 +1180,9 @@ async def _lignes_du_poste(conn, racines: list, niveaux: list) -> list:
         "  AND p.nature IN ('devis', 'facture', 'commande', 'situation') "
         "  AND l.texte_plat LIKE ALL($2::text[]) "
         f"LIMIT {MAX_LIGNES_CANDIDATES}",
-        niveaux, [f"%{r}%" for r in racines])
+        # Le tri fin (début de mot, lettres doublées, tête de désignation) se fait en Python :
+        # la base ne sert qu'à dégrossir, sur les trois premières lettres de chaque racine.
+        niveaux, [f"%{r[:3]}%" for r in racines])
     return [{"designation": l["designation"], "unite": l["unite"], "quantite": float(l["quantite"]),
              "pu_ht": float(l["pu_ht"]), "nature": l["nature"], "numero": l["numero"],
              "date": l["date_piece"], "fichier_id": l["fichier_id"]}
@@ -1304,7 +1306,7 @@ async def prix_observes(data: dict, user) -> dict:
                     "SELECT source_type, data, champs FROM document_metadata "
                     "WHERE access_level = ANY($1::text[]) "
                     "  AND (data::text ILIKE $2 OR champs::text ILIKE $2) LIMIT 2000",
-                    niveaux, f"%{racines[0]}%")
+                    niveaux, f"%{racines[0][:3]}%")
                 releves.append({**p, "racines": racines, "elargi_a": elargi,
                                 "par_unite": par_unite,
                                 "affaires": _affaires_du_poste(jeux, racines, demande_jeu),

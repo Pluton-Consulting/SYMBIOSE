@@ -144,11 +144,14 @@ verifier("l'OCR passe par la porte commune du serveur (deux tesseract au plus)",
 # ── 2. LE RELEVÉ ────────────────────────────────────────────────────────────
 print("\n── le relevé par unité")
 verifier("les racines d'un poste : le pluriel et les mots creux tombent",
-         R.mots_cles("Fourniture et pose d'une terrasse bois") == ["terra", "boi"]
-         and R.mots_cles("abattage d'arbres") == ["abatt", "arbre"])
+         R.mots_cles("Fourniture et pose d'une terrasse bois") == ["teras", "boi"]
+         and R.mots_cles("abattage d'arbres") == ["abata", "arbre"])
+verifier("une lettre doublée ou oubliée ne cache pas l'ouvrage : « Abatage de l'arbousier » est un abattage",
+         R.correspond(R.tete("Abatage de l'arbousier et évacuation"), R.mots_cles("abattage"))
+         and R.correspond(R.tete("Terasse en pin"), R.mots_cles("terrasse")))
 verifier("une racine se compare en DÉBUT de mot : « terra » ne trouve pas « parterre »",
-         R.correspond(R.plat("Abattage et dessouchage de 3 arbres"), ["abatt", "arbre"])
-         and not R.correspond(R.plat("parterre fleuri"), ["terra"]))
+         R.correspond(R.plat("Abattage et dessouchage de 3 arbres"), R.mots_cles("abattage arbre"))
+         and not R.correspond(R.plat("parterre fleuri"), R.mots_cles("terrasse")))
 AUJ = date(2026, 9, 17)
 OBS = [
     {"designation": "Terrasse pin", "unite": "m2", "quantite": 50, "pu_ht": 182.30, "numero": "DV1", "nature": "devis", "date": date(2026, 3, 1)},
