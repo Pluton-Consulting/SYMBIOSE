@@ -34,7 +34,7 @@ FAMILLES: dict[str, tuple[str, ...]] = {
     "agenda": ("mon_agenda", "creneaux_agenda", "creer_rendez_vous"),
     "documents": ("creer_document", "ajouter_document", "terminer_document", "abandonner_document",
                   "produire_document", "reproduire_document", "enregistrer_trame", "utiliser_trame",
-                  "mes_trames", "oublier_trame", "compte_rendu_reunion"),
+                  "mes_trames", "oublier_trame", "compte_rendu_reunion", "planifier_interventions"),
     "stockage": ("ou_chercher", "inventaire_dossier",
                  "drive_arborescence", "drive_chercher", "drive_lister", "drive_lister_lot", "drive_ouvrir",
                  "drive_lire_lot", "drive_apercu", "drive_photos", "drive_deposer",
@@ -63,7 +63,7 @@ TOUJOURS: tuple[str, ...] = ("rechercher_documents", "mes_droits", "mode_emploi"
 DESCRIPTIONS: dict[str, str] = {
     "mails": "lire, trier, répondre, envoyer ou préparer des mails ; signature, style d'écriture",
     "agenda": "agenda, rendez-vous, créneaux libres",
-    "documents": "produire un Word/PDF/Excel, reprendre un document ou une trame, compte rendu",
+    "documents": "produire un Word/PDF/Excel, reprendre un document ou une trame, compte rendu, planning d'équipe",
     "stockage": "parcourir, chercher, ouvrir ou déposer des fichiers du stockage de l'entreprise, photos",
     "donnees": "clients, fournisseurs, devis, factures, chiffres, listes, totaux",
     "facturation": "suivre et relancer des factures impayées",

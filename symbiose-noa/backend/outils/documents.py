@@ -132,6 +132,11 @@ async def produire(titre: str, blocs: list, proprietaire: str,
         abandonner(jeton, proprietaire)
         raise
     ignores = len(blocs) - retenus
+    # CE QUI A ÉTÉ POSÉ SE DIT (18/09, recette pilotée, prompt 19). Le logo tiré du devis était bien
+    # dans le Word (281 Ko), mais le résultat n'en disait rien : l'assistant a écrit « je ne peux pas
+    # affirmer que l'en-tête et le pied figurent sur la page ». `creer_document` le disait déjà.
+    images_posees = [nom for nom, cle in (("en-tête", "entete_image_fichier"), ("pied de page", "pied_image_fichier"),
+                                          ("couverture", "image_couverture_fichier")) if en_tete.get(cle)]
     logger.info("Document %s produit en un appel : %s, %d éléments",
                 jeton[:8], en_tete["format"], retenus)
     pages = fiche.get("pages_estimees")
@@ -166,7 +171,13 @@ async def produire(titre: str, blocs: list, proprietaire: str,
                  "dis-le franchement plutôt que de recommencer. "
                  + (f"{ignores} bloc(s) écarté(s) : type inconnu ou vide."
                     if ignores else "")
+                 + (f" IMAGE EFFECTIVEMENT POSÉE en {' et en '.join(images_posees)}"
+                    + (" de CHAQUE page" if any(n != "couverture" for n in images_posees) else "")
+                    + " : tu peux l'affirmer." if images_posees else "")
+                 + (" AUCUNE image d'en-tête ni de pied n'a été posée : ne dis pas le contraire."
+                    if (voulue.get("entete_image") or voulue.get("pied_image")) and not images_posees else "")
                  + _note_refus(refus_images)),
+        "images_posees": images_posees,
         "images_refusees": refus_images,
     }
 
