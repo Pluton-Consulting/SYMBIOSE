@@ -928,6 +928,25 @@ async def principal():
              and "Attente" in (r["bloc_ui"].get("columns") or []), r.get("bloc_ui"))
     verifier("la consigne interdit d'envoyer les relances de sa propre initiative",
              "Ne propose PAS d'envoyer" in (r.get("a_faire") or ""))
+    # 18/09, recette pilotée (prompt 9) : 92 devis en attente, 40 détaillés SANS page suivante —
+    # le modèle a redemandé le même geste et la garde du rejeu a fermé le tour.
+    garde_max = routines.MAX_DOSSIERS_AFFICHES
+    routines.MAX_DOSSIERS_AFFICHES = 1
+    try:
+        p1 = await routines.dossiers_en_attente({"jours": 0}, User())
+        p2 = await routines.dossiers_en_attente({"jours": 0, "page": 2}, User())
+    finally:
+        routines.MAX_DOSSIERS_AFFICHES = garde_max
+    verifier("une liste longue se LIT page par page : page, pages, pour_continuer",
+             p1.get("pages", 0) >= 2 and p1.get("pour_continuer") == {"page": 2}
+             and len(p1.get("dossiers") or []) == 1
+             and (p2.get("dossiers") or [{}])[0] != (p1.get("dossiers") or [{}])[0], (p1.get("pages"), p1.get("pour_continuer")))
+    verifier("l'écran, lui, reçoit TOUTES les lignes, en bloc garanti",
+             p1.get("bloc_garanti") is True and len(p1["bloc_ui"]["rows"]) == p1["nombre"] > 1, p1.get("nombre"))
+    verifier("le montant total porte sur TOUT, pas sur la page",
+             p1.get("montant_total_en_attente") == p2.get("montant_total_en_attente"))
+    verifier("la consigne interdit de redemander à l'identique",
+             "JAMAIS avec les mêmes arguments" in (p1.get("a_faire") or ""))
     # Un seuil que RIEN n'atteint doit se dire simplement, pas rendre une erreur.
     r_haut = await routines.dossiers_en_attente({"jours": 9999}, User())
     verifier("un seuil que rien n'atteint se dit simplement",

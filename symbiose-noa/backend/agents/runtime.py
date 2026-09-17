@@ -441,6 +441,16 @@ def pieces_du_tour_persistables(state: dict) -> list:
     return pieces
 
 
+def _apercu_d_attente(state: dict) -> str:
+    """Ce qui s'affiche au-dessus de la demande d'accord : le texte du modèle et l'aperçu
+    mécanique (étapes du plan, photo de départ, message exact), SANS bloc d'action."""
+    try:
+        from agents.agent1 import _texte_visible
+        return _texte_visible(state.get("llm_response") or "")
+    except Exception:  # noqa: BLE001 — un aperçu manquant ne casse pas une demande d'accord
+        return ""
+
+
 def _response_from_state(state: dict) -> str:
     return (
         state.get("final_response")
@@ -787,6 +797,10 @@ async def stream_turn(*, query: str, user_id: str, user_role: str,
                "reason": intr.get("reason") or state.get("validation_reason"),
                "skill": charge.get("skill") if isinstance(charge, dict) else None,
                "args": charge.get("args") if isinstance(charge, dict) else None,
+               # CE QUE LA PERSONNE VALIDE, DANS LE CHAT (18/09, recette pilotée, prompt 9). Un plan
+               # proposé n'affichait que « une action attend votre accord » : ses étapes, construites
+               # par `_apercu_avant_accord`, restaient dans l'état. Le repli POST les rendait déjà.
+               "response": _apercu_d_attente(state),
                # Les fichiers joints aussi : c'est sur cet événement que le
                # routeur écrit l'échange quand le tour attend un accord.
                "pieces": pieces_du_tour_persistables(state)}

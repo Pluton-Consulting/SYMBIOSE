@@ -952,6 +952,8 @@ STATUTS_CLOS = ("sign", "accept", "valid", "gagn", "refus", "perdu", "annul",
 # contredire.
 JOURS_PAR_DEFAUT = 15
 MAX_DOSSIERS_AFFICHES = 40
+# L'écran, lui, reçoit tout (le tableau défile) ; au-delà, le classeur.
+MAX_DOSSIERS_A_L_ECRAN = 500
 
 
 def _statut_attend(valeur: str, personnalises=None) -> bool:
@@ -1067,7 +1069,19 @@ async def dossiers_en_attente(data: dict, user) -> dict:
     # décroche le téléphone, donc l'ordre dans lequel la liste doit sortir.
     en_attente.sort(key=lambda x: -x["jours"])
     total = len(en_attente)
-    montres = en_attente[:MAX_DOSSIERS_AFFICHES]
+    # TOUTE LA LISTE, PAS LES QUARANTE PREMIERS (18/09, recette pilotée, prompt 9). 92 devis en
+    # attente : le résultat n'en détaillait que 40, SANS page suivante — le modèle a redemandé le
+    # même geste pour « récupérer la liste complète », et la garde du rejeu a fermé le tour sans
+    # une seule relance. Désormais : l'écran reçoit TOUTES les lignes (bloc garanti), le modèle
+    # lit page par page, et `fichier: true` rend le classeur.
+    try:
+        page = max(1, int(str(data.get("page") or 1).strip()))
+    except ValueError:
+        page = 1
+    pages = max(1, -(-total // MAX_DOSSIERS_AFFICHES))
+    page = min(page, pages)
+    montres = en_attente[(page - 1) * MAX_DOSSIERS_AFFICHES: page * MAX_DOSSIERS_AFFICHES]
+    a_l_ecran = en_attente[:MAX_DOSSIERS_A_L_ECRAN]
     # LE MONTANT TOTAL EN ATTENTE, calculé ici : « indique le montant total » ne se confie pas à
     # un modèle qui n'a que quarante lignes sous les yeux sur six cents.
     from skills.lecture import est_un_nombre, lire_montant
@@ -1087,22 +1101,47 @@ async def dossiers_en_attente(data: dict, user) -> dict:
             "a_faire": "Dis-le en une phrase, avec le seuil employé. N'invente aucune ligne.",
         }
 
+    colonnes_ = ["Client", "Référence", "Date", "Attente", "Statut", "Montant"]
+
+    def _rangee(d: dict) -> list:
+        return [d["client"] or "[À COMPLÉTER]", d["reference"], d["date"],
+                f"{d['jours']} j", d["statut"] or "[À COMPLÉTER]", d["montant"]]
+    blocs = [{"type": "table",
+              "titre": f"Dossiers sans réponse depuis plus de {seuil} jours ({total})",
+              "columns": colonnes_, "rows": [_rangee(d) for d in a_l_ecran]}]
+    veut_fichier = str(data.get("fichier") or "").strip().lower() in ("true", "1", "oui", "yes", "xlsx", "excel")
+    if veut_fichier:
+        import asyncio
+        from bureautique.atelier import ouvrir, ajouter, terminer
+        proprio = str(getattr(user, "id", "") or "")
+        titre_f = f"Dossiers en attente depuis plus de {seuil} jours"
+
+        def _produire():
+            jeton = ouvrir({"titre": titre_f, "format": "xlsx"}, proprio)
+            ajouter(jeton, [{"type": "feuille", "nom": "En attente", "entetes": colonnes_,
+                             "lignes": [_rangee(d) for d in en_attente]}], proprio)
+            return jeton, terminer(jeton, proprio)
+        try:
+            jeton, fiche = await asyncio.to_thread(_produire)
+            blocs.append({"type": "fichier", "url": f"/api/documents/{jeton}", "nom": "dossiers-en-attente.xlsx",
+                          "titre": titre_f, "format": "xlsx", "octets": fiche.get("octets")})
+        except Exception as e:  # noqa: BLE001 — la liste reste à l'écran
+            logger.warning("Excel des dossiers en attente impossible : %s", e)
+            veut_fichier = False
+
     return {
         "trouve": True, "nombre": total, "seuil_jours": seuil,
+        "page": page, "pages": pages,
+        "pour_continuer": ({"page": page + 1} if page < pages else None),
+        "fichier_produit": veut_fichier or None,
+        "bloc_garanti": True,
         "age_max_jours": age_max or None, "ecartes_car_trop_anciens": trop_anciens or None,
         "montant_total_en_attente": _euros(montant_total) if montant_total else None,
         "dont_moins_de_6_mois": recents, "dont_plus_d_un_an": vieux,
         "dossiers_examines": len(lignes), "dossiers_clos": clos,
         "sans_date_lisible": sans_date or None,
         "dossiers": montres,
-        "bloc_ui": {
-            "type": "table",
-            "titre": f"Dossiers sans réponse depuis plus de {seuil} jours",
-            "columns": ["Client", "Référence", "Date", "Attente", "Statut", "Montant"],
-            "rows": [[d["client"] or "[À COMPLÉTER]", d["reference"], d["date"],
-                      f"{d['jours']} j", d["statut"] or "[À COMPLÉTER]", d["montant"]]
-                     for d in montres],
-        },
+        "bloc_ui": blocs if len(blocs) > 1 else blocs[0],
         "message_final": (
             f"{total} dossier(s) attendent une réponse depuis plus de {seuil} jours"
             + (f", le plus ancien depuis {montres[0]['jours']} jours." if montres else ".")
@@ -1111,9 +1150,15 @@ async def dossiers_en_attente(data: dict, user) -> dict:
             + (f" {sans_date} dossier(s) n'ont pas de date lisible et n'ont pas pu être "
                f"examinés." if sans_date else "")),
         "a_faire": (
-            "AFFICHE la liste : insère un bloc ```ui contenant EXACTEMENT le contenu de "
-            "`bloc_ui`. Elle est triée du plus ancien au plus récent, c'est l'ordre dans "
-            "lequel il faut rappeler. Les âges sont EXACTS, cite-les tels quels. Ne "
+            f"Le tableau des {min(total, MAX_DOSSIERS_A_L_ECRAN)} dossiers s'affiche AUTOMATIQUEMENT sous ta "
+            "réponse : ne le recopie pas. "
+            + (f"`dossiers` porte la page {page} sur {pages} ({len(montres)} dossiers) : pour LIRE les "
+               "suivants (rédiger une relance par dossier, recouper), rappelle ce geste avec "
+               "`pour_continuer` — JAMAIS avec les mêmes arguments. " if pages > 1 else "")
+            + ("Le classeur Excel s'affiche aussi. " if veut_fichier else
+               "Pour la liste en Excel : ce geste avec `fichier: true`. ")
+            + "Elle est triée du plus ancien au plus récent, c'est l'ordre dans "
+            "lequel il faut rappeler. Les âges et le montant total sont EXACTS, cite-les tels quels. Ne "
             "propose PAS d'envoyer les relances toi-même sans qu'on te le demande."
             + (f" Signale les {sans_date} dossier(s) sans date lisible." if sans_date else "")),
     }
@@ -1530,12 +1575,13 @@ SKILLS = {
             "lequel a servi). `source_type` : le fichier a examiner, sinon tous "
             "ceux qui portent des affaires en cours. `statuts` : les statuts qui "
             "comptent comme « en attente », si la maison a son propre "
-            "vocabulaire. Le resultat donne un bloc ```ui a inserer TEL QUEL. "
+            "vocabulaire. Le tableau COMPLET s'affiche seul ; le resultat detaille 40 dossiers par "
+            "`page` (suis `pour_continuer`), et `fichier: true` rend la liste en Excel. "
             "`age_max_jours` : ne garder que ce qui attend depuis MOINS de N jours (180 pour « les "
             "devis recents a relancer ») — sans lui, les plus anciens sortent en tete. Le MONTANT "
             "TOTAL en attente est calcule par le serveur. "
             "N'envoie AUCUNE relance : ce geste ne fait que regarder"),
-        requis=[], optionnels=["jours", "age_max_jours", "source_type", "statuts"],
+        requis=[], optionnels=["jours", "age_max_jours", "source_type", "statuts", "page", "fichier"],
         effet="lecture",
         libelle="je regarde les dossiers en attente"),
     "prix_observes": Declaration(

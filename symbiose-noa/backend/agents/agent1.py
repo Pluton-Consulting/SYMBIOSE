@@ -350,7 +350,7 @@ def _est_jeton_tableau(valeur) -> bool:
     return isinstance(valeur, str) and valeur.strip().lower() in JETONS_TABLEAU
 
 
-RESULTATS_GENEREUX = {"chiffre_affaires", "prix_observes", "lire_source_dossier", "chercher_source_dossier", "drive_chercher", "nas_chercher", "drive_apercu", "drive_lister", "drive_lister_lot",
+RESULTATS_GENEREUX = {"chiffre_affaires", "prix_observes", "dossiers_en_attente", "lire_source_dossier", "chercher_source_dossier", "drive_chercher", "nas_chercher", "drive_apercu", "drive_lister", "drive_lister_lot",
                       # 08/09 : les cartes de relance et la liste des factures suivies.
                       "relancer_factures", "factures_suivies", "inventaire_dossier",
                       "courrier_entrant",
@@ -2776,6 +2776,44 @@ def _livrables_a_l_ecran(texte: str, state: AgentState) -> str:
     return texte
 
 
+# Au-delà, un bloc de cartes est un publipostage : refait, il REMPLACE le précédent.
+MAX_CARTES_D_UNE_REDACTION = 3
+
+
+def _fondre_les_cartes(blocs: list) -> dict:
+    """Plusieurs blocs de cartes de mail dans un tour → UN bloc.
+
+    DEUX CAS, QU'IL NE FAUT PAS CONFONDRE (18/09, recette pilotée, prompt 7). Un PUBLIPOSTAGE
+    refait (95 cartes, neuf fois — 03/09) : la dernière version remplace les autres. Des
+    RÉDACTIONS distinctes (« un brouillon par mail » : dix `redaction_email`, une carte chacune) :
+    la règle du « dernier bloc » n'en gardait qu'UNE, et les neuf autres finissaient en prose.
+    Ici, les petits blocs se CUMULENT ; une carte refaite pour le même message (même `ref`, ou
+    même destinataire et même objet) remplace la sienne, à sa place."""
+    dernier = blocs[-1]
+    if len(dernier.get("reponses") or []) > MAX_CARTES_D_UNE_REDACTION:
+        return dernier
+    cartes: list = []
+    rang_de: dict = {}
+    for bloc in blocs:
+        reponses = bloc.get("reponses") or []
+        if len(reponses) > MAX_CARTES_D_UNE_REDACTION:
+            continue                      # un publipostage antérieur : la rédaction qui suit prime
+        for carte in reponses:
+            if not isinstance(carte, dict):
+                continue
+            objet = " ".join(str(carte.get("objet") or "").lower().split())
+            cle = (("ref", str(carte.get("ref"))) if carte.get("ref")
+                   else ("qui", str(carte.get("de") or "").lower().strip(), objet))
+            if cle in rang_de and (carte.get("ref") or carte.get("de") or objet):
+                cartes[rang_de[cle]] = carte
+            else:
+                rang_de[cle] = len(cartes)
+                cartes.append(carte)
+    if len(cartes) <= 1:
+        return dernier
+    return {**dernier, "titre": f"Brouillons — modifiables ({len(cartes)})", "reponses": cartes}
+
+
 def _blocs_garantis(texte: str, state: AgentState) -> str:
     """Les blocs qu'un skill GARANTIT à l'écran, que le modèle les recopie ou non.
 
@@ -2847,7 +2885,7 @@ def _blocs_garantis(texte: str, state: AgentState) -> str:
     for genre in uniques:
         du_genre = [g for g in garantis if g.get("type") == genre]
         if len(du_genre) > 1:
-            garantis = [g for g in garantis if g.get("type") != genre] + [du_genre[-1]]
+            garantis = [g for g in garantis if g.get("type") != genre] + [_fondre_les_cartes(du_genre)]
     # LE MÊME GESTE REFAIT REMPLACE SON BLOC, IL NE L'EMPILE PAS (17/09, fil ca57dd3e). « Mets-moi
     # ça dans un Excel » : `lire_mails` a tourné cinq fois dans le tour, et le tableau des 98 mails
     # s'est affiché CINQ fois (105 000 caractères de message). Les résumés, rédigés par le modèle

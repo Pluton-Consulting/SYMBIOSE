@@ -203,7 +203,10 @@ async def rediger_email(data: dict, user) -> dict:
 
     contexte = (data.get("contexte") or "").strip()
     message_recu = (data.get("message_recu") or "").strip()
-    destinataire = (data.get("destinataire") or "").strip()
+    # Le destinataire sous les noms que le modèle lui donne (18/09 : la carte d'un brouillon
+    # affichait « destinataire inconnu » alors que l'adresse était passée sous `a`).
+    destinataire = str(data.get("destinataire") or data.get("a") or data.get("to")
+                       or data.get("email") or data.get("adresse") or "").strip()
     ref_recu = str(data.get("ref") or "").strip()
 
     # LA RETOUCHE PART DE LA VERSION PRÉCÉDENTE (15/09). Le 11/09, « une

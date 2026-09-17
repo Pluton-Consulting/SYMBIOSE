@@ -107,7 +107,10 @@ verifier("les variables disponibles sont dites au modèle (il n'a plus à devine
 agent1_src = (BACKEND / "agents" / "agent1.py").read_text(encoding="utf-8")
 verifier("UN SEUL bloc de cartes par message : le dernier remplace les précédents",
          'uniques = ("reponses_mail",)' in agent1_src
-         and "[du_genre[-1]]" in agent1_src)
+         # 18/09 : la fusion garde cette règle pour un publipostage (le dernier remplace) et
+         # CUMULE les petites rédactions — éprouvée dans test_cartes_cumulees.
+         and "[_fondre_les_cartes(du_genre)]" in agent1_src
+         and "return dernier" in agent1_src)
 verifier("un bloc de cartes recopié par le modèle cède la place au bloc mécanique",
          '"bloc_unique_recopie"' in agent1_src)
 skills_src = (BACKEND / "mail" / "skills.py").read_text(encoding="utf-8")
