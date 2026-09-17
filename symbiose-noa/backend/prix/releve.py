@@ -87,6 +87,33 @@ def mediane(valeurs: list[float]) -> float:
     return (ordonnees[milieu - 1] + ordonnees[milieu]) / 2
 
 
+# L'OUVRAGE SE NOMME EN TÊTE DE LIGNE. Une désignation fait jusqu'à quatre cents caractères et
+# cite en passant tout ce qui l'entoure : « installation d'un arrosage automatique … avant
+# engazonnement » n'est pas un engazonnement. Premier essai réel (17/09) : « engazonnement »
+# rendait le prix d'un arrosage, « évacuation » celui d'un terrassement de piscine.
+TETE_DE_DESIGNATION = 90
+
+
+def tete(designation, rubrique="") -> str:
+    """Ce qui NOMME la ligne : sa rubrique et le début de sa désignation, à plat."""
+    d = " ".join(str(designation or "").split())
+    coupe = d[:TETE_DE_DESIGNATION]
+    if len(d) > TETE_DE_DESIGNATION and " " in coupe:
+        coupe = coupe.rsplit(" ", 1)[0]          # jamais au milieu d'un mot
+    return plat(f"{rubrique or ''} {coupe}")
+
+
+def quartiles(valeurs: list[float]) -> tuple[float, float]:
+    """(Q1, Q3) par interpolation : la fourchette COURANTE, celle que les extrêmes ne tirent pas."""
+    v = sorted(valeurs)
+    def a(q: float) -> float:
+        pos = (len(v) - 1) * q
+        bas = int(pos)
+        haut = min(bas + 1, len(v) - 1)
+        return v[bas] + (v[haut] - v[bas]) * (pos - bas)
+    return a(0.25), a(0.75)
+
+
 def sans_doublons(lignes: list[dict]) -> list[dict]:
     """Une même ligne d'une même pièce ne compte qu'une fois, quel que soit le nombre de
     copies du PDF. Sans numéro de pièce, c'est le fichier qui fait l'identité."""
@@ -137,6 +164,11 @@ def relever(lignes: list[dict], aujourd_hui: Optional[date] = None) -> list[dict
             "suffisant": len(retenues) >= MIN_OBSERVATIONS,
             "plus_bas": round(min(prix), 2), "median": round(mediane(prix), 2),
             "plus_haut": round(max(prix), 2),
+            # La fourchette qui sert à ESTIMER : les quartiles dès quatre observations. Une
+            # « réparation de terrasse » à 10 € le m² est une observation vraie, mais elle ne
+            # doit pas faire le bas d'une estimation de terrasse neuve.
+            "courant_bas": round(quartiles(prix)[0] if len(prix) >= 4 else min(prix), 2),
+            "courant_haut": round(quartiles(prix)[1] if len(prix) >= 4 else max(prix), 2),
             "factures": sum(1 for l in retenues if l.get("nature") == "facture"),
             "devis": sum(1 for l in retenues if l.get("nature") == "devis"),
             "exemples": [{
@@ -155,6 +187,6 @@ def estimer(releve: dict, quantite: float) -> Optional[dict]:
     if not releve or not releve.get("suffisant") or quantite <= 0:
         return None
     return {"quantite": quantite, "unite": releve["unite"],
-            "bas": round(quantite * releve["plus_bas"], 2),
+            "bas": round(quantite * releve.get("courant_bas", releve["plus_bas"]), 2),
             "median": round(quantite * releve["median"], 2),
-            "haut": round(quantite * releve["plus_haut"], 2)}
+            "haut": round(quantite * releve.get("courant_haut", releve["plus_haut"]), 2)}

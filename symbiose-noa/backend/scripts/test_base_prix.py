@@ -173,6 +173,18 @@ e = R.estimer(m2, 40)
 verifier("l'estimation : quantité × (plus bas, médian, plus haut)",
          e == {"quantite": 40, "unite": "m²", "bas": 6000.0, "median": 7292.0, "haut": 9600.0}, str(e))
 verifier("pas d'estimation sur un relevé trop maigre", R.estimer({"suffisant": False}, 3) is None)
+longue = ("Fourniture et installation complète d'un système d'arrosage automatique avec programmateur, "
+          "électrovannes et tuyères, à réaliser avant engazonnement de la parcelle")
+verifier("L'OUVRAGE SE NOMME EN TÊTE : un arrosage qui cite « engazonnement » en fin de phrase n'est pas un engazonnement",
+         not R.correspond(R.tete(longue), R.mots_cles("engazonnement"))
+         and R.correspond(R.tete(longue), R.mots_cles("arrosage automatique"))
+         and R.correspond(R.tete("Semis", "ENGAZONNEMENT"), R.mots_cles("engazonnement")))
+quatre = R.relever([{"designation": f"Terrasse {k}", "unite": "m2", "quantite": 10, "pu_ht": pu, "numero": f"D{k}",
+                     "date": date(2026, 1, k + 1)} for k, pu in enumerate((10.31, 150.0, 160.0, 267.23))], AUJ)[0]
+e4 = R.estimer(quatre, 40)
+verifier("dès quatre observations, l'estimation prend la fourchette COURANTE : une réparation à 10 € le m² "
+         "reste dans le relevé (plus bas) mais ne fait pas le bas de l'estimation",
+         quatre["plus_bas"] == 10.31 and e4["bas"] > 40 * 100 and e4["haut"] < 40 * 267.23, str(e4))
 
 # ── 3. prix_observes, EXÉCUTÉ ───────────────────────────────────────────────
 print("\n── prix_observes contre une base doublée")

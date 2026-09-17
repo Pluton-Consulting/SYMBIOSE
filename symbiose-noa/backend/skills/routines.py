@@ -1171,7 +1171,7 @@ def _postes_demandes(data: dict) -> list[dict]:
 
 async def _lignes_du_poste(conn, racines: list, niveaux: list) -> list:
     """Les lignes chiffrées (devis et factures lus dans le classement) qui décrivent ce poste."""
-    from prix.releve import correspond
+    from prix.releve import correspond, tete
     lignes = await conn.fetch(
         "SELECT l.designation, l.rubrique, l.unite, l.quantite, l.pu_ht, l.texte_plat, "
         "       p.nature, p.numero, p.date_piece, p.fichier_id "
@@ -1184,7 +1184,7 @@ async def _lignes_du_poste(conn, racines: list, niveaux: list) -> list:
     return [{"designation": l["designation"], "unite": l["unite"], "quantite": float(l["quantite"]),
              "pu_ht": float(l["pu_ht"]), "nature": l["nature"], "numero": l["numero"],
              "date": l["date_piece"], "fichier_id": l["fichier_id"]}
-            for l in lignes if correspond(l["texte_plat"], racines)]
+            for l in lignes if correspond(tete(l["designation"], l["rubrique"]), racines)]
 
 
 def _affaires_du_poste(lignes_jeux: list, racines: list, demande_jeu: str) -> dict | None:
@@ -1409,7 +1409,8 @@ async def prix_observes(data: dict, user) -> dict:
         "POUR ESTIMER un poste : quantité × prix unitaire MÉDIAN de la MÊME unité, et donne la "
         "fourchette (plus bas – plus haut) à côté, avec le nombre d'observations. Rappelle ce "
         "geste avec `postes: [{poste, quantite, unite}]` pour que le calcul soit fait par le "
-        "serveur plutôt que de tête. Un FORFAIT ne se transpose que si la désignation de "
+        "serveur plutôt que de tête (sa fourchette est la fourchette COURANTE, sans les "
+        "extrêmes). Un FORFAIT ne se transpose que si la désignation de "
         "l'exemple décrit un ouvrage comparable : lis les `exemples` avant de t'en servir. Ne "
         "mélange jamais deux unités. Un poste sans observation reste « à chiffrer » : aucun "
         "prix de marché, aucun prix du web, aucun chiffre de tête. Présente le tout comme une "
