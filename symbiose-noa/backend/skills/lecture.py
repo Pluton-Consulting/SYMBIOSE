@@ -345,6 +345,17 @@ def lire_montant(valeur, defaut=0.0) -> float:
     brut = m.group(0).strip()
     for espace in (" ", " ", " ", " "):
         brut = brut.replace(espace, "")
+    # DEUX MONTANTS COLLÉS DANS UNE CELLULE (18/09, recette pilotée, prompt 13). Un export range
+    # « TTC / HT » dans la même case : « 14360.18 13054.71 » se lisait 14 360 181 305 471 € — les
+    # points pris pour des milliers — et la fiche d'un client annonçait quatorze mille milliards.
+    # Une écriture qui n'a la forme d'AUCUN nombre (un séparateur, ou des milliers par groupes de
+    # trois) ne se « répare » pas : on lit le PREMIER montant qu'elle porte.
+    if not (re.fullmatch(r"-?\d+(?:[.,]\d+)?", brut)
+            or re.fullmatch(r"-?\d{1,3}(?:\.\d{3})+(?:,\d+)?", brut)
+            or re.fullmatch(r"-?\d{1,3}(?:,\d{3})+(?:\.\d+)?", brut)):
+        premier = re.match(r"-?\d+[.,]\d{2}", brut)
+        if premier:
+            brut = premier.group(0)
     # Le dernier séparateur rencontré est le décimal ; les autres sont des
     # milliers. « 1.234,56 » et « 1,234.56 » se lisent donc tous les deux.
     if "," in brut and "." in brut:

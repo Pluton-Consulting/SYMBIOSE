@@ -185,6 +185,42 @@ a1 = (BACKEND / "agents" / "agent1.py").read_text(encoding="utf-8")
 verifier("déposer dix brouillons d'affilée n'est pas un geste qui s'acharne",
          'SKILLS_SANS_PLAFOND = frozenset({"ajouter_document", "deposer_brouillon", "enregistrer_relance"})' in a1)
 
+# ── 18/09, prompt 13 : les devis et factures d'UN client, lus dans le classement ──
+lafon = [{"fichier_id": "a", "fichier_nom": "FA0001235.pdf", "nature": "facture", "numero": "FA0001235", "date_piece": date(2026, 7, 22), "total_ht": 13054.71, "controle": "juste", "client": "LAFON Huguette et Claude"},
+         {"fichier_id": "b", "fichier_nom": "FA0001235 copie.pdf", "nature": "facture", "numero": "FA0001235", "date_piece": date(2026, 7, 22), "total_ht": 13054.71, "controle": "ecart", "client": "LAFON Huguette et Claude"},
+         {"fichier_id": "c", "fichier_nom": "AV0000012.pdf", "nature": "avoir", "numero": "AV0000012", "date_piece": date(2026, 8, 1), "total_ht": 1000.0, "controle": "juste", "client": "LAFON Huguette et Claude"},
+         {"fichier_id": "d", "fichier_nom": "DV0001109.pdf", "nature": "devis", "numero": "DV0001109", "date_piece": date(2026, 4, 14), "total_ht": 33593.47, "controle": "juste", "client": None},
+         {"fichier_id": "e", "fichier_nom": "FA0001300.pdf", "nature": "facture", "numero": "FA0001300", "date_piece": date(2026, 9, 1), "total_ht": None, "controle": "sans_total", "client": "LAFON Huguette et Claude"}]
+rp = chiffres.resumer_les_pieces([dict(x) for x in lafon])
+verifier("les pièces d'un client : une par numéro, la copie ne compte pas, du plus récent au plus ancien",
+         rp["copies_ecartees"] == 1 and [x["numero"] for x in rp["pieces"]] == ["FA0001300", "AV0000012", "FA0001235", "DV0001109"], str([x["numero"] for x in rp["pieces"]]))
+verifier("le total facturé déduit l'avoir, ignore le devis, et nomme la facture sans total",
+         rp["total_facture"] == 12054.71 and rp["total_devise"] == 33593.47 and rp["sans_total"] == ["FA0001300"], str(rp))
+verifier("le geste est déclaré, rangé dans une famille, et son résultat n'est pas recoupé",
+         "pieces_du_client" in chiffres.SKILLS and '"pieces_du_client"' in (BACKEND / "skills" / "familles.py").read_text(encoding="utf-8")
+         and '"pieces_du_client"' in a1)
+
+# ── 18/09, prompt 18 : la fréquence des passages par client, sur des factures DATÉES ──
+def _l(client, numero, jour, unite="h", q=2.0, m=90.0):
+    return {"client": client, "code_client": "", "numero": numero, "fichier_id": numero, "date_piece": jour,
+            "unite": unite, "quantite": q, "montant_ht": m}
+fq = chiffres.frequences_par_client([
+    _l("M. ROCCA", "FA1", date(2026, 1, 10)), _l("M. ROCCA", "FA1", date(2026, 1, 10), unite="u", q=1, m=30),
+    _l("M. ROCCA", "FA2", date(2026, 4, 10), q=3.0), _l("M. ROCCA", "FA3", date(2026, 7, 9), q=1.0),
+    _l("Mme BLATCH", "FA9", date(2026, 5, 1)), _l("Mme BLATCH", "FA10", date(2026, 6, 1)),
+    _l("SANS DATE", "FA11", None)])
+rocca = next(c for c in fq if c["client"] == "M. ROCCA")
+verifier("un passage = une facture datée : trois passages, deux lignes d'une même facture n'en font qu'un",
+         rocca["passages"] == 3 and rocca["intervalle_moyen_jours"] == 90 and rocca["passages_par_an"] == 4.1, str(rocca))
+verifier("les heures par passage ne comptent que les lignes à l'heure ; le montant compte tout",
+         rocca["heures_par_passage"] == 2.0 and rocca["montant_ht"] == 300.0, str(rocca))
+blatch = next(c for c in fq if c["client"] == "Mme BLATCH")
+verifier("moins de trois passages : fréquence calculée mais marquée incomplète ; une ligne sans date n'entre pas",
+         blatch["donnee_incomplete"] is True and rocca["donnee_incomplete"] is False and len(fq) == 2)
+verifier("trié par fréquence décroissante", [c["client"] for c in fq] == ["Mme BLATCH", "M. ROCCA"], str([c["client"] for c in fq]))
+verifier("le geste est déclaré et rangé dans une famille",
+         "frequence_des_passages" in chiffres.SKILLS and '"frequence_des_passages"' in (BACKEND / "skills" / "familles.py").read_text(encoding="utf-8"))
+
 print("\n" + "═" * 70)
 if echecs:
     print(f"✗ {len(echecs)} échec(s) : " + ", ".join(echecs))

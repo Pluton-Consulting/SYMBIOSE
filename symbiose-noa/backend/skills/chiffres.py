@@ -325,6 +325,210 @@ async def articles_frequents(data: dict, user) -> dict:
                         "d'achats. Deux écritures proches d'un même ouvrage sont regroupées ; les montants se recopient tels quels.")}
 
 
+MIN_PASSAGES_FIABLES = 3
+_UNITES_D_HEURE = ("h", "heure", "heures", "hr", "hrs")
+
+
+def frequences_par_client(lignes: list[dict]) -> list[dict]:
+    """PUR. Des lignes de factures (client, code_client, numero, date_piece, unite, quantite, montant_ht)
+    → par client : le nombre de PASSAGES (une facture datée = un passage), la première et la dernière
+    date, l'intervalle moyen entre deux passages, les heures par passage quand l'unité est l'heure.
+    Moins de trois passages : la fréquence est calculée mais marquée NON FIABLE."""
+    par_client: dict[str, dict] = {}
+    for l in lignes:
+        if not isinstance(l.get("date_piece"), date):
+            continue
+        cle = _cle_client(l.get("client") or "", l.get("code_client") or "")
+        c = par_client.setdefault(cle, {"client": l.get("client") or "(client non lu sur la pièce)", "passages": {}})
+        passage = c["passages"].setdefault(l.get("numero") or f"fichier:{l.get('fichier_id')}",
+                                           {"date": l["date_piece"], "heures": 0.0, "montant": 0.0})
+        if str(l.get("unite") or "").strip().lower().rstrip(".") in _UNITES_D_HEURE:
+            passage["heures"] += float(l.get("quantite") or 0)
+        passage["montant"] += float(l.get("montant_ht") or 0)
+    sortie = []
+    for c in par_client.values():
+        passages = sorted(c["passages"].values(), key=lambda x: x["date"])
+        n = len(passages)
+        jours = (passages[-1]["date"] - passages[0]["date"]).days
+        heures = [x["heures"] for x in passages if x["heures"] > 0]
+        sortie.append({"client": c["client"], "passages": n,
+                       "premier": passages[0]["date"], "dernier": passages[-1]["date"],
+                       "intervalle_moyen_jours": round(jours / (n - 1)) if n > 1 else None,
+                       "passages_par_an": round(365.25 * (n - 1) / jours, 1) if n > 1 and jours > 0 else None,
+                       "heures_par_passage": round(sum(heures) / len(heures), 2) if heures else None,
+                       "montant_ht": round(sum(x["montant"] for x in passages), 2),
+                       "donnee_incomplete": n < MIN_PASSAGES_FIABLES})
+    sortie.sort(key=lambda x: (-(x["passages_par_an"] or 0), -x["passages"]))
+    return sortie
+
+
+async def frequence_des_passages(data: dict, user) -> dict:
+    """Pour chaque client, combien de fois on lui a facturé une prestation (« entretien »), à quel
+    rythme et pour combien d'heures — lu dans les factures DATÉES du classement (18/09, prompt 18).
+
+    Le jeu importé « facture » porte les lignes `mainentretien` SANS date : la fréquence y est
+    incalculable, et l'assistant l'a dit. Les mêmes lignes existent, datées, dans les PDF lus."""
+    from datetime import timedelta
+    from database.connection import get_db
+    from security.acces import niveaux_visibles
+    from skills.erreurs import SkillError
+    from prix.releve import correspond, mots_cles, plat
+    try:
+        mois = max(1, min(int(str(data.get("mois") or 12)), 120))
+    except ValueError:
+        mois = 12
+    contient = " ".join(str(data.get("contient") or data.get("prestation") or "entretien").split())
+    depuis = date.today() - timedelta(days=round(30.44 * mois))
+    niveaux = sorted(niveaux_visibles(getattr(user, "role", "")))
+    try:
+        async with get_db() as conn:
+            lignes = await conn.fetch(
+                "SELECT l.designation, l.rubrique, l.unite, l.quantite, l.montant_ht, p.numero, p.fichier_id, "
+                "       p.date_piece, p.client, p.code_client, p.titre "
+                "FROM lignes_chiffrees l JOIN pieces_chiffrees p USING (fichier_id) "
+                "WHERE p.etat = 'lue' AND p.nature = 'facture' AND p.date_piece >= $1 "
+                "  AND p.access_level = ANY($2::text[]) LIMIT 60000", depuis, niveaux)
+    except Exception as e:  # noqa: BLE001
+        logger.warning("Fréquence des passages impossible : %s", str(e)[:160])
+        raise SkillError("La base des lignes de factures n'est pas disponible pour l'instant.")
+    racines = mots_cles(contient)
+    gardees = [dict(l) for l in lignes
+               if correspond(plat(f"{l['rubrique']} {l['designation']} {l['titre'] or ''}"), racines)]
+    clients = frequences_par_client(gardees)
+    if not clients:
+        return {"trouve": False,
+                "message": f"Aucune ligne de facture datée des {mois} derniers mois ne parle de « {contient} ».",
+                "a_faire": "Dis-le tel quel, sans avancer aucune fréquence."}
+    sans_client = [c for c in clients if c["client"].startswith("(client non lu")]
+    nommes = [c for c in clients if not c["client"].startswith("(client non lu")]
+
+    def _rangee(c: dict) -> list:
+        return [c["client"], c["passages"], c["premier"].strftime("%d/%m/%Y"), c["dernier"].strftime("%d/%m/%Y"),
+                f"{c['intervalle_moyen_jours']} j" if c["intervalle_moyen_jours"] is not None else "",
+                f"{c['passages_par_an']:g}" if c["passages_par_an"] is not None else "",
+                f"{c['heures_par_passage']:g} h" if c["heures_par_passage"] is not None else "",
+                _euros(c["montant_ht"]), "OUI (moins de 3 passages)" if c["donnee_incomplete"] else ""]
+    colonnes = ["Client", "Passages facturés", "Premier", "Dernier", "Intervalle moyen", "Passages / an",
+                "Heures / passage", "Montant HT", "Donnée incomplète"]
+    blocs = [{"type": "table", "titre": f"Fréquence des passages « {contient} » — {mois} derniers mois ({len(nommes)} clients)",
+              "columns": colonnes, "rows": [_rangee(c) for c in nommes[:300]]}]
+    veut_fichier = str(data.get("fichier") or "").strip().lower() in ("true", "1", "oui", "yes", "xlsx", "excel")
+    if veut_fichier:
+        import asyncio
+        from bureautique.atelier import ouvrir, ajouter, terminer
+        proprio = str(getattr(user, "id", "") or "")
+        titre_f = f"Fréquence des passages — {contient}"
+
+        def _produire():
+            jeton = ouvrir({"titre": titre_f, "format": "xlsx"}, proprio)
+            ajouter(jeton, [{"type": "feuille", "nom": "Fréquences", "entetes": colonnes,
+                             "lignes": [_rangee(c) for c in nommes]}], proprio)
+            return jeton, terminer(jeton, proprio)
+        try:
+            jeton, fiche = await asyncio.to_thread(_produire)
+            blocs.append({"type": "fichier", "url": f"/api/documents/{jeton}", "nom": "frequence-passages.xlsx",
+                          "titre": titre_f, "format": "xlsx", "octets": fiche.get("octets")})
+        except Exception as e:  # noqa: BLE001 — le tableau reste à l'écran
+            logger.warning("Excel des fréquences impossible : %s", e)
+    return {
+        "trouve": True, "prestation": contient, "periode": f"les {mois} derniers mois",
+        "clients": len(nommes), "fiables": sum(1 for c in nommes if not c["donnee_incomplete"]),
+        "lignes_retenues": len(gardees),
+        "passages_sans_client_lu": sum(c["passages"] for c in sans_client) or None,
+        "bloc_garanti": True, "bloc_ui": blocs if len(blocs) > 1 else blocs[0],
+        "message_final": (f"{len(nommes)} client(s) facturés pour « {contient} » sur les {mois} derniers mois, "
+                          f"dont {sum(1 for c in nommes if not c['donnee_incomplete'])} avec au moins "
+                          f"{MIN_PASSAGES_FIABLES} passages."),
+        "a_faire": ("Le tableau s'affiche AUTOMATIQUEMENT : ne le recopie pas. UN PASSAGE = UNE FACTURE DATÉE qui "
+                    "porte la prestation : c'est une fréquence de FACTURATION ; si la maison facture plusieurs "
+                    "passages sur une même facture, la fréquence réelle est plus haute — dis-le. « Donnée "
+                    "incomplète » = moins de trois passages : fréquence non fiable. La fréquence CONTRACTUELLE "
+                    "n'est écrite dans aucune donnée : ne conclus à aucun écart avec un contrat sans l'avoir lu."),
+    }
+
+
+def resumer_les_pieces(pieces: list[dict]) -> dict:
+    """PUR : une pièce par numéro, du plus récent au plus ancien, et les totaux par nature."""
+    uniques, doublons = retenir_une_piece_par_numero(pieces)
+    uniques.sort(key=lambda p: str(p.get("date_piece") or ""), reverse=True)
+
+    def somme(nature: str) -> float:
+        return round(sum(float(p["total_ht"]) for p in uniques
+                         if p.get("nature") == nature and p.get("total_ht") is not None), 2)
+    facture = round(somme("facture") - somme("avoir"), 2)
+    return {"pieces": uniques, "copies_ecartees": doublons,
+            "devis": sum(1 for p in uniques if p.get("nature") == "devis"),
+            "factures": sum(1 for p in uniques if p.get("nature") == "facture"),
+            "avoirs": sum(1 for p in uniques if p.get("nature") == "avoir"),
+            "total_devise": somme("devis"), "total_facture": facture,
+            "sans_total": [p.get("numero") or p.get("fichier_nom") for p in uniques if p.get("total_ht") is None]}
+
+
+async def pieces_du_client(data: dict, user) -> dict:
+    """Les devis et factures d'UN client, lus dans les PDF du classement (18/09, prompt 13).
+
+    « Consolide son dossier : devis, factures, total facturé » ne trouvait que les jeux importés :
+    un devis, une facture — alors que le classement porte onze factures et trois devis à son nom."""
+    import unicodedata
+    from database.connection import get_db
+    from security.acces import niveaux_visibles
+    from skills.erreurs import SkillError
+
+    nom = str(data.get("client") or data.get("nom") or "").strip()
+    if len(nom) < 2:
+        raise SkillError("Donne le `client` (son nom de famille suffit).")
+    plat = "".join(c for c in unicodedata.normalize("NFD", nom.lower()) if unicodedata.category(c) != "Mn")
+    mots = [m for m in plat.replace("-", " ").split() if len(m) >= 3 and m not in ("mme", "mlle", "mrs", "madame", "monsieur", "les", "des")]
+    if not mots:
+        raise SkillError("Ce nom est trop court pour chercher sans confondre : donne le nom de famille.")
+    # Le mot le PLUS LONG du nom suffit à trouver (un prénom manque souvent sur la pièce) ; les
+    # autres mots ne servent qu'à dire si la pièce les porte aussi.
+    pivot = max(mots, key=len)
+    niveaux = sorted(niveaux_visibles(getattr(user, "role", "")))
+    try:
+        async with get_db() as conn:
+            lignes = await conn.fetch(
+                "SELECT fichier_id, fichier_nom, nature, numero, date_piece, titre, total_ht, controle, "
+                "       client, code_client, lu_le "
+                "FROM pieces_chiffrees WHERE etat = 'lue' AND access_level = ANY($1::text[]) "
+                # Sans accents des DEUX côtés : « LÉVÊQUE » sur la pièce, « leveque » dans la demande.
+                "  AND (translate(lower(coalesce(client, '')), 'àâäéèêëîïôöùûüç', 'aaaeeeeiioouuuc') LIKE $2 "
+                "    OR translate(lower(fichier_nom), 'àâäéèêëîïôöùûüç', 'aaaeeeeiioouuuc') LIKE $2) "
+                "LIMIT 600", niveaux, f"%{pivot}%")
+    except Exception as e:  # noqa: BLE001
+        logger.warning("Pièces du client impossibles : %s", str(e)[:160])
+        raise SkillError("La base des pièces lues dans le classement n'est pas disponible. Réessayez plus tard.")
+    r = resumer_les_pieces([dict(l) for l in lignes])
+    if not r["pieces"]:
+        return {"trouve": False, "client": nom,
+                "message_final": f"Aucun devis ni facture au nom de « {nom} » parmi les pièces lues dans le classement.",
+                "a_faire": ("Dis-le tel quel. Ce n'est PAS la preuve qu'il n'en existe pas : la base ne porte que "
+                            "les PDF déjà lus, et le nom du client n'est pas lu sur toutes. Cherche aussi son "
+                            "dossier par `drive_chercher`.")}
+    rangees = [[p.get("nature") or "", p.get("numero") or "", p["date_piece"].strftime("%d/%m/%Y") if p.get("date_piece") else "",
+                (p.get("titre") or "")[:70], _euros(float(p["total_ht"])) if p.get("total_ht") is not None else "non lu",
+                p.get("client") or "(client non lu sur la pièce)", p.get("fichier_nom") or ""] for p in r["pieces"][:200]]
+    homonymes = sorted({str(p.get("client")) for p in r["pieces"] if p.get("client")})
+    return {
+        "trouve": True, "client": nom, "devis": r["devis"], "factures": r["factures"], "avoirs": r["avoirs"],
+        "total_devise_ht": _euros(r["total_devise"]), "total_facture_ht": _euros(r["total_facture"]),
+        "copies_ecartees": r["copies_ecartees"], "pieces_sans_total": r["sans_total"][:20] or None,
+        "noms_lus_sur_les_pieces": homonymes[:12],
+        "bloc_garanti": True,
+        "bloc_ui": {"type": "table", "titre": f"Devis et factures lus dans le classement — {nom} ({len(r['pieces'])})",
+                    "columns": ["Nature", "Numéro", "Date", "Titre", "Total HT", "Client lu", "Fichier"], "rows": rangees},
+        "message_final": (f"{r['devis']} devis et {r['factures']} facture(s) au nom de « {nom} » dans le classement : "
+                          f"{_euros(r['total_facture'])} HT facturés"
+                          + (f" (avoirs déduits : {r['avoirs']})" if r["avoirs"] else "")
+                          + f", {_euros(r['total_devise'])} HT devisés."),
+        "a_faire": ("Le tableau s'affiche AUTOMATIQUEMENT : ne le recopie pas. Les totaux sont calculés par le "
+                    "serveur (une pièce par numéro, avoirs déduits) : cite-les tels quels, avec le NOM DU FICHIER "
+                    "comme source. `noms_lus_sur_les_pieces` : si plusieurs clients différents portent ce nom, "
+                    "DIS-LE et ne les additionne pas. « Réglée ou non » n'est écrit sur aucune pièce : ne "
+                    "l'affirme jamais. Un devis n'est pas du chiffre d'affaires."),
+    }
+
+
 SKILLS = {
     "articles_frequents": Declaration(
         fonction=articles_frequents,
@@ -337,6 +541,29 @@ SKILLS = {
         requis=[], optionnels=["mois", "combien", "par", "nature", "contient"],
         effet="lecture",
         libelle="je classe les articles les plus facturés"),
+    "frequence_des_passages": Declaration(
+        fonction=frequence_des_passages,
+        description=(
+            "LA FREQUENCE DES PASSAGES PAR CLIENT pour une prestation (« entretien » par defaut), calculee par le "
+            "serveur sur les factures DATEES lues dans le classement : passages factures, premiere et derniere "
+            "date, intervalle moyen, passages par an, heures par passage, montant ; moins de 3 passages = donnee "
+            "incomplete. Pour « la frequence d'entretien de chaque client », « combien de passages par an ». "
+            "`contient` : la prestation, `mois` (12), `fichier: true` pour l'Excel. N'utilise PAS "
+            "`interroger_donnees` pour cela : le fichier importe n'a pas les dates"),
+        requis=[], optionnels=["contient", "mois", "fichier"],
+        effet="lecture",
+        libelle="je calcule la fréquence des passages par client"),
+    "pieces_du_client": Declaration(
+        fonction=pieces_du_client,
+        description=(
+            "LES DEVIS ET FACTURES D'UN CLIENT, lus dans les PDF du classement : nature, numero, date, titre, "
+            "total HT, fichier — plus le TOTAL FACTURE et le total devise, calcules par le serveur (une piece "
+            "par numero, avoirs deduits). A appeler pour « le dossier de tel client », « ses devis et ses "
+            "factures », « combien lui a-t-on facture », EN PLUS de `fiche_client` (qui ne lit que les "
+            "fichiers importes). `client` : son nom de famille"),
+        requis=["client"], optionnels=[],
+        effet="lecture",
+        libelle="je rassemble les devis et factures du client"),
     "chiffre_affaires": Declaration(
         fonction=chiffre_affaires,
         description=(

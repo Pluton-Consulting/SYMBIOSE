@@ -350,7 +350,7 @@ def _est_jeton_tableau(valeur) -> bool:
     return isinstance(valeur, str) and valeur.strip().lower() in JETONS_TABLEAU
 
 
-RESULTATS_GENEREUX = {"chiffre_affaires", "prix_observes", "dossiers_en_attente", "lire_source_dossier", "chercher_source_dossier", "drive_chercher", "nas_chercher", "drive_apercu", "drive_lister", "drive_lister_lot",
+RESULTATS_GENEREUX = {"chiffre_affaires", "prix_observes", "dossiers_en_attente", "pieces_du_client", "frequence_des_passages", "lire_source_dossier", "chercher_source_dossier", "drive_chercher", "nas_chercher", "drive_apercu", "drive_lister", "drive_lister_lot",
                       # 08/09 : les cartes de relance et la liste des factures suivies.
                       "relancer_factures", "factures_suivies", "inventaire_dossier",
                       "courrier_entrant",
