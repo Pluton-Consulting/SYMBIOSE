@@ -762,7 +762,12 @@ async def lire_boite(boite: str, dossier: str = "recus",
     toutes les pages. L'appelant DOIT avoir vérifié l'accès.
     """
     nom = fournisseur()                       # lève si rien n'est configuré
-    if curseur and nom != 'imap':
+    # Chaque voie a SON curseur : « imap:… » pour IMAP, « saut:N » pour Outlook (17/09).
+    # Un curseur d'une autre voie est refusé plutôt qu'ignoré : l'ignorer relirait la
+    # première page en la présentant comme la suivante.
+    _forme = str(curseur or '').strip().lower()
+    if curseur and not ((nom == 'imap' and _forme.startswith('imap:'))
+                        or (nom == 'outlook' and _forme.startswith('saut:'))):
         raise ValueError('Ce curseur ne correspond pas au fournisseur de messagerie.')
     cle = "envoyes" if str(dossier).lower().startswith("env") else "recus"
     limite = max(1, min(int(limite or 10), MAX_MESSAGES))

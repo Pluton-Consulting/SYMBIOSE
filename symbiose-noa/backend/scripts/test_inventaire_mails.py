@@ -46,6 +46,8 @@ verifier("une RECHERCHE ne saute jamais (Graph refuse `$skip` avec `$search`)", 
 verifier("la dernière fiche d'une page Outlook porte le curseur SEULEMENT s'il reste des messages",
          'if resultats and total is not None and saut + len(resultats) < int(total):' in lect
          and 'resultats[-1]["curseur_suivant"] = f"saut:{saut + len(resultats)}"' in lect)
+verifier("`lire_boite` accepte le curseur de SA voie et refuse celui d'une autre (trouvé par la sonde réelle)",
+         "nom == 'outlook' and _forme.startswith('saut:')" in lect and "nom == 'imap' and _forme.startswith('imap:')" in lect)
 verifier("la voie IMAP garde sa propre règle (le total dit s'il y a une suite)",
          "_dernier.startswith('saut:') or (total and total>len(messages))" in lect)
 
