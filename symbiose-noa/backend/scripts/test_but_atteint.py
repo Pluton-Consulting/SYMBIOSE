@@ -52,6 +52,15 @@ if callable(getattr(ann, "demande_d_ouvrir_un_seul", None)):
     verifier("« affiche les différents pdf », « lis chaque CCTP », « ouvre les 3 plans » : pluriel",
              not p("affiche les différent pdf dans le 2029 airborne") and not p("lis chaque CCTP")
              and not p("ouvre les 3 plans"))
+    # 18/09, recette pilotée : le tour se fermait à l'ouverture du devis, la comparaison n'était jamais faite.
+    verifier("la lecture n'est qu'une ÉTAPE quand la demande compare ou enchaîne : on continue",
+             not p("Retrouve le dernier devis d'aménagement de parking, ouvre-le, et dis-moi si nos prix de "
+                   "décaissement au m² ont bougé par rapport aux devis de l'an dernier.")
+             and not p("Trouve le devis de M. Lafon, ouvre-le, dis-moi le total, puis trouve sa dernière facture")
+             and not p("ouvre le devis Martin et compare-le au devis Durand"))
+    verifier("… mais « ouvre-le et restitue-le intégralement », « ouvre le dernier mail et dis-moi ce qu'il contient » "
+             "restent UNE lecture",
+             p("Ouvre-le et restitue-le intégralement") and p("ouvre le dernier mail et dis-moi ce qu'il contient"))
     verifier("« liste les dossiers du drive », « il y a quoi dans ETUDES EN COURS » : pas une ouverture",
              not p("liste moi les dossier du drive") and not p("il y a quoi comme document dans 03-Appel d'offres etudes"))
 

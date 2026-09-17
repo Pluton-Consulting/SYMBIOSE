@@ -313,7 +313,13 @@ async def articles_frequents(data: dict, user) -> dict:
         return {"trouve": False, "message": f"Aucune ligne de {nature} lue sur les {mois} derniers mois"
                                             + (f" ne parle de « {contient} »." if contient else "."),
                 "a_faire": "Dis-le tel quel, sans rien avancer."}
+    # LE TOTAL DE TOUTES LES LIGNES RETENUES, pas des dix premières (18/09, question « combien avons-nous
+    # devisé et facturé en terrasses bois ») : appelé une fois en `nature: devis` et une fois en
+    # `facture` avec le même `contient`, ce geste donne les deux montants à comparer.
+    total_lignes = round(sum(float(l.get("montant_ht") or 0) for l in lignes), 2)
+    pieces_distinctes = len({l.get("numero") or l.get("fichier_id") for l in lignes})
     return {"trouve": True, "nature": nature, "periode": f"les {mois} derniers mois", "lignes_analysees": len(lignes),
+            "total_ht_de_toutes_les_lignes": _euros(total_lignes), "pieces_concernees": pieces_distinctes,
             "classement": classement, "bloc_garanti": True,
             "bloc_ui": {"type": "table", "titre": f"Les {len(classement)} articles les plus {'devisés' if nature == 'devis' else 'facturés'} — {mois} derniers mois",
                         "columns": ["Article ou ouvrage", "Pièces", "Quantité", "Unité", "Montant HT"],
@@ -322,7 +328,11 @@ async def articles_frequents(data: dict, user) -> dict:
             "message_final": f"Classement établi sur {len(lignes)} ligne(s) de {nature}.",
             "a_faire": ("Le tableau s'affiche AUTOMATIQUEMENT : ne le recopie pas. Ce sont des lignes de VENTE lues dans "
                         "les factures de la maison, pas des achats chez les fournisseurs : dis-le si la demande parlait "
-                        "d'achats. Deux écritures proches d'un même ouvrage sont regroupées ; les montants se recopient tels quels.")}
+                        "d'achats. Deux écritures proches d'un même ouvrage sont regroupées ; les montants se recopient tels quels. "
+                        "`total_ht_de_toutes_les_lignes` porte sur TOUTES les lignes retenues (pas seulement le classement) : "
+                        "pour comparer DEVISÉ et FACTURÉ d'un ouvrage, appelle ce geste deux fois avec le même `contient` "
+                        "(`nature: \"devis\"` puis `\"facture\"`) — et dis qu'un devis et sa facture ne sont pas reliés un à "
+                        "un : le rapport des deux montants est un ordre de grandeur, pas un taux de transformation exact.")}
 
 
 MIN_PASSAGES_FIABLES = 3
@@ -537,7 +547,9 @@ SKILLS = {
             "nombre de pieces, quantite, montant HT. Pour « le top 10 de ce qu'on vend le plus », « quels "
             "ouvrages on facture le plus souvent ». `mois` (24 par defaut), `combien` (10), `par` : "
             "\"frequence\" ou \"montant\", `nature` : \"facture\" ou \"devis\", `contient` : un mot pour ne "
-            "garder qu'une famille (« piscine », « plantation »). Ce sont des VENTES, pas des achats fournisseurs"),
+            "garder qu'une famille (« piscine », « plantation »). Rend aussi le TOTAL HT de toutes les lignes retenues : "
+            "pour « combien a-t-on devise / facture en terrasses bois », appelle-le en `devis` puis en `facture` avec le "
+            "meme `contient`. Ce sont des VENTES, pas des achats fournisseurs"),
         requis=[], optionnels=["mois", "combien", "par", "nature", "contient"],
         effet="lecture",
         libelle="je classe les articles les plus facturés"),

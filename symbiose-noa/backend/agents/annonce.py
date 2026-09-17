@@ -459,12 +459,24 @@ _PLUSIEURS = re.compile(
     re.IGNORECASE)
 
 
+# LA LECTURE N'EST QU'UNE ÉTAPE (18/09, recette pilotée). « Retrouve le dernier devis de parking,
+# ouvre-le, et dis-moi si nos prix de décaissement ont bougé par rapport à l'an dernier » : le tour
+# se fermait à l'ouverture du devis — but « atteint » — et la comparaison n'était jamais faite.
+# Une demande qui COMPARE, ou qui enchaîne un autre travail, n'est pas satisfaite par une lecture.
+_LECTURE_PUIS_AUTRE_CHOSE = re.compile(
+    r"\bcompar|\bpar rapport\b|\bpuis\b|\bensuite\b|\bapres quoi\b|\bont (?:bouge|evolue|change|augmente|baisse)"
+    r"|\ba (?:bouge|evolue|change|augmente|baisse)\b"
+    r"|\bet (?:calcule|verifie|trouve|retrouve|cherche|redige|prepare|fais|produis|liste|estime|chiffre)\b",
+    re.IGNORECASE)
+
+
 def demande_d_ouvrir_un_seul(texte: str) -> bool:
-    """La demande réclame-t-elle d'ouvrir ou lire UN document, et un seul ?"""
+    """La demande réclame-t-elle d'ouvrir ou lire UN document, et un seul — et RIEN d'autre ?"""
     if not isinstance(texte, str) or not texte:
         return False
     t = _sans_accent(texte)
-    return bool(_OUVRIR_UN_SEUL.search(t)) and not _PLUSIEURS.search(t)
+    return (bool(_OUVRIR_UN_SEUL.search(t)) and not _PLUSIEURS.search(t)
+            and not _LECTURE_PUIS_AUTRE_CHOSE.search(t))
 
 
 def demande_une_production(texte: str) -> bool:
