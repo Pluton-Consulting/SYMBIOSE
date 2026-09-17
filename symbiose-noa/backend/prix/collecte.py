@@ -92,6 +92,7 @@ async def _ecrire(conn, fichier: dict, etat_piece: str, niveau: str, piece: Opti
     total = (piece or {}).get("total_ht")
     controle = "sans_total" if total is None else ("juste" if abs(somme - total) <= 1 else "ecart")
     from prix.releve import plat
+    from prix.lignes import VERSION
     async with conn.transaction():
         await conn.execute(
             "INSERT INTO pieces_chiffrees(fichier_id, fichier_nom, modifie_le, etat, nature, numero, "
@@ -104,7 +105,7 @@ async def _ecrire(conn, fichier: dict, etat_piece: str, niveau: str, piece: Opti
             etat_piece, (piece or {}).get("nature"), (piece or {}).get("numero"),
             (piece or {}).get("date"), ((piece or {}).get("titre") or "")[:200] or None,
             total, somme if lignes else None, controle if piece else None,
-            (piece or {}).get("methode"), len(lignes), niveau)
+            f"{(piece or {}).get('methode') or '-'}/{VERSION}", len(lignes), niveau)
         await conn.execute("DELETE FROM lignes_chiffrees WHERE fichier_id=$1", fichier["id"])
         if lignes:
             await conn.executemany(
@@ -136,8 +137,12 @@ async def collecter(limite: Optional[int] = None) -> dict:
             candidats = await _recenser(service)
             async with get_db() as conn:
                 niveau = await _niveau_des_prix(conn)
+                # Une pièce lue par une version PLUS ANCIENNE du lecteur compte pour non lue : un
+                # gabarit appris après coup doit profiter aux pièces déjà passées.
+                from prix.lignes import VERSION
                 deja = {r["fichier_id"]: r["modifie_le"] for r in await conn.fetch(
-                    "SELECT fichier_id, modifie_le FROM pieces_chiffrees")}
+                    "SELECT fichier_id, modifie_le FROM pieces_chiffrees WHERE methode LIKE $1",
+                    f"%/{VERSION}")}
             a_lire = [f for f in candidats.values()
                       if f["id"] not in deja or (_instant(f.get("modifiedTime")) or 0) != (deja[f["id"]] or 0)]
             # Les plus récentes d'abord : ce sont elles qui portent les prix d'aujourd'hui, et

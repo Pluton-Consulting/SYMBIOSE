@@ -108,6 +108,27 @@ verifier("à l'OCR, « 9 » « 115.00 » se recollent en 9 115,00 et la ligne to
 verifier("une quantité et un prix voisins ne se recollent PAS (l'écart est celui d'une colonne)",
          p2["lignes"][0]["quantite"] == 50.0 and p2["lignes"][0]["pu_ht"] == 182.3)
 
+# Les autres gabarits de la maison, relevés sur les vraies factures le 17/09 (une sur deux ne
+# rendait AUCUNE ligne) : l'unité entre la quantité et le prix, la remise, la TVA au milieu.
+def une(*morceaux):
+    x = L._ligne_chiffree(rangee(100, *morceaux))
+    return x and (x["quantite"], x["pu_ht"], x["montant_ht"], x.get("unite"), [m.texte for m in x["avant"]])
+verifier("facture : « Qté · Unités · PU HT · Montant » — l'unité sépare la quantité du prix",
+         une((60, "Bouteille"), (110, "CO2"), (300, "2.00"), (330, "Unité"), (380, "49.17"), (430, "98.33"),
+             (480, "20.00"), (530, "118.00")) == (2.0, 49.17, 98.33, "Unité", ["Bouteille", "CO2"]))
+verifier("avec une remise, le prix retenu est le NET payé (montant ÷ quantité)",
+         une((60, "Banc"), (291, "Unité"), (343, "1.00"), (380, "1 649.50"), (430, "5.00"), (460, "1 567.03"),
+             (500, "20.00"), (540, "1 880.43"))[:3] == (1.0, 1567.03, 1567.03))
+verifier("second gabarit : « QTE · UNITÉ · TVA · P.U. HT · TOTAL HT », la TVA au milieu",
+         une((60, "Tonte"), (300, "12"), (320, "h"), (340, "20,00 %"), (400, "45,00 €"), (470, "540,00 €"))[:3]
+         == (12.0, 45.0, 540.0))
+verifier("une rangée de numéros (téléphone, IBAN, code postal) ne fait jamais une ligne",
+         une((60, "Tél"), (90, ":"), (100, "05"), (115, "40"), (130, "80"), (145, "95"), (160, "19")) is None
+         and une((60, "IBAN"), (100, "3000"), (130, "4007"), (160, "5700"), (190, "0100")) is None)
+collecte_src = (BACKEND / "prix" / "collecte.py").read_text(encoding="utf-8")
+verifier("quand le lecteur apprend un gabarit, les pièces lues par une version plus ancienne sont rouvertes",
+         isinstance(L.VERSION, int) and 'WHERE methode LIKE $1' in collecte_src and 'f"%/{VERSION}"' in collecte_src)
+
 FOURNISSEUR = (rangee(60, (40, "FACTURE"), (90, "ND1406018")) +
                rangee(200, (62, "Gravier"), (110, "6/10"), (291, "T"), (343, "10.00"), (391, "42.00"),
                       (446, "420.00"), (479, "20.00"), (538, "504.00")))

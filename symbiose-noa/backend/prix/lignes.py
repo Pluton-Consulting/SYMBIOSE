@@ -137,16 +137,64 @@ def _recoller_milliers(rangee: list[Mot]) -> list[Mot]:
     return sortie
 
 
+# LA VERSION DU LECTEUR. La collecte la range avec chaque pièce : quand le lecteur apprend un
+# gabarit de plus, les pièces lues par une version plus ancienne sont rouvertes d'elles-mêmes.
+VERSION = 3
+
+
+def _gabarit_tva_au_milieu(mots: list[Mot]) -> Optional[dict]:
+    """Le second gabarit de la maison : « DÉSIGNATION · QTE · UNITÉ · TVA · P.U. HT · TOTAL HT ».
+    La rangée finit par « 20,00 % · 878,09 € · 878,09 € » et la quantité précède, avec ou sans
+    unité entre les deux. Le « % » fait la structure, quantité × PU = total fait la preuve."""
+    if len(mots) < 4 or "%" not in mots[-3].texte:
+        return None
+    tva, pu, ht = (nombre(m.texte) for m in mots[-3:])
+    if tva is None or pu is None or ht is None or not (0 <= tva <= 33):
+        return None
+    for recul in (4, 5):                      # la quantité : juste avant la TVA, ou avant l'unité
+        if len(mots) < recul:
+            break
+        q = nombre(mots[-recul].texte)
+        if q is not None and q > 0 and _proche(q * pu, ht):
+            avant = mots[:-recul] + (mots[-4:-3] if recul == 5 else [])
+            return {"quantite": q, "pu_ht": pu, "montant_ht": ht, "tva": tva, "avant": avant,
+                    "x_nombres": mots[-recul].x0}
+    return None
+
+
 def _ligne_chiffree(rangee: list[Mot]) -> Optional[dict]:
     """Si la rangée porte une ligne de prix QUI TOMBE JUSTE, ses valeurs et ce qui la précède."""
     mots = _recoller_milliers(rangee)
+    autre = _gabarit_tva_au_milieu(mots)
+    if autre:
+        return autre
     # La suite de nombres qui ferme la rangée : Qté, PU HT, Montant HT, [TVA], [Montant TTC].
     k = len(mots)
     while k > 0 and nombre(mots[k - 1].texte) is not None:
         k -= 1
     valeurs = [nombre(m.texte) for m in mots[k:]]
+    # LE GABARIT DES FACTURES : « Description · Qté · UNITÉS · PU HT · Montant HT · TVA · TTC ».
+    # L'unité est ENTRE la quantité et le prix : la suite de nombres de droite commence au PU,
+    # et la quantité attend de l'autre côté de l'unité. (21 factures sur 40 sans ligne, 17/09.)
+    if 2 <= len(valeurs) <= 4 and k >= 2 and len(mots[k - 1].texte) <= 10:
+        q = nombre(mots[k - 2].texte)
+        pu, ht = valeurs[0], valeurs[1]
+        tva = valeurs[2] if len(valeurs) >= 3 else None
+        if (q is not None and q > 0 and _proche(q * pu, ht) and (tva is None or 0 <= tva <= 33)
+                and (len(valeurs) < 4 or _proche(ht * (1 + tva / 100), valeurs[3]))):
+            return {"quantite": q, "pu_ht": pu, "montant_ht": ht, "tva": tva, "avant": mots[:k - 2],
+                    "unite": mots[k - 1].texte, "x_nombres": mots[k - 2].x0}
     # Une désignation peut finir par un nombre (« … de 7.40 ») : on essaie les cinq, puis
     # les quatre, puis les trois derniers nombres, et l'on garde la lecture qui tombe juste.
+    # AVEC UNE REMISE : Qté · PU · Remise % · Montant · TVA · TTC. Le prix qui compte est le NET
+    # (montant ÷ quantité) : c'est celui que le client a payé, pas celui du tarif.
+    if len(valeurs) >= 6:
+        q, pu, remise, ht, tva, ttc = valeurs[-6:]
+        if (q > 0 and 0 < remise < 100 and 0 <= tva <= 33 and _proche(q * pu * (1 - remise / 100), ht)
+                and _proche(ht * (1 + tva / 100), ttc)):
+            return {"quantite": q, "pu_ht": round(ht / q, 4), "montant_ht": ht, "tva": tva,
+                    "avant": mots[:len(mots) - 6], "x_nombres": mots[len(mots) - 6].x0,
+                    "remise": remise}
     for taille in (5, 4, 3):
         if len(valeurs) < taille:
             continue
@@ -211,7 +259,8 @@ def lire_page(mots: list[Mot]) -> list[dict]:
                 rubrique = t
             i += 1
             continue
-        unite, debut = _unite_et_texte(ligne["avant"])
+        unite, debut = ((ligne["unite"], ligne["avant"]) if "unite" in ligne
+                        else _unite_et_texte(ligne["avant"]))
         morceaux = [_texte(debut)]
         x_desc = debut[0].x0 if debut else 0
         hauteur = (R[i][0].h or 9)
