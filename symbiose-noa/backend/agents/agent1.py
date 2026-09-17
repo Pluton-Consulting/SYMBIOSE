@@ -115,6 +115,24 @@ Typographie : n'utilise JAMAIS de tiret cadratin ni de tiret demi-cadratin ; emp
 # quantité — enchaîner cinquante pages de mails ou de documents est un travail
 # qui avance, pas une boucle).
 MAX_ACTIONS_PAR_TOUR = 120
+# Combien de fois un même appel peut être RESSERVI dans un tour qui avance
+# (cf. `_a_avance_depuis`). Au-delà, même un tour qui avance s'arrête et le dit.
+MAX_RETOURS_MEME_ACTION = 6
+
+
+def _a_avance_depuis(resultats: list, empreinte: str) -> bool:
+    """Vrai si un geste NEUF a réussi depuis la dernière occurrence de `empreinte`.
+
+    Neuf = une empreinte jamais vue avant cette occurrence : rejouer en alternance
+    deux appels déjà faits (A, B, A, B…) n'est pas avancer.
+    """
+    dernier = max((i for i, r in enumerate(resultats)
+                   if r.get("payload_hash") == empreinte), default=-1)
+    if dernier < 0:
+        return False
+    connues = {r.get("payload_hash") for r in resultats[:dernier + 1]}
+    return any(r.get("ok") and r.get("payload_hash") not in connues
+               for r in resultats[dernier + 1:])
 # LE TEMPS IMPARTI D'UN TOUR (04/09). Relevé de Noa : « il a tourné en boucle
 # sans jamais s'arrêter sur "j'analyse votre demande" » — 13 minutes, 27 appels
 # de modèle, pour rendre un Excel que personne n'avait demandé. Le plafond de
@@ -1658,9 +1676,23 @@ async def tools_node(state: AgentState, config=None) -> dict:
         # DEUXIÈME REDEMANDE IDENTIQUE : le tour n'avance plus. Insister ne peut
         # rien produire de neuf — la réponse serait la même — et chaque passe
         # coûte un appel de modèle. On arrête et on dit pourquoi.
-        if len(deja) >= 2:
+        #
+        # SAUF SI LE TOUR A AVANCÉ ENTRE-TEMPS (17/09). « Ouvre les factures BTF
+        # une par une » : le modèle cherche, ouvre et lit deux factures, revient
+        # à la MÊME recherche pour savoir ce qu'il reste, en lit deux autres, y
+        # revient encore — et le tour était coupé là, en plein travail, la
+        # rédaction rendue au rédacteur de secours (montants recopiés des noms
+        # de fichiers au lieu des HT lus). Revenir consulter une liste entre
+        # deux gestes NEUFS et réussis n'est pas tourner en rond : on ressert
+        # le résultat, sans rien rejouer ni payer. L'enlisement reste coupé :
+        # rien de neuf depuis la dernière consultation, ou trop de retours.
+        if len(deja) >= 2 and not _a_avance_depuis(resultats, empreinte):
             return _sortir(f"l'action « {action['skill']} » a été redemandée à "
                            "l'identique sans que la demande avance.")
+        if len(deja) >= MAX_RETOURS_MEME_ACTION:
+            return _sortir(f"l'action « {action['skill']} » a été consultée "
+                           f"{len(deja)} fois ce tour : il faut répondre avec ce qui "
+                           "a été obtenu et dire ce qui reste à faire.")
         # Le modèle redemande la même action : on ressert son RÉSULTAT plutôt que
         # de la rejouer. Il contenait auparavant « (déjà exécuté ce tour) » et
         # rien d'autre — or c'est justement là que se trouvait l'identifiant du
