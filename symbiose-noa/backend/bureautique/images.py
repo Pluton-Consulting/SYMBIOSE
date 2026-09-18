@@ -76,7 +76,11 @@ def normaliser_octets(octets: bytes, mime: str | None) -> tuple[bytes, str]:
         img.load()
     except Exception as e:  # noqa: BLE001 — un fichier qui n'est pas une image
         raise ImageRefusee("le fichier n'est pas une image lisible") from e
-    if img.format in ("PNG", "JPEG") and img.getexif().get(274, 1) == 1:
+    # UN JPEG CMYK N'EST PAS UN JPEG POUR WORD (18/09, recette pilotée, question W2). Le logo de la
+    # maison sur le Drive est un export Photoshop en CMYK : Pillow le lit, python-docx le refuse
+    # (`UnrecognizedImageError`, sans message) et le document entier tombait avec « n'a pas pu être
+    # produit () ». Seuls un PNG ou un JPEG RGB/gris, droits, passent tels quels.
+    if img.format in ("PNG", "JPEG") and img.mode in ("RGB", "L", "RGBA", "LA", "P") and img.getexif().get(274, 1) == 1:
         return octets, "png" if img.format == "PNG" else "jpg"
     img = ImageOps.exif_transpose(img)
     sortie = io.BytesIO()

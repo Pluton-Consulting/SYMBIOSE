@@ -164,6 +164,14 @@ if PILLOW:
     octets, ext, _ = asyncio.run(images.resoudre("photo.webp", U))
     verifier("un WebP (les photos du chat) est converti en PNG : les trois rendus le lisent",
              ext == "png" and octets[:8] == b"\x89PNG\r\n\x1a\n")
+    # 18/09 : le logo de la maison est un JPEG CMYK (Photoshop) — python-docx le refuse sans message,
+    # et le Word entier tombait. Il est converti ; un JPEG RGB reste tel quel.
+    _b = io.BytesIO(); _PIL.new("CMYK", (30, 20), (0, 200, 200, 0)).save(_b, format="JPEG")
+    o_cmyk, e_cmyk = images.normaliser_octets(_b.getvalue(), "image/jpeg")
+    _b2 = io.BytesIO(); _PIL.new("RGB", (30, 20), (1, 2, 3)).save(_b2, format="JPEG")
+    o_rgb, e_rgb = images.normaliser_octets(_b2.getvalue(), "image/jpeg")
+    verifier("un JPEG CMYK est converti en PNG RGB ; un JPEG RGB passe tel quel",
+             e_cmyk == "png" and _PIL.open(io.BytesIO(o_cmyk)).mode == "RGB" and e_rgb == "jpg" and o_rgb == _b2.getvalue())
 else:
     print("  ⚠ Pillow absent : la conversion WebP n'est pas jouée")
 
