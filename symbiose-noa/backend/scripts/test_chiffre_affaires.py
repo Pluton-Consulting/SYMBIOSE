@@ -207,6 +207,40 @@ verifier("le geste est déclaré, rangé dans une famille, et son résultat n'es
          "pieces_du_client" in chiffres.SKILLS and '"pieces_du_client"' in (BACKEND / "skills" / "familles.py").read_text(encoding="utf-8")
          and '"pieces_du_client"' in a1)
 
+# ── 18/09 (E3) : « VRD AQUITAIN » rendait les trente pièces de « CRCAM Aquitaine » ──
+class ConnPieces:
+    async def fetch(self, sql, *a):
+        assert "pieces_chiffrees" in sql and "LIKE $2" in sql
+        motif = a[1].strip("%")
+        return [dict(x, lu_le="1", code_client="") for x in [
+            {"fichier_id": "x1", "fichier_nom": "FA0001228.pdf", "nature": "facture", "numero": "FA0001228", "date_piece": date(2026, 7, 9), "total_ht": 1484.27, "controle": "juste", "client": "CRCAM Aquitaine Marie LEPINE"},
+            {"fichier_id": "x2", "fichier_nom": "DV0000039.pdf", "nature": "devis", "numero": "DV0000039", "date_piece": date(2021, 8, 31), "total_ht": 9140.76, "controle": "juste", "client": "CRCAM Aquitaine"},
+            {"fichier_id": "x3", "fichier_nom": "DV0001405.pdf", "nature": "devis", "numero": "DV0001405", "date_piece": date(2026, 7, 30), "total_ht": 9858.0, "controle": "juste", "client": "VRD AQUITAIN"},
+        ] if motif in (x["client"] + x["fichier_nom"]).lower()]
+
+
+class CtxPieces:
+    async def __aenter__(self): return ConnPieces()
+    async def __aexit__(self, *a): return False
+
+
+doublure("database.connection", get_db=lambda: CtxPieces())
+vrd = asyncio.run(chiffres.pieces_du_client({"client": "VRD AQUITAIN"}, u))
+verifier("quand des pièces portent TOUS les mots du nom, elles seules comptent (« VRD AQUITAIN » ≠ « CRCAM Aquitaine »)",
+         [r[1] for r in vrd["bloc_ui"]["rows"]] == ["DV0001405"] and vrd["correspondance"] == "tous les mots du nom", str(vrd.get("noms_lus_sur_les_pieces")))
+ConnPieces_fetch = ConnPieces.fetch
+async def _sans_vrd(self, sql, *a):
+    return [x for x in await ConnPieces_fetch(self, sql, *a) if x["client"] != "VRD AQUITAIN"]
+ConnPieces.fetch = _sans_vrd
+vrd2 = asyncio.run(chiffres.pieces_du_client({"client": "VRD AQUITAIN"}, u))
+verifier("sans pièce au nom entier, la correspondance PARTIELLE est dite dans le titre et la consigne",
+         vrd2["correspondance"].startswith("partielle") and "aucune au nom « VRD AQUITAIN »" in vrd2["bloc_ui"]["titre"]
+         and "CORRESPONDANCE PARTIELLE" in vrd2["a_faire"], vrd2["bloc_ui"]["titre"])
+ConnPieces.fetch = ConnPieces_fetch
+crcam = asyncio.run(chiffres.pieces_du_client({"client": "CRCAM Aquitaine"}, u))
+verifier("un nom entier retrouvé garde son titre ordinaire", crcam["bloc_ui"]["titre"].startswith("Devis et factures lus") and len(crcam["bloc_ui"]["rows"]) == 2)
+doublure("database.connection", get_db=lambda: Ctx())
+
 # ── 18/09, prompt 18 : la fréquence des passages par client, sur des factures DATÉES ──
 def _l(client, numero, jour, unite="h", q=2.0, m=90.0):
     return {"client": client, "code_client": "", "numero": numero, "fichier_id": numero, "date_piece": jour,

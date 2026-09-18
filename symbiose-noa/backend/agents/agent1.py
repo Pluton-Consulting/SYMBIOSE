@@ -4602,7 +4602,8 @@ async def verifier_node(state: AgentState, config=None) -> dict:
         journal=journal_des_gestes(resultats), resultats=resume_resultats,
         reponse=_BLOC_UI_RE.sub("", visible).strip(), blocs=blocs,
         contexte="\n".join(str(c) for c in (state.get("anonymized_chunks") or []))[:3000],
-        lecons=state.get("lecons_du_tour") or "")
+        lecons=state.get("lecons_du_tour") or "",
+        gestes=_gestes_pour_le_relecteur(state.get("user_role")))
     try:
         # Une lecture seule (mails, Drive, NAS, recherche documentaire) doit
         # rester contrôlée, mais sa relecture n'a pas besoin du modèle puissant
@@ -4643,6 +4644,30 @@ async def verifier_node(state: AgentState, config=None) -> dict:
                       action_manquante=verdict["action_manquante"] or None)
     verdict["reponse_relue"] = _BLOC_UI_RE.sub("", visible).strip()[:3000]
     return {"verification": verdict}
+
+
+def _gestes_pour_le_relecteur(role) -> str:
+    """Le catalogue en une ligne par geste, pour que le relecteur puisse NOMMER celui qui manque.
+
+    18/09 (E3, « dis-moi si nos prix de décaissement ont bougé ») : l'assistant a écrit « je peux
+    interroger nos prix observés » au lieu de le faire, et le relecteur a rendu « ok » — sa consigne
+    excluait « une proposition de suite », et de toute façon il ne connaissait pas `prix_observes`.
+    Sans la liste, `action_manquante` ne peut jamais être un nom exact."""
+    try:
+        from skills.protocol import catalogue
+        cat = catalogue(role)
+    except Exception:  # noqa: BLE001
+        return ""
+    lignes = []
+    for nom, valeur in sorted(cat.items()):
+        desc = str((valeur[0] if isinstance(valeur, (tuple, list)) and valeur else "") or "")
+        desc = " ".join(desc.split())
+        # La première phrase suffit ; le catalogue complet fait 35 000 caractères.
+        coupe = desc.find(". ")
+        if 25 < coupe < 140:
+            desc = desc[:coupe]
+        lignes.append(f"- {nom} : {desc[:140]}")
+    return "\n".join(lignes[:120])
 
 
 def route_apres_verifier(state: AgentState) -> str:

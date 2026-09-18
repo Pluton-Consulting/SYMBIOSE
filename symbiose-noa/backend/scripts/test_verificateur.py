@@ -146,7 +146,7 @@ esp = {"logger": _Journal(), "get_llm": lambda tier: _LLM(), "LLMTier": types.Si
        "_tracer_filet": lambda *a, **k: None, "MAX_FORCAGES_PAR_TOUR": 2,
        "_re_livrables": re, "AgentState": dict}
 manque = extraire(racine / "agents" / "agent1.py",
-                  {"verifier_node", "route_apres_verifier", "_BLOC_UI_RE", "_blocs_de"}, esp)
+                  {"verifier_node", "route_apres_verifier", "_BLOC_UI_RE", "_blocs_de", "_gestes_pour_le_relecteur"}, esp)
 # Le texte visible et la compaction des résultats ont leurs propres bancs : ici,
 # on juge la relecture, pas eux.
 esp["_texte_visible"] = lambda t: t
@@ -249,6 +249,23 @@ etat_src = (racine / "agents" / "state.py").read_text(encoding="utf-8")
 verifier("`verification` est déclarée dans l'état", "verification: Optional[dict]" in etat_src)
 conf = (racine / "config.py").read_text(encoding="utf-8")
 verifier("la relecture se coupe par réglage", "verifier_reponses: bool = True" in conf)
+
+# 18/09 (E3) : « je peux interroger nos prix observés » au lieu de le faire, verdict « ok ».
+_c = V.consigne("dis-moi si nos prix de décaissement ont bougé", "1. interroger_donnees() → ok",
+                "- interroger_donnees : …", "Je peux interroger nos prix observés.", [],
+                gestes="- prix_observes : ce que la maison a déjà facturé pour un poste")
+verifier("le relecteur reçoit la liste des gestes disponibles",
+         "GESTES DONT L'ASSISTANT DISPOSAIT" in _c and "- prix_observes :" in _c)
+verifier("règle 6 : une partie de la demande seulement PROPOSÉE alors qu'un geste existait se relève",
+         "6. une partie EXPLICITE de la demande" in _c and "ESSAYER D'ABORD" in _c)
+verifier("« une proposition de suite » n'est plus exclue en bloc, seulement au-delà de la demande",
+         "suite qui va AU-DELÀ" in _c and "les suggestions, une proposition de suite, une question" not in _c)
+_v = V.lire_verdict('{"verdict":"a_corriger","problemes":[{"affirmation":"je peux interroger","raison":"pas fait"}],'
+                    '"action_manquante":"prix_observes","consigne":"appelle prix_observes sur le décaissement"}')
+verifier("un geste manquant connu part au forceur même quand d'autres gestes ont tourné",
+         V.suite(_v, {"prix_observes", "interroger_donnees"}, 0, 2, False, aucun_geste=False) == "forcer")
+verifier("le nœud verifier transmet le catalogue court", "gestes=_gestes_pour_le_relecteur(state.get(\"user_role\"))" in src
+         and "def _gestes_pour_le_relecteur" in src)
 
 print()
 if echecs:

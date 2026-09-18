@@ -520,6 +520,20 @@ async def pieces_du_client(data: dict, user) -> dict:
     except Exception as e:  # noqa: BLE001
         logger.warning("Pièces du client impossibles : %s", str(e)[:160])
         raise SkillError("La base des pièces lues dans le classement n'est pas disponible. Réessayez plus tard.")
+    # LE MOT LE PLUS LONG TROUVE, LES AUTRES DÉPARTAGENT (18/09, E3) : « VRD AQUITAIN » rendait les
+    # trente pièces de « CRCAM Aquitaine » sous le titre « VRD AQUITAIN (30) ». Quand des pièces
+    # portent TOUS les mots du nom, elles seules comptent ; sinon on garde les pièces du pivot mais
+    # on DIT que la correspondance est partielle, et le modèle doit vérifier les noms lus.
+    def _plat(texte: str) -> str:
+        return "".join(c for c in unicodedata.normalize("NFD", str(texte or "").lower())
+                       if unicodedata.category(c) != "Mn")
+    entieres = [l for l in lignes
+                if all(m in _plat(f"{l['client']} {l['fichier_nom']}") for m in mots)]
+    correspondance = "tous les mots du nom"
+    if entieres:
+        lignes = entieres
+    elif len(mots) > 1:
+        correspondance = f"partielle : seul « {pivot} » est retrouvé sur ces pièces"
     r = resumer_les_pieces([dict(l) for l in lignes])
     if not r["pieces"]:
         return {"trouve": False, "client": nom,
@@ -536,8 +550,12 @@ async def pieces_du_client(data: dict, user) -> dict:
         "total_devise_ht": _euros(r["total_devise"]), "total_facture_ht": _euros(r["total_facture"]),
         "copies_ecartees": r["copies_ecartees"], "pieces_sans_total": r["sans_total"][:20] or None,
         "noms_lus_sur_les_pieces": homonymes[:12],
+        "correspondance": correspondance,
         "bloc_garanti": True,
-        "bloc_ui": {"type": "table", "titre": f"Devis et factures lus dans le classement — {nom} ({len(r['pieces'])})",
+        "bloc_ui": {"type": "table",
+                    "titre": (f"Devis et factures lus dans le classement — {nom} ({len(r['pieces'])})"
+                              if entieres or len(mots) < 2 else
+                              f"Pièces du classement portant « {pivot} » ({len(r['pieces'])}) — aucune au nom « {nom} » en entier"),
                     "columns": ["Nature", "Numéro", "Date", "Titre", "Total HT", "Client lu", "Fichier"], "rows": rangees},
         "message_final": (f"{r['devis']} devis et {r['factures']} facture(s) au nom de « {nom} » dans le classement : "
                           f"{_euros(r['total_facture'])} HT facturés"
@@ -547,7 +565,11 @@ async def pieces_du_client(data: dict, user) -> dict:
                     "serveur (une pièce par numéro, avoirs déduits) : cite-les tels quels, avec le NOM DU FICHIER "
                     "comme source. `noms_lus_sur_les_pieces` : si plusieurs clients différents portent ce nom, "
                     "DIS-LE et ne les additionne pas. « Réglée ou non » n'est écrit sur aucune pièce : ne "
-                    "l'affirme jamais. Un devis n'est pas du chiffre d'affaires."),
+                    "l'affirme jamais. Un devis n'est pas du chiffre d'affaires."
+                    + ("" if entieres or len(mots) < 2 else
+                       f" ⚠ CORRESPONDANCE PARTIELLE : aucune pièce ne porte « {nom} » en entier, seul "
+                       f"« {pivot} » est retrouvé — compare `noms_lus_sur_les_pieces` au client demandé ; "
+                       "si ce sont d'autres clients, dis qu'AUCUNE pièce n'est à son nom et n'attribue rien.")),
     }
 
 
