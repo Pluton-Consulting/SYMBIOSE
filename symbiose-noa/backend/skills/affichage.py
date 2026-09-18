@@ -179,13 +179,22 @@ def garantir_recherche(resultat: dict, motif: str, ouvreur: str | None = None) -
             "PUBLIC (fiche technique, norme, tarif public), dis que le classement "
             "ne le porte pas et enchaîne `chercher_web`.")
         return resultat
+    # LA DATE DES FICHIERS TROUVÉS (18/09, recette pilotée) : « le DERNIER devis de parking » — le
+    # tableau ne disait pas la date, le modèle a ouvert un devis de 2024 quand celui de septembre
+    # 2026 était sur la même page. Colonne posée seulement quand la recherche la rend.
+    date_connue = any(r.get("modifie_le") for r in entrees)
     lignes = [[str(r.get("nom") or ""),
                "Dossier" if r.get("dossier") else "Fichier",
-               str(r.get("chemin") or "")] for r in entrees]
+               str(r.get("chemin") or "")]
+              + ([_jour(r.get("modifie_le"))] if date_connue else []) for r in entrees]
     resultat["bloc_ui"] = {"type": "table",
                            "titre": f"Recherche — {motif}",
-                           "columns": ["Nom", "Type", "Emplacement"],
+                           "columns": ["Nom", "Type", "Emplacement"] + (["Modifié le"] if date_connue else []),
                            "rows": lignes}
+    if date_connue:
+        dates = [(r.get("modifie_le"), r.get("nom")) for r in entrees if r.get("modifie_le") and not r.get("dossier")]
+        if dates:
+            resultat["fichier_le_plus_recent"] = {"nom": max(dates)[1], "modifie_le": _jour(max(dates)[0])}
     # Mêmes données que `rows` : on ne les rend pas deux fois (cf. le `schema`
     # de l'arborescence, retiré pour la même raison).
     resultat.pop("resultats", None)

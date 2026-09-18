@@ -75,6 +75,18 @@ verifier("un dossier en erreur garde sa ligne de synthèse et n'entre pas dans l
 bloc = source[source.index('"drive_lister_lot": Declaration('):][:1200]
 verifier("le catalogue annonce `detail` et `tri`", '"detail", "tri"' in bloc and "UNE LIGNE" in bloc)
 
+# 18/09 : le tableau d'une RECHERCHE porte la date des fichiers, et le plus récent est nommé.
+from skills.affichage import garantir_recherche  # noqa: E402
+rr = garantir_recherche({"motif": "parking", "nombre": 2, "resultats": [
+    {"nom": "Devis Transformation parking.pdf", "chemin": "A", "modifie_le": "2024-10-07T10:00:00Z"},
+    {"nom": "Devis symbiose paysage Parking.pdf", "chemin": "B", "modifie_le": "2026-09-15T10:00:00Z"},
+    {"nom": "Parkings", "chemin": "C", "dossier": True, "modifie_le": "2026-09-17T10:00:00Z"}]}, "parking")
+verifier("une recherche du Drive montre « Modifié le » et nomme le FICHIER le plus récent (pas un dossier)",
+         rr["bloc_ui"]["columns"][-1] == "Modifié le" and rr["bloc_ui"]["rows"][1][3] == "15/09/2026"
+         and rr["fichier_le_plus_recent"]["nom"] == "Devis symbiose paysage Parking.pdf", str(rr.get("fichier_le_plus_recent")))
+sans = garantir_recherche({"motif": "x", "nombre": 1, "resultats": [{"nom": "a.pdf", "chemin": "A"}]}, "x")
+verifier("sans date rendue (NAS), le tableau garde ses trois colonnes", sans["bloc_ui"]["columns"] == ["Nom", "Type", "Emplacement"])
+
 print("\n" + "═" * 70)
 if echecs:
     print(f"✗ {len(echecs)} échec(s) : " + ", ".join(echecs))
