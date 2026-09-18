@@ -1314,58 +1314,68 @@ async def lire_mails(data: dict, user) -> dict:
 
 
 async def _toute_la_recherche(premier: dict, boite: str, dossier: str, recherche: str, depuis) -> dict:
-    """TOUTES les pages d'une RECHERCHE, parcourues ici, du plus récent au plus ancien.
+    """TOUTES les correspondances d'une RECHERCHE, rendues du plus récent au plus ancien.
 
     POURQUOI (18/09, recette pilotée). « Tous les échanges avec le Crédit Agricole, et ce qu'ils
     attendent de nous aujourd'hui » : 301 correspondances, treize pages enchaînées PAR LE MODÈLE —
-    dont le contexte ne garde que les derniers résultats, c'est-à-dire les plus ANCIENS mails. La
-    réponse racontait 2021 et avouait ne rien savoir d'aujourd'hui. Une recherche se remonte par
-    `avant` (une date) : le jour charnière est relu, les doublons écartés par leur référence."""
+    dont le contexte ne garde que les derniers résultats. La réponse racontait 2021.
+    ⚠️ Avec une recherche, Graph rend chaque page PAR PERTINENCE, pas par date : « remonter par
+    avant = le plus ancien de la page » SAUTAIT tout ce qui était plus récent que ce plus ancien
+    (première écriture du matin ; sondé : les mails d'août 2026 manquaient). Ici la période se
+    découpe en FENÊTRES DE DATES : une fenêtre qui rend une page pleine se coupe en deux, jusqu'au
+    jour ; une fenêtre d'un jour encore pleine est dite tronquée. Les doublons se retirent par
+    référence, et la liste finale est triée par date."""
     from datetime import date as _date, timedelta
     from mail.lecture import lire_boite
-    messages, vus = [], set()
+    messages, vus, tronque, appels = [], set(), False, 0
+    LIMITE, MAX_APPELS = 25, 120
 
-    def _ajouter(page: dict) -> int:
-        neufs = 0
+    def _ajouter(page: dict) -> None:
         for m in page.get("messages") or []:
             cle = m.get("ref") or (m.get("date"), m.get("de"), m.get("objet"))
             if cle not in vus:
                 vus.add(cle)
                 messages.append(m)
-                neufs += 1
-        return neufs
-    _ajouter(premier)
-    page, complet = premier, False
-    # La première page a la taille que le modèle a demandée (10, 25…) : c'est elle qui dit si
-    # une page est « pleine ». Les suivantes en font 25.
-    pleine = max(1, len(premier.get("messages") or []))
-    if premier.get("total_periode") is not None and int(premier["total_periode"]) <= len(messages):
-        pleine = 10 ** 9                       # le fournisseur dit qu'il n'y a rien d'autre
-    while len(messages) < MAX_INVENTAIRE_MAILS:
-        jours = sorted({m.get("date_iso") for m in page.get("messages") or [] if m.get("date_iso")})
-        if not jours or len(page.get("messages") or []) < min(pleine, 25):
-            complet = True
-            break
-        # Plusieurs jours sur la page : on reprend AU jour le plus ancien (relu, dédoublonné) —
-        # rien n'est sauté. Un seul jour : on passe au jour d'avant, sinon on tournerait en rond.
-        if len(jours) > 1:
-            borne = (_date.fromisoformat(jours[0]) + timedelta(days=1)).isoformat()
-        else:
-            borne = jours[0]
-        page = await lire_boite(boite, dossier, 25, depuis=depuis, recherche=recherche, avant=borne,
+
+    async def _fenetre(debut: _date, fin: _date) -> None:
+        """Les messages reçus dans [debut, fin] (fin exclue à minuit +1)."""
+        nonlocal tronque, appels
+        if appels >= MAX_APPELS or len(messages) >= MAX_INVENTAIRE_MAILS:
+            tronque = True
+            return
+        appels += 1
+        page = await lire_boite(boite, dossier, LIMITE, depuis=debut.isoformat(), recherche=recherche,
+                                avant=(fin + timedelta(days=1)).isoformat(),
                                 apercu=(APERCU_INVENTAIRE if len(messages) < RANG_EXTRAIT_COURT
                                         else APERCU_INVENTAIRE_COURT), exhaustif=True)
-        pleine = 25
-        if not _ajouter(page):
-            complet = True
-            break
+        n = len(page.get("messages") or [])
+        if n < LIMITE:
+            _ajouter(page)
+            return
+        if fin <= debut:                       # un seul jour et une page pleine : on garde ce qu'on a
+            _ajouter(page)
+            tronque = True
+            return
+        milieu = debut + (fin - debut) // 2
+        await _fenetre(milieu + timedelta(days=1), fin)     # le plus récent d'abord
+        await _fenetre(debut, milieu)
+
+    # La première page (pertinence) sert de départ ; puis toute la période, par fenêtres.
+    _ajouter(premier)
+    if len(premier.get("messages") or []) >= LIMITE:
+        aujourd_hui = _date.today()
+        from mail.lecture import depuis_quand
+        debut_periode = depuis_quand(depuis) if depuis else None
+        debut_d = debut_periode.date() if debut_periode else aujourd_hui - timedelta(days=365 * 6)
+        await _fenetre(debut_d, aujourd_hui)
+    messages.sort(key=lambda m: str(m.get("date_iso") or ""), reverse=True)
     total = premier.get("total_periode")
     return {**premier, "messages": messages, "nombre": len(messages), "inventaire": True,
-            "tronque": not complet, "pour_continuer": None,
+            "tronque": tronque, "pour_continuer": None,
             "compte": (f"{len(messages)} message(s) correspondant à « {recherche} », du plus RÉCENT au plus ancien"
                        + (f" (le fournisseur en annonce {total})" if total else "")
-                       + (", TOUS détaillés ci-dessous." if complet else
-                          f" — arrêt à {MAX_INVENTAIRE_MAILS} : les plus anciens ne sont pas détaillés, dis-le.")),
+                       + (", TOUS détaillés ci-dessous." if not tronque else
+                          " — parcours incomplet (trop de correspondances) : dis-le.")),
             "a_faire": ("Toute la recherche est là, du plus RÉCENT au plus ancien : ne rappelle pas ce geste et "
                         "ne pagine pas. « Aujourd'hui » se lit dans les PREMIERS messages de la liste. Pour le "
                         "corps complet d'un message : `lire_mail` avec sa `ref`.")}

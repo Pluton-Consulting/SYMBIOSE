@@ -77,7 +77,14 @@ async def _visibles(user): return []
 async def _a_lire(data, user): return data.get("mailbox") or "moi@exemple-paysage.fr"
 
 import types, logging
-sys.modules["mail.lecture"] = types.SimpleNamespace(lire_boite=lire_boite)
+def depuis_quand(v):
+    from datetime import datetime, timedelta
+    if not v: return None
+    v = str(v)
+    if v.endswith("j"): return datetime.utcnow() - timedelta(days=int(v[:-1]))
+    try: return datetime.fromisoformat(v)
+    except ValueError: return None
+sys.modules["mail.lecture"] = types.SimpleNamespace(lire_boite=lire_boite, depuis_quand=depuis_quand)
 sys.modules.setdefault("mail", types.ModuleType("mail"))
 esp2 = {"_boite_a_lire": _a_lire, "verifier_acces": _acces, "boite_par_defaut": _defaut, "boites_visibles": _visibles,
         "MailSkillError": _Erreur, "logger": logging.getLogger("banc"), "MAX_INVENTAIRE_MAILS": 400, "APERCU_INVENTAIRE": 200,
@@ -125,16 +132,21 @@ COURRIER = [{"ref": f"c{i}", "objet": "Crédit Agricole", "de": "ca@exemple.fr",
 pages_lues = []
 async def lire_boite_recherche(boite, dossier="recus", limite=10, depuis=None, recherche=None, avant=None,
                                apercu=None, curseur=None, exhaustif=False):
-    pages_lues.append(avant)
-    candidats = [m for m in COURRIER if not avant or m["date_iso"] < str(avant)[:10]]
+    pages_lues.append((str(depuis or "")[:10], str(avant or "")[:10]))
+    candidats = [m for m in COURRIER if (not avant or m["date_iso"] < str(avant)[:10])
+                 and (not depuis or m["date_iso"] >= str(depuis)[:10])]
+    # PAR PERTINENCE, comme Graph : l'ordre des dates est mélangé dans la page.
+    candidats = sorted(candidats, key=lambda m: hash(m["ref"]) % 97)
     page = [dict(m) for m in candidats[:limite]]
     return {"boite": boite, "messages": page, "nombre": len(page), "total_periode": len(COURRIER), "compte": "…"}
 sys.modules["mail.lecture"].lire_boite = lire_boite_recherche
 ca = asyncio.run(lire_mails({"recherche": "Crédit Agricole", "exhaustif": True, "limite": 25}, user))
+dates = [m["date_iso"] for m in ca["messages"]]
 verifier("les 80 correspondances sortent en UN geste, sans doublon ni trou, le plus RÉCENT d'abord",
-         [m["ref"] for m in ca["messages"]] == [f"c{i}" for i in range(80)] and ca["tronque"] is False, f"{ca['nombre']} / {pages_lues}")
-verifier("le jour charnière est RELU (avant = jour le plus ancien + 1), les doublons écartés par leur référence",
-         len(pages_lues) >= 4 and pages_lues[0] is None and all(p for p in pages_lues[1:]))
+         sorted(m["ref"] for m in ca["messages"]) == sorted(f"c{i}" for i in range(80)) and dates == sorted(dates, reverse=True)
+         and ca["tronque"] is False and len(pages_lues) <= 40, f"{ca['nombre']} / {len(pages_lues)} appels")
+verifier("les pages sont PAR PERTINENCE (dates mélangées) et pourtant rien n'est sauté : fenêtres de dates coupées en deux",
+         len(pages_lues) >= 4 and pages_lues[0] == ("", "") and all(p[0] and p[1] for p in pages_lues[1:]))
 verifier("le modèle est prévenu : tout est là, « aujourd'hui » se lit en TÊTE, ne pas paginer",
          "PREMIERS messages" in ca["a_faire"] and ca["pour_continuer"] is None and ca["inventaire"] is True)
 sys.modules["mail.lecture"].lire_boite = lire_boite
