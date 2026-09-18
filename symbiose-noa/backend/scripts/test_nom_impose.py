@@ -68,6 +68,14 @@ verifier("le routeur a jugé qu'aucun fichier n'est imposé : le motif ne s'en m
 asyncio.run(ouvrir({"nom": "Devis symbiose paysage Parking.pdf", "_demande_utilisateur": STRICTE, "_routeur_a_repondu": False}, None))
 verifier("routeur muet (voie rapide, panne) : le motif reprend la main", recu["nom"] == "Devis symbiose paysage Parkin.pdf")
 a1 = (BACKEND / "agents" / "agent1.py").read_text(encoding="utf-8")
+src_o = (BACKEND / "skills" / "outils.py").read_text(encoding="utf-8")
+bloc_o = src_o[src_o.index('"drive_ouvrir": Declaration('):][:1600]
+verifier("`drive_ouvrir` s'ouvre par `nom` OU par `chemin` : aucun des deux n'est refusé avant le skill (18/09)",
+         'requis=[], optionnels=["nom", "chemin", "exact"]' in bloc_o)
+try:
+    asyncio.run(ouvrir({"_routeur_a_repondu": True}, None)); verifier("sans nom ni chemin : refus", False)
+except RuntimeError:
+    verifier("sans nom ni chemin, c'est le skill qui refuse, avec sa raison", True)
 verifier("la boucle d'actions donne la demande ET l'avis du routeur à `drive_ouvrir`",
          'if action["skill"] == "drive_ouvrir":' in a1 and '"_fichier_exact": state.get("fichier_exact")' in a1
          and '"fichier_exact": "<nom écrit par la personne ou vide>"' in a1)

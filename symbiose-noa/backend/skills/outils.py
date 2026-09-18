@@ -513,7 +513,8 @@ SKILLS = {
             "un (`drive_ouvrir` avec le `chemin` rendu). `dossier` : NOM ou "
             "CHEMIN ; `page` pour la suite ; `tri: \"date\"` : le plus recemment "
             "modifie d'abord. Les doublons de nom sont rendus dans `doublons_de_nom`"),
-        requis=["dossier"], optionnels=["page", "tri"],
+        # `dossier` OU `chemin` OU `nom` : le skill vérifie lui-même (18/09).
+        requis=[], optionnels=["dossier", "chemin", "page", "tri"],
         effet="lecture",
         libelle="je liste le contenu du dossier"),
     "drive_lister_lot": Declaration(
@@ -577,7 +578,10 @@ SKILLS = {
                      "te sont rendus. Un document long se lit en entier par "
                      "`lire_source_dossier`, page apres page : enchaine-les quand on "
                      "demande le contenu integral, ne resume pas a la place"),
-        requis=["nom"], optionnels=["chemin", "exact"],
+        # `nom` OU `chemin` (18/09) : requis=["nom"] refusait AVANT le skill l'ouverture par le
+        # chemin rendu par `drive_lister` — que le catalogue présente comme « le plus sûr ». Le
+        # skill vérifie lui-même qu'il a l'un des deux (même piège que `mailbox` le 26/08).
+        requis=[], optionnels=["nom", "chemin", "exact"],
         effet="lecture",
         libelle="j'ouvre le fichier"),
     "drive_lire_lot": Declaration(
