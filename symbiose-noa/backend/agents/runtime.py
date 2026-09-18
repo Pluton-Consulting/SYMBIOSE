@@ -302,6 +302,7 @@ def _initial_state(query: str, user_id: str, user_role: str, has_attachment: boo
         "verification": None,
         "lecons_du_tour": None,
         "correction_signalee": False,
+        "lecture_unique": None, "fichier_exact": None,
         "familles_outils": None,
         "redaction_forcee": False,
         # LA PROVENANCE AUSSI. Ces trois champs survivaient au tour via le

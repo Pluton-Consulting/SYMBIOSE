@@ -654,9 +654,20 @@ async def routeur_node(state: AgentState) -> dict:
         + liste_pour_le_routeur() + "\n"
         "Et dis si la demande CORRIGE l'assistant : elle affirme que sa réponse ou son "
         "action précédente était fausse, incomplète, ou pas ce qui était voulu.\n"
+        # DEUX INTENTIONS DE PLUS, JUGÉES PLUTÔT QUE DEVINÉES PAR MOTIF (18/09, demande de Noa :
+        # « les correctifs doivent être flexibles pour s'adapter à toutes les demandes »).
+        # `lecture_unique` : la demande se satisfait-elle d'ouvrir UN document, sans rien faire
+        # ensuite ? (« ouvre le devis X » → oui ; « ouvre-le et compare avec l'an dernier » → non).
+        # `fichier_exact` : la personne exige-t-elle UN fichier précis, qu'elle nomme, et interdit-
+        # elle d'en ouvrir un autre ? Alors son nom EXACT, tel qu'elle l'a écrit — sinon vide.
+        "Dis AUSSI si la demande se satisfait d'OUVRIR UN SEUL document sans autre travail "
+        "ensuite (lecture_unique), et, si la personne exige UN fichier précis qu'elle nomme en "
+        "interdisant tout autre, recopie ce nom EXACTEMENT comme elle l'a écrit (fichier_exact), "
+        "sinon une chaîne vide.\n"
         'Réponds par un objet JSON seul : {"memoire": true|false, "requete": '
         '"<mots-clés de recherche si true, sinon vide>", "effort": "simple|analyse", '
-        '"outils": ["<famille>", …], "correction": true|false}\n\n'
+        '"outils": ["<famille>", …], "correction": true|false, "lecture_unique": true|false, '
+        '"fichier_exact": "<nom écrit par la personne ou vide>"}\n\n'
         # LE ROUTEUR JUGEAIT À L'AVEUGLE. Sa grille ci-dessus contient la
         # catégorie « suite directe de la conversation » — impossible à
         # reconnaître sans savoir ce qui précède. Sur un « 1 » ou un « oui »,
@@ -699,16 +710,24 @@ async def routeur_node(state: AgentState) -> dict:
         # outil reste au modèle rapide.
         if familles or correction:
             effort = "complex"
+        lu = decision.get("lecture_unique")
+        lecture_unique = lu if isinstance(lu, bool) else (None if lu is None else str(lu).lower() == "true")
+        fichier_exact = str(decision.get("fichier_exact") or "").strip()[:200]
+        # Un nom que la personne n'a PAS écrit n'est pas le sien : le routeur ne l'invente pas.
+        if fichier_exact and fichier_exact.lower() not in (question or "").lower():
+            fichier_exact = ""
     except Exception as e:  # noqa: BLE001
         # En cas d'échec, on CHERCHE : répondre « je n'ai rien » alors que la
         # mémoire contient la réponse est bien pire qu'une recherche inutile.
         logger.info("Routage indisponible (%s) — recherche par défaut", e)
         besoin, requete, effort, familles, correction = True, question, "standard", None, False
+        lecture_unique, fichier_exact = None, ""
 
     logger.debug("Routage : mémoire=%s, effort=%s, familles=%s, correction=%s",
                  besoin, effort, familles, correction)
     return {"besoin_memoire": besoin, "requete_memoire": requete, "llm_tier": effort,
-            "familles_outils": familles, "correction_signalee": correction}
+            "familles_outils": familles, "correction_signalee": correction,
+            "lecture_unique": lecture_unique, "fichier_exact": fichier_exact or None}
 
 
 async def recherche_node(state: AgentState) -> dict:
@@ -1658,8 +1677,11 @@ async def tools_node(state: AgentState, config=None) -> dict:
     if action["skill"] in SKILLS_QUI_CONNAISSENT_LE_FIL:
         args = {**args, "_fil": state.get("thread_id")}
     if action["skill"] == "drive_ouvrir":
-        # Le nom que la PERSONNE a écrit fait foi quand elle interdit un document approchant (18/09).
-        args = {**args, "_demande_utilisateur": state.get("query") or ""}
+        # Le nom que la PERSONNE a écrit fait foi quand elle interdit un document approchant (18/09) :
+        # c'est le ROUTEUR qui l'a jugé (`fichier_exact`) ; le motif du skill ne sert que s'il s'est tu.
+        args = {**args, "_demande_utilisateur": state.get("query") or "",
+                "_fichier_exact": state.get("fichier_exact") or "",
+                "_routeur_a_repondu": isinstance(state.get("lecture_unique"), bool)}
     if action["skill"] in ("composer_document_dossier", "produire_quantitatif"):
         args = {**args, "_demande_utilisateur": state.get("query") or "",
                 "_travail": state.get("travail") or {},
@@ -2063,7 +2085,8 @@ async def tools_node(state: AgentState, config=None) -> dict:
     if (ok and action["skill"] in SKILLS_LECTURE_FICHIER
             and isinstance(sortie, dict)
             and (sortie.get("texte") or sortie.get("contenu") or sortie.get("apercu"))
-            and demande_d_ouvrir_un_seul(state.get("query") or "")):
+            and (state.get("lecture_unique") if isinstance(state.get("lecture_unique"), bool)
+                 else demande_d_ouvrir_un_seul(state.get("query") or ""))):
         logger.info("But atteint : « %s » a rendu un contenu pour une demande d'UN document — rédaction",
                     action["skill"])
         return {**maj, **_sortir(

@@ -338,7 +338,9 @@ async def drive_ouvrir(data: dict, user) -> dict:
     """Lit un fichier du Drive depuis son nom — ou le `chemin` rendu par un listage."""
     from outils.drive import ouvrir
     nom = (data.get("nom") or data.get("chemin") or data.get("fichier") or "").strip()
-    impose = nom_impose_par_la_demande(data.get("_demande_utilisateur") or "")
+    # L'avis du ROUTEUR d'abord (18/09 : un jugement, pas un motif) ; le motif ne sert que s'il s'est tu.
+    impose = (str(data.get("_fichier_exact") or "").strip() if data.get("_routeur_a_repondu")
+              else nom_impose_par_la_demande(data.get("_demande_utilisateur") or ""))
     if impose:
         # Le nom écrit par la personne fait foi : s'il n'existe pas, l'ouverture échoue et
         # propose les noms proches — elle n'ouvre pas le voisin que le modèle a trouvé.

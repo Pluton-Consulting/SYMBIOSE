@@ -57,9 +57,20 @@ verifier("le bon nom passé par son CHEMIN garde son chemin (le bon dossier), en
          recu["nom"].startswith("1-ÉTUDES/FAROU") and recu["exact"] is True, str(recu))
 asyncio.run(ouvrir({"nom": "Devis.pdf", "_demande_utilisateur": "ouvre un devis au hasard"}, None))
 verifier("une demande ordinaire ne change rien", recu["nom"] == "Devis.pdf" and recu["exact"] is False)
+# 18/09 après-midi : c'est le ROUTEUR qui juge (« flexible pour toutes les demandes ») ; le motif ne sert que s'il s'est tu.
+asyncio.run(ouvrir({"nom": "Devis symbiose paysage Parking.pdf", "_demande_utilisateur": STRICTE,
+                    "_fichier_exact": "Devis symbiose paysage Parkin.pdf", "_routeur_a_repondu": True}, None))
+verifier("le routeur a jugé : son nom exact part, en exact", recu["nom"] == "Devis symbiose paysage Parkin.pdf" and recu["exact"] is True)
+asyncio.run(ouvrir({"nom": "Devis symbiose paysage Parking.pdf", "_demande_utilisateur": STRICTE,
+                    "_fichier_exact": "", "_routeur_a_repondu": True}, None))
+verifier("le routeur a jugé qu'aucun fichier n'est imposé : le motif ne s'en mêle PAS, même sur la demande stricte",
+         recu["nom"] == "Devis symbiose paysage Parking.pdf" and recu["exact"] is False)
+asyncio.run(ouvrir({"nom": "Devis symbiose paysage Parking.pdf", "_demande_utilisateur": STRICTE, "_routeur_a_repondu": False}, None))
+verifier("routeur muet (voie rapide, panne) : le motif reprend la main", recu["nom"] == "Devis symbiose paysage Parkin.pdf")
 a1 = (BACKEND / "agents" / "agent1.py").read_text(encoding="utf-8")
-verifier("la boucle d'actions donne la demande à `drive_ouvrir`",
-         'if action["skill"] == "drive_ouvrir":' in a1 and '"_demande_utilisateur": state.get("query")' in a1)
+verifier("la boucle d'actions donne la demande ET l'avis du routeur à `drive_ouvrir`",
+         'if action["skill"] == "drive_ouvrir":' in a1 and '"_fichier_exact": state.get("fichier_exact")' in a1
+         and '"fichier_exact": "<nom écrit par la personne ou vide>"' in a1)
 
 print("\n" + "═" * 70)
 if echecs:

@@ -65,6 +65,9 @@ if callable(getattr(ann, "demande_d_ouvrir_un_seul", None)):
              not p("liste moi les dossier du drive") and not p("il y a quoi comme document dans 03-Appel d'offres etudes"))
 
 agent1 = (BACKEND / "agents" / "agent1.py").read_text(encoding="utf-8")
+verifier("le routeur juge « lecture unique » ; le motif ne sert que s'il s'est tu (18/09)",
+         '"lecture_unique": true|false' in agent1
+         and 'state.get("lecture_unique") if isinstance(state.get("lecture_unique"), bool)' in agent1)
 _lecture = re.search(r"SKILLS_LECTURE_FICHIER = frozenset\(\{([^}]*)\}\)", agent1, re.S)
 verifier("agent1 connaît les gestes qui LISENT un fichier (nas et drive, ouvrir et lire, pièce jointe)",
          _lecture and all(f'"{g}"' in _lecture.group(1) for g in

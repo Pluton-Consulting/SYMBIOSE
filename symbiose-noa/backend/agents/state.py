@@ -100,6 +100,8 @@ class AgentState(TypedDict):
     # Les familles d'outils utiles à la demande, choisies par le routeur
     # (skills/familles.py). None : tout le catalogue.
     familles_outils: Optional[List[str]]
+    lecture_unique: Optional[bool]        # jugé par le routeur : la demande se satisfait d'ouvrir UN document
+    fichier_exact: Optional[str]          # jugé par le routeur : le nom du fichier que la personne impose
     tool_repair_used: bool               # une seule tentative de réparation d'un bloc invalide
     tools_finished: bool                 # force la sortie de boucle
     note_sortie: Optional[str]           # pourquoi la boucle s'est arrêtée sans aboutir
