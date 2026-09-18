@@ -60,7 +60,8 @@ runtime_src = (BACKEND / "agents" / "runtime.py").read_text(encoding="utf-8")
 verifier("l'événement d'accord du flux porte l'aperçu (sans bloc d'action), et la bulle l'affiche",
          '"response": _apercu_d_attente(state),' in runtime_src and "_texte_visible(state.get(\"llm_response\")" in runtime_src
          and "suspendre(String(event.validation_id ?? \"\") || undefined, String(event.response ?? \"\"))" in chatwin
-         and "const texte = vu ? `${vu}\\n\\n${TEXTE_ATTENTE_ACCORD}` : TEXTE_ATTENTE_ACCORD" in chatwin)
+         and "const texte = vu ? `${vu}\\n\\n${TEXTE_ATTENTE_ACCORD}` : TEXTE_ATTENTE_ACCORD" in chatwin
+         and "msg.content.includes(\"```\") ? (" in (FRONTEND / "components" / "chat" / "MessageList.tsx").read_text(encoding="utf-8"))
 verifier("tous les chemins qui posaient la bulle générique passent par `bulleAccord`",
          'pushAssistant("⏳ Une action attend votre accord' not in chatwin
          and chatwin.count("bulleAccord(") >= 4)
