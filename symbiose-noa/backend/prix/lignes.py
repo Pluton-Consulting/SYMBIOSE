@@ -50,7 +50,9 @@ _MILLIERS_SUITE = re.compile(r"^\d{3}(?:[.,]\d{1,4})?$")
 # Ce qui identifie une pièce ÉMISE par la maison. Un document qui ne porte aucune de ces
 # mentions n'est pas lu : on ne devine pas la nature d'un PDF à la forme de ses nombres.
 _PIECE = re.compile(
-    r"\b(devis|facture|avoir|commande|situation)\s*(?:d['’]acompte\s*)?n\s?[°ºo]\s*:?\s*([A-Z]{1,4}\s?\d{3,})",
+    # « Facture n° J2025-156141 » (auto-facturation Jardiniers SAP, 18/09) : le numéro porte un tiret.
+    # Sans lui, 275 factures de 2025 se lisaient « J2025 » et n'en faisaient plus qu'UNE au calcul.
+    r"\b(devis|facture|avoir|commande|situation)\s*(?:d['’]acompte\s*)?n\s?[°ºo]\s*:?\s*([A-Z]{1,4}\s?\d{3,}(?:-\d{2,})?)",
     re.IGNORECASE)
 _DATE = re.compile(r"\b(\d{1,2})/(\d{1,2})/(\d{2,4})\b")
 
@@ -139,7 +141,7 @@ def _recoller_milliers(rangee: list[Mot]) -> list[Mot]:
 
 # LA VERSION DU LECTEUR. La collecte la range avec chaque pièce : quand le lecteur apprend un
 # gabarit de plus, les pièces lues par une version plus ancienne sont rouvertes d'elles-mêmes.
-VERSION = 4
+VERSION = 5     # 18/09 : numéro à tiret (J2025-156141), client « Prestation effectuée pour »
 
 
 def _gabarit_tva_au_milieu(mots: list[Mot]) -> Optional[dict]:
@@ -340,6 +342,8 @@ def titre_de_la_piece(lignes: list[str]) -> str:
 # Le CODE client, quand il est écrit, regroupe mieux que le nom (« Mme DUPONT », « DUPONT Anne »).
 _CODE_CLIENT = re.compile(r"code\s*client\s*:?\s*([A-Z0-9][A-Z0-9_\-]{2,19})", re.IGNORECASE)
 _NOM_CLIENT = re.compile(r"adresse\s*(?:de\s*)?(?:chantier|livraison|facturation)\s*:\s*(.+)$", re.IGNORECASE)
+# Auto-facturation Jardiniers SAP : le client est écrit SOUS « Prestation effectuée pour : ».
+_PRESTATION_POUR = re.compile(r"prestation\s+effectu[ée]e?\s+pour\s*:\s*(.*)$", re.IGNORECASE)
 MAX_CLIENT = 80
 
 
@@ -359,6 +363,13 @@ def client_de_la_piece(lignes: list[str]) -> tuple[str, str]:
                 nom = " ".join(brut.split())[:MAX_CLIENT].strip(" ,;:-")
         if nom and code:
             break
+    if not nom:
+        for i, t in enumerate(lignes[:60]):
+            m = _PRESTATION_POUR.search(t)
+            if m:
+                suite = (m.group(1) or "").strip() or (lignes[i + 1].strip() if i + 1 < len(lignes) else "")
+                nom = " ".join(suite.split())[:MAX_CLIENT].strip(" ,;:-")
+                break
     return nom, code
 
 

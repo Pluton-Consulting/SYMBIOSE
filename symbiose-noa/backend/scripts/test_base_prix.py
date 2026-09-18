@@ -326,6 +326,14 @@ migration = (BACKEND / "database" / "migrations" / "055_lignes_chiffrees.sql").r
 verifier("la migration est additive et idempotente",
          migration.count("IF NOT EXISTS") >= 5 and "DROP" not in migration.upper().replace("ON DELETE", ""))
 
+# 18/09 : les auto-factures Jardiniers SAP (« Facture n° J2025-156141 », client sous « Prestation effectuée pour »).
+verifier("un numéro à tiret se lit en entier : 275 factures ne s'écrasent plus en une",
+         L.nature_et_numero("Facture n° J2025-156141\nAuto-facturation") == ("facture", "J2025-156141")
+         and L.nature_et_numero("Facture N° FA0001235") == ("facture", "FA0001235"))
+verifier("le client d'une auto-facture se lit sous « Prestation effectuée pour »",
+         L.client_de_la_piece(["Objet : Intervention", "Prestation effectué pour :", "Mr BOSSARD Romain", "42 route"])[0] == "Mr BOSSARD Romain")
+verifier("la version du lecteur est passée (les pièces déjà lues seront relues)", L.VERSION >= 5)
+
 print("\n" + "═" * 70)
 if echecs:
     print(f"✗ {len(echecs)} échec(s) : " + ", ".join(echecs))
