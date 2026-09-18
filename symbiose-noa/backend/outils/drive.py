@@ -1723,6 +1723,22 @@ async def _deposer_pour(fichier: dict, service, proprietaire: str | None, result
             return resultat
         binaire, vrai_nom, mime = await _binaire(
             fichier, service, fichier.get("name") or "fichier", fichier.get("mimeType") or "")
+        # UN PDF SCANNÉ SE LIT QUAND MÊME (18/09, recette pilotée : « Devis cuisine.pdf » ouvert,
+        # « son contenu n'a pas pu être extrait »). L'extracteur de l'ingestion ne lit que la
+        # couche texte ; les pièces d'un mail, elles, passent par `lire_sans_deposer` (OCR d'un
+        # scan, vision d'une image, Word, Excel). Même lecteur ici, quand le texte manque.
+        contenu = str(resultat.get("contenu") or "")
+        if len(contenu.strip()) < 40 and len(binaire) <= MAX_OCTETS_AFFICHAGE:
+            try:
+                from mail.pieces import lire_sans_deposer
+                lu = await lire_sans_deposer(vrai_nom, mime, binaire)
+                texte_lu = str((lu or {}).get("texte") or "")
+                if len(texte_lu.strip()) >= 40:
+                    resultat = {k: v for k, v in resultat.items() if k != "note"}
+                    resultat.update({"contenu": texte_lu[:20000], "tronque": len(texte_lu) > 20000,
+                                     "methode_de_lecture": (lu or {}).get("methode") or "lecture du fichier"})
+            except Exception as e:  # noqa: BLE001 — le fichier reste ouvert et téléchargeable
+                logger.info("Lecture de secours du fichier ouvert impossible : %s", str(e)[:120])
         try:
             from security.conversation import fil_courant
             if fil_courant.get():
