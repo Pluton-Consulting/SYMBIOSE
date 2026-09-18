@@ -85,13 +85,20 @@ def retenir_une_piece_par_numero(pieces: list[dict]) -> tuple[list[dict], int]:
     return [{k: v for k, v in p.items() if k != "_rang"} for p in meilleures.values()], len(pieces) - len(meilleures)
 
 
-def calculer(pieces: list[dict], du: date, au: date) -> dict:
-    """Le calcul, PUR : dédoublonne, borne à la période, somme par mois et par client."""
+def calculer(pieces: list[dict], du: date, au: date, facture_min: float = 0.0) -> dict:
+    """Le calcul, PUR : dédoublonne, borne à la période, somme par mois et par client.
+    `facture_min` (18/09) : « sans compter les factures de moins de 500 € » — écartées AVANT le calcul,
+    et comptées à part ; sans lui, le modèle partait sur le jeu importé, qui n'est pas la même base."""
     uniques, doublons = retenir_une_piece_par_numero(pieces)
     sans_date = [p for p in uniques if not isinstance(p.get("date_piece"), date)]
     dans = [p for p in uniques if isinstance(p.get("date_piece"), date) and du <= p["date_piece"] <= au]
     illisibles = [p for p in dans if p.get("total_ht") is None]
     retenues = [p for p in dans if p.get("total_ht") is not None]
+    sous_le_seuil = 0
+    if facture_min and facture_min > 0:
+        avant = len(retenues)
+        retenues = [p for p in retenues if p.get("nature") == "avoir" or abs(float(p["total_ht"])) >= facture_min]
+        sous_le_seuil = avant - len(retenues)
     for p in retenues:
         p["montant"] = -abs(float(p["total_ht"])) if p.get("nature") == "avoir" else float(p["total_ht"])
     total = round(sum(p["montant"] for p in retenues), 2)
@@ -124,6 +131,7 @@ def calculer(pieces: list[dict], du: date, au: date) -> dict:
     return {"total": total, "retenues": retenues, "doublons": doublons, "illisibles": illisibles,
             "sans_date": sans_date, "mensuel": sorted(mensuel.items()), "clients": classement,
             "avoirs": sum(1 for p in retenues if p.get("nature") == "avoir"),
+            "factures_sous_le_seuil": sous_le_seuil,
             "somme_clients": round(sum(c["total"] for c in classement), 2)}
 
 
@@ -154,7 +162,9 @@ async def chiffre_affaires(data: dict, user) -> dict:
         raise SkillError("Aucune facture n'a encore été lue dans le classement : le chiffre d'affaires "
                          "ne peut pas être calculé. N'avance aucun montant.")
 
-    r = calculer([dict(l) for l in lignes], du, au)
+    from skills.lecture import lire_montant
+    facture_min = lire_montant(data.get("facture_min") or data.get("montant_min") or data.get("minimum") or 0)
+    r = calculer([dict(l) for l in lignes], du, au, facture_min)
     periode = f"du {du.strftime('%d/%m/%Y')} au {au.strftime('%d/%m/%Y')}"
     sans_client = sum(c["factures"] for c in r["clients"] if c["client"].startswith("(client non lu"))
     fusions = [{"client": c["client"], "regroupe_aussi": c["variantes"]} for c in r["clients"] if c["variantes"]]
@@ -182,6 +192,8 @@ async def chiffre_affaires(data: dict, user) -> dict:
         "periode": periode, "chiffre_affaires_ht": _euros(r["total"]),
         "factures_retenues": len(r["retenues"]), "dont_avoirs_en_moins": r["avoirs"],
         "exemplaires_en_double_ecartes": r["doublons"],
+        "factures_ecartees_sous_le_seuil": ({"seuil_ht": _euros(facture_min), "nombre": r["factures_sous_le_seuil"]}
+                                            if facture_min else None),
         "factures_sans_total_lisible": [{"numero": p.get("numero"), "fichier": p.get("fichier_nom"),
                                          "date": p["date_piece"].isoformat()} for p in r["illisibles"][:40]],
         "factures_sans_date_lisible": len(r["sans_date"]),
@@ -585,9 +597,12 @@ SKILLS = {
             "pas pu etre compte. A appeler pour « quel CA entre telle et telle date », « CA 2025 », "
             "« nos meilleurs clients », « portefeuille client ». `du` / `au` (jour/mois/annee) ou `annee` ; "
             "`classement: true` ajoute les dix derniers clients ; `fichier: true` produit l'Excel des "
-            "factures retenues. Un devis n'est jamais du chiffre d'affaires. N'OUVRE PAS les factures une "
-            "a une pour les additionner : ce geste l'a deja fait, et il dedoublonne"),
-        requis=[], optionnels=["du", "au", "annee", "classement", "fichier"],
+            "factures retenues ; `facture_min` : ecarte les factures sous un montant HT (« sans compter les "
+            "factures de moins de 500 € »). Un devis n'est jamais du chiffre d'affaires. N'OUVRE PAS les "
+            "factures une a une pour les additionner : ce geste l'a deja fait, et il dedoublonne. C'EST LUI "
+            "qui fait foi pour un CA ou un classement de clients, PAS `interroger_donnees` sur le jeu importe "
+            "« facture » (un etat des affaires, sans date lisible sur la plupart des lignes)"),
+        requis=[], optionnels=["du", "au", "annee", "classement", "fichier", "facture_min"],
         effet="lecture",
         libelle="je calcule le chiffre d'affaires"),
 }

@@ -185,6 +185,13 @@ a1 = (BACKEND / "agents" / "agent1.py").read_text(encoding="utf-8")
 verifier("déposer dix brouillons d'affilée n'est pas un geste qui s'acharne",
          'SKILLS_SANS_PLAFOND = frozenset({"ajouter_document", "deposer_brouillon", "enregistrer_relance"})' in a1)
 
+# ── 18/09, X4 : « sans compter les factures de moins de 500 € » ──
+seuil = chiffres.calculer([dict(p) for p in PIECES], date(2025, 9, 1), date(2026, 8, 31), facture_min=500)
+verifier("`facture_min` écarte les factures sous le seuil AVANT le calcul, les compte à part, garde les avoirs",
+         seuil["factures_sous_le_seuil"] == sum(1 for p in r["retenues"] if p.get("nature") != "avoir" and abs(float(p["total_ht"])) < 500)
+         and seuil["total"] <= r["total"] + 1e-6 and "facture_min" in chiffres.SKILLS["chiffre_affaires"].optionnels,
+         str(seuil["factures_sous_le_seuil"]))
+
 # ── 18/09, prompt 13 : les devis et factures d'UN client, lus dans le classement ──
 lafon = [{"fichier_id": "a", "fichier_nom": "FA0001235.pdf", "nature": "facture", "numero": "FA0001235", "date_piece": date(2026, 7, 22), "total_ht": 13054.71, "controle": "juste", "client": "LAFON Huguette et Claude"},
          {"fichier_id": "b", "fichier_nom": "FA0001235 copie.pdf", "nature": "facture", "numero": "FA0001235", "date_piece": date(2026, 7, 22), "total_ht": 13054.71, "controle": "ecart", "client": "LAFON Huguette et Claude"},

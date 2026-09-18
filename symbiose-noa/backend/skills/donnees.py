@@ -703,6 +703,16 @@ async def _agreger(conn, niveaux: list[str], type_source: str, agreger: dict,
            f"vérifier la colonne de date." if sans_date else "")
         + (f" ATTENTION : le jeu dépasse {MAX_LIGNES_AGREGEES} lignes, le calcul ne "
            "porte que sur les premières — dis-le." if tronque else "")
+        # LE JEU IMPORTÉ « FACTURE » N'EST PAS LA BASE DU CHIFFRE D'AFFAIRES (18/09, recette pilotée :
+        # « les trois plus gros clients de 2026 sans les factures de moins de 500 € » a rendu un podium
+        # faux, calculé sur 31 lignes datées d'un état des affaires, quand `chiffre_affaires` en lit
+        # 447). Le geste qui fait foi est nommé au moment où le résultat part.
+        + ((" IMPORTANT : ce jeu importé n'est PAS la base des factures lues dans le classement — pour un "
+            "chiffre d'affaires, un classement de clients ou un seuil par facture (`facture_min`), le geste "
+            "qui fait foi est `chiffre_affaires` ; pour le CA d'un client, `pieces_du_client`. Ne présente "
+            "pas ce résultat comme le CA.")
+           if _cle_comparaison(type_source) in ("facture", "devi", "affaire") and colonne and operation != "count"
+           else "")
         + " Les montants sont dans l'unité du fichier d'origine (souvent HT, en euros) : "
           "ne convertis pas, ne devine pas la TVA. Réponds par une PHRASE qui dit ce qui "
           "est calculé, sur quoi, et avec quelle réserve"
