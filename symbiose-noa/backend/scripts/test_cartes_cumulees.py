@@ -58,6 +58,24 @@ verifier("deux cartes sans aucune identité ne s'écrasent pas",
 src = (BACKEND / "agents" / "agent1.py").read_text(encoding="utf-8")
 verifier("`_blocs_garantis` passe par la fusion", "[_fondre_les_cartes(du_genre)]" in src)
 
+# La recopie APPROCHANTE d'un brouillon (quelques mots changés) s'efface aussi ; la présentation reste.
+voulus2 = {"_sans_recopie_du_brouillon", "_aplati_texte"}
+esp2 = {}
+exec(compile(ast.Module(body=[n for n in arbre.body if isinstance(n, ast.FunctionDef) and n.name in voulus2], type_ignores=[]), "agent1.py", "exec"), esp2)
+carte = ("Bonjour Monsieur Farou,\n\nMerci pour les photos et les plans, c'est très clair. Je prépare un chiffrage pour "
+         "l'aménagement de l'allée et des surfaces autour du garage et je reviens vers vous rapidement. Souhaitez-vous "
+         "qu'on se donne un rendez-vous sur place pour valider les détails ?\n\nCordialement,")
+prose = ("Voici les neuf réponses, une carte par mail.\n\n8. Réponse à Patrick Farou, 15/09 (vouvoiement)\n\nBonjour Monsieur Farou,\n\n"
+         "Merci pour les photos et les plans, c'est très clair. Je prépare un chiffrage pour l'aménagement de l'allée et des "
+         "surfaces autour du garage et reviens vers vous très rapidement. Souhaitez-vous qu'on se voie sur place pour valider "
+         "les détails ?\n\nCordialement, Benjamin Durou\n\nListe à part des mails non traités : Pantxika Sola.")
+r = esp2["_sans_recopie_du_brouillon"](prose, [carte])
+verifier("la recopie APPROCHANTE d'un brouillon (mots changés) s'efface ; la présentation et la liste à part restent",
+         "Merci pour les photos" not in r and "Réponse à Patrick Farou" in r and "Liste à part" in r and "Voici les neuf" in r, r)
+autre = "Bonjour Monsieur Farou,\n\nJe vous confirme que le chantier de la piscine est reporté au mois de mai, comme convenu avec Julien."
+verifier("une phrase qui n'est PAS le brouillon reste (moins de 85 % de mots communs)",
+         "chantier de la piscine" in esp2["_sans_recopie_du_brouillon"](autre, [carte]))
+
 print("\n" + "═" * 70)
 if echecs:
     print(f"✗ {len(echecs)} échec(s) : " + ", ".join(echecs))

@@ -3052,6 +3052,18 @@ def _sans_recopie_du_brouillon(texte: str, brouillons: list) -> str:
     if not corps or not texte:
         return texte
     paragraphes = [p for p in __import__("re").split(r"\n\s*\n", texte)]
+    # LA RECOPIE N'EST PAS TOUJOURS MOT POUR MOT (18/09, recette pilotée, prompt 7) : neuf brouillons
+    # sur cartes, et les neuf recopiés en prose au-dessus, à quelques mots près (le modèle écrit sa
+    # propre version de ce que le skill a rédigé). Une ligne d'au moins six mots dont 85 % des mots
+    # sont ceux d'UN brouillon est une recopie. La phrase qui présente le brouillon (« Réponse à X,
+    # 15/09 (vouvoiement) ») garde ses mots à elle : elle reste.
+    mots_des_corps = [set(c.split()) for c in corps]
+
+    def _presque_dedans(l_plat: str) -> bool:
+        mots = [m for m in l_plat.split() if len(m) >= 3]
+        if len(mots) < 6:
+            return False
+        return any(sum(1 for m in mots if m in ensemble) >= 0.85 * len(mots) for ensemble in mots_des_corps)
 
     def _nom_seul(ligne: str) -> bool:
         ligne = ligne.strip()
@@ -3068,7 +3080,8 @@ def _sans_recopie_du_brouillon(texte: str, brouillons: list) -> str:
                 _aplati_texte(lignes[-1]) in c for c in corps):
             lignes = lignes[:-1]
         return bool(lignes) and all(
-            len(_aplati_texte(l)) >= 3 and any(_aplati_texte(l) in c for c in corps) for l in lignes)
+            len(_aplati_texte(l)) >= 3 and (any(_aplati_texte(l) in c for c in corps) or _presque_dedans(_aplati_texte(l)))
+            for l in lignes)
 
     garder = [True] * len(paragraphes)
     i = 0
