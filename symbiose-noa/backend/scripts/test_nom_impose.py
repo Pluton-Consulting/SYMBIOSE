@@ -80,6 +80,11 @@ verifier("la boucle d'actions donne la demande ET l'avis du routeur à `drive_ou
          'if action["skill"] == "drive_ouvrir":' in a1 and '"_fichier_exact": state.get("fichier_exact")' in a1
          and '"fichier_exact": "<nom écrit par la personne ou vide>"' in a1)
 
+# 18/09 : un paramètre obligatoire absent ne refuse l'action AVANT le skill que si RIEN n'est donné.
+proto = (BACKEND / "skills" / "protocol.py").read_text(encoding="utf-8")
+verifier("le protocole ne refuse un paramètre obligatoire manquant que sur des arguments VIDES (les alias reviennent au skill)",
+         'if manquants and any(str(v or "").strip() for v in args.values()):' in proto)
+
 print("\n" + "═" * 70)
 if echecs:
     print(f"✗ {len(echecs)} échec(s) : " + ", ".join(echecs))

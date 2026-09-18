@@ -1100,6 +1100,13 @@ def extraire_action(texte: str, role: str | None = None) -> tuple[Optional[dict]
 
     requis = catalogue(role)[skill][1]
     manquants = [p for p in requis if not str(args.get(p) or "").strip()]
+    # UN PARAMÈTRE OBLIGATOIRE ABSENT NE REFUSE L'ACTION QUE SI RIEN N'EST DONNÉ (18/09, recette
+    # pilotée). Le modèle écrit `chemin` là où le catalogue exige `nom`, `client` pour `nom`,
+    # `requete` pour `motif` : les skills LISENT ces alias et disent eux-mêmes, avec leur raison,
+    # ce qui manque vraiment. Refuser ici, c'est le piège de la `mailbox` (26/08) rejoué à chaque
+    # nouvel alias. Le détail de l'outil ne revient donc que sur des arguments vides.
+    if manquants and any(str(v or "").strip() for v in args.values()):
+        manquants = []
     if manquants:
         # LE DÉTAIL DE L'OUTIL REVIENT AVEC L'ERREUR (15/09) : depuis que le
         # catalogue ne détaille que les familles utiles, le modèle peut appeler
