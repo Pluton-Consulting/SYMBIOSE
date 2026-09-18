@@ -525,7 +525,13 @@ async def _resoudre(service, chemin: str, racines: list[str],
     racine_nommee = False
     drives = await _drives_nommes(service)
     if segments and drives:
-        cherche = _nu(segments[0])
+        # LE NOM QUE LA CARTE DU CLASSEMENT AFFICHE DOIT MARCHER (18/09, D1). `ou_chercher` et
+        # l'arborescence écrivent « Drive partagé « Symbiose Paysage »/SYMBIOSE PAYSAGE/… » ; le
+        # modèle recopie ce chemin tel quel — et l'habillage « Drive partagé « … » » n'était le nom
+        # d'aucun Drive. Trois listages perdus avant qu'il devine la forme attendue.
+        premier = re.sub(r"^\s*drive\s+partag[ée]e?\s*[«\"']?\s*(.+?)\s*[»\"']?\s*$", r"\1",
+                         segments[0], flags=re.I)
+        cherche = _nu(premier)
         # Restreint aux Drive RÉELLEMENT ouverts à ce rôle : sans ce filtre, un
         # périmètre déclaré serait contourné en nommant le Drive entier.
         ouverts = [d for d in drives if d["id"] in racines]

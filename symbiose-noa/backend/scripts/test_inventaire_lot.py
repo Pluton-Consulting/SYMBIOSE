@@ -72,6 +72,43 @@ verifier("le modèle ne relit pas mille lignes : les entrées lui sont abrégée
          len(r["lots"][1]["entrees"]) == 12 and r["lots"][1]["entrees_coupees_pour_le_modele"] is True)
 verifier("un dossier en erreur garde sa ligne de synthèse et n'entre pas dans l'inventaire",
          blocs[0]["rows"][2][1] == "Erreur" and not any(l[0].endswith("/C") for l in blocs[1]["rows"]))
+# 18/09 (D1, « lequel a été modifié le plus récemment ? ») : 178 entrées datées dépassaient le
+# plafond, la coupe emportait la fin, le modèle répondait « classement partiel ».
+verifier("chaque lot porte son compte exact et son entrée la plus récente, calculés par le serveur",
+         r0["lots"][0]["entrees_total"] == 3 and r0["lots"][0]["le_plus_recent"] == {"nom": "Photos", "modifie_le": "05/01/2026", "type": "dossier"}
+         and r0["lots"][1]["entrees_total"] == 15, str(r0["lots"][0].get("le_plus_recent")))
+verifier("le plus récent de TOUS les lots est nommé avec son dossier",
+         r0["le_plus_recent_de_tous"] == {"dossier": "1-ÉTUDES/A", "nom": "Photos", "modifie_le": "05/01/2026", "type": "dossier"}, str(r0.get("le_plus_recent_de_tous")))
+rd = asyncio.run(geste({"dossiers": ["A", "B"], "tri": "date"}, None))
+verifier("`tri: date` sans `detail` range les entrées de chaque lot, le premier EST le plus récent",
+         [e["nom"] for e in rd["lots"][0]["entrees"]] == ["Photos", "Devis.pdf", "Plan.pdf"] and rd["lots"][1]["entrees"][0]["nom"] == "f14.jpg")
+gros = lots(); gros["lots"][1]["entrees"] = [{"nom": f"g{i}", "dossier": True, "modifie_le": f"2026-02-{(i % 28) + 1:02d}T00:00:00Z"} for i in range(60)]
+async def _gros(fonction, *a, **k):
+    return gros
+esp["_drive"] = _gros
+rg = asyncio.run(geste({"dossiers": ["A", "B"]}, None))
+verifier("sans inventaire, un lot de 60 entrées est abrégé à 40 pour le modèle, compte et plus récent intacts",
+         len(rg["lots"][1]["entrees"]) == 40 and rg["lots"][1]["entrees_coupees_pour_le_modele"] is True
+         and rg["lots"][1]["entrees_total"] == 60 and rg["lots"][1]["le_plus_recent"]["modifie_le"] == "28/02/2026"
+         and "le_plus_recent" in rg["a_faire"])
+esp["_drive"] = _drive
+# 18/09 (D1) : le chemin que la carte du classement affiche (« Drive partagé « Symbiose Paysage »/…»)
+# doit se résoudre — le modèle l'a recopié, trois listages perdus avant de deviner la forme attendue.
+drive_src = (BACKEND / "outils" / "drive.py").read_text(encoding="utf-8")
+arbre_d = ast.parse(drive_src)
+voulus_d = {"_resoudre", "_nu", "_ACCENTS", "_est_identifiant"}
+corps_d = [n for n in arbre_d.body
+           if (isinstance(n, (ast.AsyncFunctionDef, ast.FunctionDef)) and n.name in voulus_d)
+           or (isinstance(n, ast.Assign) and any(isinstance(c, ast.Name) and c.id in voulus_d for c in n.targets))]
+class _Refus(Exception): ...
+async def _drives(service):
+    return [{"id": "dr1", "name": "Symbiose Paysage"}, {"id": "dr2", "name": "Holding Symbiose Paysage"}]
+esp_d = {"DriveRefuse": _Refus, "_drives_nommes": _drives, "re": __import__("re"), "unicodedata": __import__("unicodedata"),
+         "Optional": __import__("typing").Optional, "logger": __import__("logging").getLogger("banc")}
+exec(compile(ast.Module(body=corps_d, type_ignores=[]), "drive.py", "exec"), esp_d)
+verifier("« Drive partagé « Symbiose Paysage » » se résout comme le Drive lui-même (exact, pas la Holding)",
+         asyncio.run(esp_d["_resoudre"](None, "Drive partagé « Symbiose Paysage »", ["dr1", "dr2"])) == "dr1")
+verifier("le nom nu marche toujours", asyncio.run(esp_d["_resoudre"](None, "Symbiose Paysage", ["dr1", "dr2"])) == "dr1")
 bloc = source[source.index('"drive_lister_lot": Declaration('):][:1200]
 verifier("le catalogue annonce `detail` et `tri`", '"detail", "tri"' in bloc and "UNE LIGNE" in bloc)
 

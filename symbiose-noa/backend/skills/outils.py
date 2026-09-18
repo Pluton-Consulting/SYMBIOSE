@@ -146,6 +146,29 @@ async def drive_lister_lot(data: dict, user) -> dict:
         motif=(data.get("motif") or "").strip() or None,
     )
     lots = resultat.get("lots") or []
+    # LE PLUS RÉCENT SE CALCULE ICI, PAS EN RELISANT LA LISTE (18/09, D1 : « lequel a été modifié
+    # le plus récemment ? »). 178 entrées datées dépassent le plafond du résultat ; la coupe emportait
+    # la fin, le modèle répondait « classement partiel » et le relecteur contestait à raison. Chaque
+    # lot porte désormais son entrée la plus récente et son compte, et `tri: date` range les entrées
+    # du plus récent au plus ancien — le premier EST le plus récent, quelle que soit la coupe.
+    from skills.affichage import _jour
+    tri_date = str(data.get("tri") or "").strip().lower() in ("date", "recent", "récent", "modifie", "modifié")
+    plus_recent_de_tous = None
+    for lot in lots:
+        entrees = [e for e in (lot.get("entrees") or []) if isinstance(e, dict)]
+        if tri_date:
+            entrees.sort(key=lambda e: str(e.get("modifie_le") or ""), reverse=True)
+            lot["entrees"] = entrees
+        lot["entrees_total"] = len(entrees)
+        datees = [e for e in entrees if e.get("modifie_le")]
+        if datees:
+            r = max(datees, key=lambda e: str(e.get("modifie_le")))
+            lot["le_plus_recent"] = {"nom": r.get("nom"), "modifie_le": _jour(r.get("modifie_le")),
+                                     "type": "dossier" if r.get("dossier") else "fichier"}
+            if plus_recent_de_tous is None or str(r.get("modifie_le")) > plus_recent_de_tous[0]:
+                plus_recent_de_tous = (str(r.get("modifie_le")), {"dossier": lot.get("dossier"), **lot["le_plus_recent"]})
+    if plus_recent_de_tous:
+        resultat["le_plus_recent_de_tous"] = plus_recent_de_tous[1]
     rows = []
     for lot in lots:
         if not lot.get("ok"):
@@ -199,6 +222,14 @@ async def drive_lister_lot(data: dict, user) -> dict:
             if len(lot.get("entrees") or []) > 12:
                 lot["entrees"] = (lot.get("entrees") or [])[:12]
                 lot["entrees_coupees_pour_le_modele"] = True
+    else:
+        # Sans inventaire demandé, 40 entrées par lot suffisent au modèle (les comptes, le plus
+        # récent et les trente premiers noms du tableau restent exacts) : au-delà, la coupe
+        # générale tranchait le JSON au hasard.
+        for lot in lots:
+            if len(lot.get("entrees") or []) > 40:
+                lot["entrees"] = (lot.get("entrees") or [])[:40]
+                lot["entrees_coupees_pour_le_modele"] = True
     resultat["bloc_garanti"] = True
     resultat["message_final"] = (
         f"{resultat.get('dossiers_inspectes', 0)} dossier(s) inspecté(s) sur "
@@ -212,7 +243,10 @@ async def drive_lister_lot(data: dict, user) -> dict:
     resultat["a_faire"] = (
         "Le tableau est déjà affiché par le serveur. Ne recopie pas ses lignes. "
         "Dis exactement combien de dossiers ont été inspectés et distingue les "
-        "dossiers en erreur ou dont le contenu dépassait la première page."
+        "dossiers en erreur ou dont le contenu dépassait la première page. "
+        "`entrees_total` et `le_plus_recent` de chaque lot (et `le_plus_recent_de_tous`) sont "
+        "calculés par le serveur sur TOUTES les entrées lues : cite-les tels quels, même si la "
+        "liste `entrees` a été coupée pour toi."
         + ((" L'inventaire DÉTAILLÉ (une ligne par élément : sous-dossier, nom, type, taille, date) "
             f"s'affiche aussi : annonce `elements_total` = {resultat.get('elements_total')} et cite "
             "`doublons_de_nom` tels quels (vide = aucun doublon exact).") if veut_detail else
@@ -525,7 +559,9 @@ SKILLS = {
             "demande portant sur au moins trois dossiers. Passe dossiers=[...], "
             "et motif pour ne garder que les noms correspondants. POUR UN INVENTAIRE (« liste tout "
             "le contenu : nom, type, date, taille, sous-dossier ») : `detail: true` rend UNE LIGNE "
-            "PAR ELEMENT, `tri: \"date\"` du plus recent au plus ancien. Le tableau "
+            "PAR ELEMENT, `tri: \"date\"` du plus recent au plus ancien. Chaque lot rend "
+            "`entrees_total` et `le_plus_recent` (calcules sur tout le dossier) : pour « combien » "
+            "et « le plus recent », lis-les, sans recompter. Le tableau "
             "s'affiche automatiquement ; ne rappelle pas drive_lister dossier "
             "par dossier."),
         requis=["dossiers"], optionnels=["motif", "detail", "tri"],
