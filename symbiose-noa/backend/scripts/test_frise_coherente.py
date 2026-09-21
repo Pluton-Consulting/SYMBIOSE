@@ -65,7 +65,7 @@ verifier("un état mal formé ne casse rien",
 runtime = (BACKEND / "agents" / "runtime.py").read_text(encoding="utf-8")
 verifier("l'événement de nœud du flux porte le skill",
          '"skill": skill_du_moment(node_name' in runtime
-         and "from agents.journal import libelle, skill_du_moment" in runtime)
+         and re.search(r"from agents\.journal import [^\n]*\bskill_du_moment\b", runtime) is not None)
 verifier("la reprise post-validation le porte aussi",
          runtime.count('"skill": skill_du_moment(node_name') >= 2)
 

@@ -46,5 +46,33 @@ verifier("l'écran sonde la progression pendant l'accord, et la sonde s'arrête 
 verifier("la frise s'anime pendant la reprise (loading inclut l'accord en cours)",
          re.search(r"loading=\{loading \|\| accordEnCours !== null\}", chat) is not None)
 
+
+# « J'ATTENDS VOTRE VALIDATION » SOUS UNE ACTION APPROUVÉE (21/09, relevé de Noa).
+# La porte ne se termine qu'à la reprise, et son étape restait affichée pendant
+# toute l'exécution. Le journal est EXÉCUTÉ, pas lu.
+import importlib.util
+spec = importlib.util.spec_from_file_location("journal_banc", BACKEND / "agents" / "journal.py")
+journal = importlib.util.module_from_spec(spec)
+sys.path.insert(0, str(BACKEND))
+spec.loader.exec_module(journal)
+approuve = journal.libelle("human_gate", {"validation_status": "approved"})
+verifier("porte refermée sur un accord : plus « j'attends », on exécute",
+         "attend" not in approuve and "approuvé" in approuve, approuve)
+refuse = journal.libelle("human_gate", {"validation_status": "rejected"})
+verifier("porte refermée sur un refus : dit que rien ne s'exécute", "refusé" in refuse, refuse)
+verifier("porte d'un tour sans validation : muette", journal.libelle("human_gate", {}) == "")
+verifier("un plan approuvé lance ses étapes (pas « je prépare le plan »)",
+         "lance" in journal.libelle_apres_accord({"skill": "proposer_plan", "args": {}}))
+envoi = journal.libelle_apres_accord({"skill": "envoyer_email", "args": {}})
+verifier("l'action approuvée se nomme par son libellé", "j'envoie le message" in envoi, envoi)
+inconnu = journal.libelle_apres_accord({"skill": "geste_inconnu_xyz", "args": {}})
+verifier("jamais un nom technique à l'écran", "geste_inconnu_xyz" not in inconnu, inconnu)
+verifier("la reprise annonce l'action dès le clic et remplace l'étape de la porte",
+         "libelle_apres_accord(valeurs.get(\"pending_action\")" in reprise
+         and 'if node_name == "human_gate":' in reprise)
+chemin = (FRONTEND / "components" / "chat" / "ReasoningPath.tsx").read_text(encoding="utf-8")
+verifier("la frise range l'exécution après accord avec les actions",
+         re.search(r'nodes: \[[^\]]*"tools"[^\]]*"execute_action"', chemin) is not None)
+
 print(f"\n{'═' * 70}\n{'✗ ' + str(len(echecs)) + ' échec(s) : ' + ', '.join(echecs) if echecs else '✓ 0 échec'}\n")
 sys.exit(1 if echecs else 0)

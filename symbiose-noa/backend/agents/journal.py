@@ -34,7 +34,6 @@ LIBELLES = {
     "tools": "j'exécute une action",
     "rehydrate": "je finalise la réponse",
     "validation_check": "je vérifie ce qui doit être validé",
-    "human_gate": "j'attends votre validation",
     "vision": "j'analyse l'image ou le plan",
     "extraction": "j'extrais les éléments du document",
     "prechiffrage": "je prépare le pré-chiffrage",
@@ -328,6 +327,20 @@ def libelle(node: str, update: dict | None = None) -> str:
         nom = action.get("skill") or ""
         return f"{_acte(nom) or nom} (en attente de votre validation)".strip()[:MAX_LIBELLE]
 
+    # LA PORTE NE DIT PAS « J'ATTENDS » UNE FOIS L'ACCORD DONNÉ (21/09).
+    # Pendant l'attente, `human_gate` est SUSPENDU : il n'émet aucune étape (le
+    # flux porte `__interrupt__`). Il ne se TERMINE qu'à la reprise, décision en
+    # main — et une étape part à la fin de son nœud : son libellé restait donc
+    # affiché pendant toute l'exécution de l'action approuvée, l'étape la plus
+    # longue (un tirage d'image, un plan). « j'attends votre validation » sous
+    # une action qu'on vient d'approuver — relevé par Noa. Sans validation
+    # (tour ordinaire), la porte se tait.
+    if node == "human_gate":
+        statut = update.get("validation_status")
+        if statut in ("approved", "rejected"):
+            return libelle_apres_accord(None, statut == "approved")
+        return ""
+
     # Le nœud d'anonymisation tourne toujours (il rend le texte tel quel quand le
     # masquage est coupé), mais dire « je protège les données personnelles »
     # alors qu'on ne masque rien serait faux — relevé par Noa le 31/08, juste
@@ -418,6 +431,27 @@ def skill_du_moment(node: str, update: dict | None = None) -> str:
     if isinstance(action, dict):
         return str(action.get("skill") or "")
     return ""
+
+
+def libelle_apres_accord(action: dict | None, approuve: bool = True) -> str:
+    """Ce que l'écran dit pendant l'exécution d'une action qu'on vient de trancher.
+
+    Au présent : la phrase reste affichée PENDANT l'exécution (elle part quand
+    la porte se referme, juste avant). Jamais un nom technique : sans libellé
+    connu pour le geste, la phrase reste générique.
+    """
+    if not approuve:
+        return "c'est refusé : je n'exécute rien"
+    action = action if isinstance(action, dict) else {}
+    nom = str(action.get("skill") or "")
+    # Un plan approuvé n'est pas un plan qu'on « prépare » : ses étapes démarrent.
+    if nom == "proposer_plan":
+        return "plan approuvé : je lance les étapes"
+    acte = _acte(nom) if nom else None
+    if not acte:
+        return "c'est approuvé : j'exécute l'action"
+    detail = _detail(action.get("args") or {})
+    return (f"c'est approuvé, {acte}" + (f" : {detail}" if detail else ""))[:MAX_LIBELLE]
 
 
 def libelle_action(skill: str, args: dict | None = None) -> str:

@@ -35,7 +35,9 @@ const STAGES: { label: string; desc: string; nodes: string[] }[] = [
   { label: "Je cherche dans la mémoire d'entreprise", desc: "dossiers, devis, documents, données", nodes: ["recherche", "search_docs", "similar_projects"] },
   { label: "Je regarde sur le web", desc: "seulement si l'entreprise ne sait pas", nodes: ["browser"] },
   { label: "Je confie à l'expert", desc: "le bon expert pour ce sujet", nodes: ["agent1", "agent2", "agent3", "vision", "extraction", "preprocess", "prechiffrage", "generate_skill", "test_skill"] },
-  { label: "J'agis et je rédige", desc: "actions, puis réponse", nodes: ["llm", "tools", "rehydrate"] },
+  // `execute_action` (21/09) : ce qui suit un accord EST de l'action — sans lui,
+  // la frise restait sur « Je vous demande votre accord » pendant l'exécution.
+  { label: "J'agis et je rédige", desc: "actions, puis réponse", nodes: ["llm", "tools", "rehydrate", "execute_action"] },
   // `validation_check` A ÉTÉ RETIRÉ DE CETTE ÉTAPE. Il s'exécute à CHAQUE tour
   // — c'est l'arête qui suit la rédaction — si bien que « Validation ✓ Contrôle
   // humain » s'affichait toujours, y compris quand aucun bouton n'était jamais

@@ -30,7 +30,7 @@ from agents.checkpointer import get_checkpointer, close_checkpointer
 from agents.router import build_main_graph
 from database.connection import get_db
 from config import settings
-from agents.journal import libelle, skill_du_moment
+from agents.journal import libelle, libelle_apres_accord, skill_du_moment
 
 logger = logging.getLogger("symbiose.runtime")
 
@@ -652,6 +652,19 @@ async def resume_turn(*, thread_id: str, approved: bool, validated_by: Optional[
     interruption = None
     with _Verrou(thread_id):
         try:
+            # CE QUI S'EXÉCUTE SE DIT DÈS LE CLIC (21/09). La porte ne se referme
+            # qu'une fois la décision reçue, et son étape reste affichée pendant
+            # toute l'action approuvée : elle dit donc QUELLE action tourne
+            # (« c'est approuvé, je retouche l'image »), lue dans l'état suspendu,
+            # et passe pour l'exécution — pas pour « je vous demande votre accord ».
+            en_cours = libelle_apres_accord(None, approved)
+            try:
+                suspendu = await graph.aget_state(config)
+                valeurs = suspendu.values if isinstance(suspendu.values, dict) else {}
+                en_cours = libelle_apres_accord(valeurs.get("pending_action"), approved)
+            except Exception:   # noqa: BLE001 — un libellé ne bloque jamais une reprise
+                pass
+            _REPRISES[str(thread_id)] = {"node": "execute_action", "libelle": en_cours, "skill": ""}
             # NŒUD PAR NŒUD, comme un tour ordinaire : c'est ce qui rend la
             # reprise visible — et une éventuelle nouvelle interruption se
             # capture au passage, comme dans stream_turn.
@@ -663,6 +676,10 @@ async def resume_turn(*, thread_id: str, approved: bool, validated_by: Optional[
                     if node_name == "__interrupt__":
                         if interruption is None:
                             interruption = _extract_interrupt({"__interrupt__": update})
+                        continue
+                    if node_name == "human_gate":
+                        _REPRISES[str(thread_id)] = {"node": "execute_action",
+                                                     "libelle": en_cours, "skill": ""}
                         continue
                     _REPRISES[str(thread_id)] = {
                         "node": node_name,
