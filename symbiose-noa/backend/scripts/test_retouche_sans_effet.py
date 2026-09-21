@@ -10,8 +10,9 @@ EN TÊTE du résultat.
 
 La mesure est EXÉCUTÉE sur des images fabriquées (Pillow, présent dans l'image du
 backend ; sans lui, cette partie est sautée et le banc le dit). Les calibrages
-viennent des vrais rendus du 21/09 : 0,0 % pour les trois demandes du couloir,
-1,8 % pour une porte repeinte, 4,1 % pour un sol refait, 13,6 % pour un muret ajouté.
+viennent des vrais rendus du 21/09, mesurés EN COULEUR : 0,2 %, 0,0 % et 0,0 % pour les
+trois demandes du couloir, 7,2 % pour une porte repeinte, 5,3 % pour un sol refait,
+15,8 % pour un muret ajouté.
 
 Usage : python backend/scripts/test_retouche_sans_effet.py [backend]
 """
@@ -93,15 +94,19 @@ if Image is not None:
 # ── 3. Le résultat le dit, en tête ───────────────────────────────────────────
 fin = source[source.index("async def modifier_visuel("):source.index("_SENS_DE_ROTATION")]
 verifier("la mesure compare la SOURCE au rendu", "part_changee(octets, rendu[0])" in fin)
-verifier("sous le seuil, le constat est posé EN TÊTE (le rédacteur ne lit que le début)",
-         'sortie = {"modification_appliquee": False, "constat": constat, **sortie}' in fin)
+verifier("sous le seuil, le constat ET la piste sont posés EN TÊTE (le rédacteur ne lit que le début)",
+         'sortie = {"modification_appliquee": False, "constat": constat, "piste": piste, **sortie}' in fin)
+verifier("la mesure compare en COULEUR (en gris, une porte repeinte en rouge passait inchangée)",
+         '.convert("RGB")' in source and '.convert("L")' not in source[source.index("def part_changee("):])
 verifier("le compte rendu mécanique ne dit plus « avec les changements demandés »",
          'sortie["message_final"] = constat' in fin)
-verifier("la consigne propose l'annotation au crayon et interdit de relancer la même retouche",
+verifier("la piste propose l'annotation au crayon, la consigne interdit de relancer",
          "Annoter" in fin and "Ne relance pas la même retouche" in fin)
+verifier("le constat ne tranche pas plus que la mesure (« très probablement »)", "très probablement PAS" in fin)
 routeur = (BACKEND / "agents" / "router.py").read_text(encoding="utf-8")
-verifier("le rédacteur après accord reçoit bien `constat` (il n'est pas écarté)",
-         '"constat"' not in routeur[routeur.index("async def _reponse_apres_action("):routeur.index("async def _reponse_apres_echec(")])
+verifier("le rédacteur après accord reçoit bien `constat` et `piste` (ils ne sont pas écartés)",
+         '"constat"' not in routeur[routeur.index("async def _reponse_apres_action("):routeur.index("async def _reponse_apres_echec(")]
+         and '"piste"' not in routeur[routeur.index("async def _reponse_apres_action("):routeur.index("async def _reponse_apres_echec(")])
 
 print(f"\n{'═' * 70}\n{'✗ ' + str(len(echecs)) + ' échec(s) : ' + ', '.join(echecs) if echecs else '✓ 0 échec'}\n")
 sys.exit(1 if echecs else 0)

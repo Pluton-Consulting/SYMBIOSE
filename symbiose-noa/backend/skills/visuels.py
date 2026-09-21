@@ -465,13 +465,15 @@ async def generer_visuel(data: dict, user) -> dict:
 # UN RENDU IDENTIQUE N'EST PAS UNE RETOUCHE (21/09). « Fais le couloir en gravier plus large »,
 # trois fois : trois tirages facturés, trois images identiques à la précédente — et trois
 # réponses « l'espace a été agrandi ». Le rédacteur écrit d'après le résultat du geste, qui
-# disait « image produite » ; personne ne regardait l'image. Mesuré sur ces rendus : 0,0 % de
-# la surface changée pour les trois demandes du couloir, 1,8 % pour une porte repeinte, 4,1 %
-# pour un sol refait, 13,6 % pour un muret ajouté. Une grille grossière (64 × 48, niveaux de
-# gris) ignore le bruit de ré-encodage du moteur et voit le moindre objet repeint.
+# disait « image produite » ; personne ne regardait l'image. Mesuré sur ces rendus (grille
+# 64 × 48, EN COULEUR) : 0,2 %, 0,0 % et 0,0 % de la surface changée pour les trois demandes
+# du couloir, 7,2 % pour une porte repeinte en rouge, 5,3 % pour un sol refait, 15,8 % pour un
+# muret ajouté. La grille grossière ignore le bruit de ré-encodage du moteur.
+# ⚠️ EN COULEUR, PAS EN NIVEAUX DE GRIS : une porte sombre repeinte en rouge garde presque sa
+# luminosité — en gris, elle passait pour inchangée (vu au banc, dans l'image du backend).
 GRILLE_ECART = (64, 48)
-SEUIL_CELLULE = 28          # sur 255 : en dessous, c'est du bruit de compression
-PART_INCHANGEE = 0.005      # moins de 0,5 % de la surface changée : rien n'a été fait
+SEUIL_CELLULE = 28          # sur 255, pour le canal qui bouge le plus : en dessous, bruit de compression
+PART_INCHANGEE = 0.005      # moins de 0,5 % de la surface changée : la demande n'y est pas
 
 
 def part_changee(avant: bytes, apres: bytes) -> float | None:
@@ -480,14 +482,16 @@ def part_changee(avant: bytes, apres: bytes) -> float | None:
         import io
         from PIL import Image, ImageOps
 
-        def gris(octets: bytes):
+        def grille(octets: bytes):
             with Image.open(io.BytesIO(octets)) as im:
-                return ImageOps.exif_transpose(im).convert("L").resize(GRILLE_ECART, Image.BILINEAR).tobytes()
+                return ImageOps.exif_transpose(im).convert("RGB").resize(GRILLE_ECART, Image.BILINEAR).tobytes()
 
-        a, b = gris(avant), gris(apres)
+        a, b = grille(avant), grille(apres)
         if not a or len(a) != len(b):
             return None
-        return sum(1 for x, y in zip(a, b) if abs(x - y) > SEUIL_CELLULE) / len(a)
+        changees = sum(1 for i in range(0, len(a), 3)
+                       if max(abs(a[i] - b[i]), abs(a[i + 1] - b[i + 1]), abs(a[i + 2] - b[i + 2])) > SEUIL_CELLULE)
+        return changees / (len(a) // 3)
     except Exception as e:   # noqa: BLE001 — une mesure ratée ne fait jamais tomber un rendu payé
         logger.info("Écart avant / après non mesuré : %s", e)
         return None
@@ -618,16 +622,19 @@ async def modifier_visuel(data: dict, user) -> dict:
     if part is not None and part < PART_INCHANGEE:
         constat = ("Le moteur d'images a rendu une image QUASI IDENTIQUE à celle de départ "
                    f"({part * 100:.1f} % de la surface a changé) : la modification demandée "
-                   "N'A PAS été appliquée.")
-        # EN TÊTE du résultat : le rédacteur n'en lit que le début.
-        sortie = {"modification_appliquee": False, "constat": constat, **sortie}
+                   "n'y est très probablement PAS.")
+        piste = ("Ce moteur retouche bien une matière, une couleur ou un objet ajouté, mal un "
+                 "élément à DÉPLACER ou à élargir. Pour y arriver : tracer l'emplacement voulu sur "
+                 "l'image avec le crayon « Annoter » et la renvoyer avec la demande, ou repartir "
+                 "de la photo d'origine en décrivant la nouvelle disposition dès le départ.")
+        # EN TÊTE du résultat : le rédacteur d'après accord n'en lit que le début, et ne
+        # reçoit pas `note` — la piste voyage donc dans un champ à elle.
+        sortie = {"modification_appliquee": False, "constat": constat, "piste": piste, **sortie}
         sortie["message_final"] = constat
         sortie["note"] = (
-            constat + " Dis-le franchement, sans prétendre que c'est fait. Ce moteur retouche "
-            "bien une matière, une couleur ou un objet ajouté, mal un élément à DÉPLACER ou à "
-            "élargir. Propose de tracer l'emplacement voulu sur l'image avec le crayon "
-            "« Annoter » puis de la renvoyer, ou de repartir de la photo d'origine avec la "
-            "nouvelle disposition décrite dès le départ. Ne relance pas la même retouche.")
+            constat + " Dis-le franchement, sans prétendre que c'est fait (seul un détail "
+            "minuscule pourrait échapper à la mesure : invite à vérifier l'image). " + piste
+            + " Ne relance pas la même retouche.")
         logger.info("Retouche %s sans effet visible (%.2f %% changé)", reference[:12], part * 100)
     return sortie
 

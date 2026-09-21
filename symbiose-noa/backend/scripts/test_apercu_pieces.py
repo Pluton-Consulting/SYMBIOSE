@@ -255,7 +255,8 @@ verifier("un `metadata` abîmé ne casse pas le fil (try/catch, `undefined`)",
 barre = (FRONTEND / "components" / "chat" / "InputBar.tsx").read_text(encoding="utf-8")
 verifier("la barre de saisie montre une vignette de l'image choisie, avant d'envoyer",
          'data-testid="piece-jointe-vignette"' in barre
-         and 'f.mediaType?.startsWith("image/") && f.url?.startsWith("data:")' in barre)
+         and 'f.mediaType?.startsWith("image/") && estLocale(f.url)' in barre
+         and 'url.startsWith("data:") || url.startsWith("blob:")' in barre)
 
 # ══════════════════════════════════════════════════════════════════════════
 # 4. L'EXPERT VISION NE REMONTRE PLUS LES PHOTOS — mais l'historique les garde
