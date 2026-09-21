@@ -500,52 +500,6 @@ async def _reponse_apres_action(state: AgentState, skill: str, resultat: dict) -
         carte = dict(state.get("entity_map") or {})
         masque, carte = anonymizer.anonymize(brut, carte)
         from skills.resultats import metadonnees
-        from skills.resultats import metadonnees
-        from skills.resultats import metadonnees
-        from skills.resultats import metadonnees
-        from skills.resultats import metadonnees
-        from skills.resultats import metadonnees
-        from skills.resultats import metadonnees
-        from skills.resultats import metadonnees
-        from skills.resultats import metadonnees
-        from skills.resultats import metadonnees
-        from skills.resultats import metadonnees
-        from skills.resultats import metadonnees
-        from skills.resultats import metadonnees
-        from skills.resultats import metadonnees
-        from skills.resultats import metadonnees
-        from skills.resultats import metadonnees
-        from skills.resultats import metadonnees
-        from skills.resultats import metadonnees
-        from skills.resultats import metadonnees
-        from skills.resultats import metadonnees
-        from skills.resultats import metadonnees
-        from skills.resultats import metadonnees
-        from skills.resultats import metadonnees
-        from skills.resultats import metadonnees
-        from skills.resultats import metadonnees
-        from skills.resultats import metadonnees
-        from skills.resultats import metadonnees
-        from skills.resultats import metadonnees
-        from skills.resultats import metadonnees
-        from skills.resultats import metadonnees
-        from skills.resultats import metadonnees
-        from skills.resultats import metadonnees
-        from skills.resultats import metadonnees
-        from skills.resultats import metadonnees
-        from skills.resultats import metadonnees
-        from skills.resultats import metadonnees
-        from skills.resultats import metadonnees
-        from skills.resultats import metadonnees
-        from skills.resultats import metadonnees
-        from skills.resultats import metadonnees
-        from skills.resultats import metadonnees
-        from skills.resultats import metadonnees
-        from skills.resultats import metadonnees
-        from skills.resultats import metadonnees
-        from skills.resultats import metadonnees
-        from skills.resultats import metadonnees
-        from skills.resultats import metadonnees
         prose = await _rediger_par_le_modele(
             state.get("anonymized_query") or "",
             [{"skill": skill, "ok": bool(resultat.get("ok", True)), "resultat_masque": masque,
