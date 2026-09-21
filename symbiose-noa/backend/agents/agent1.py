@@ -2146,8 +2146,11 @@ def _sans_identifiants(texte: str) -> str:
 
     def _nettoyer(v):
         if isinstance(v, dict):
+            # Un « article_id », un « client_id » n'est pas pour la personne non plus (21/09 :
+            # « un Tuyau Goutte à goutte (article_id : 9100123) » dans la prose de secours).
             return {k: _nettoyer(x) for k, x in v.items()
-                    if str(k).lower() not in _CLES_TECHNIQUES}
+                    if str(k).lower() not in _CLES_TECHNIQUES and str(k).lower() != "id"
+                    and not str(k).lower().endswith("_id")}
         if isinstance(v, list):
             return [_nettoyer(x) for x in v]
         if isinstance(v, str):
@@ -4730,8 +4733,9 @@ def route_apres_verifier(state: AgentState) -> str:
     except Exception:  # noqa: BLE001
         connus = set()
     aucun_geste = not any(isinstance(r, dict) for r in (state.get("tool_results") or []))
+    tentes = {r.get("skill") for r in (state.get("tool_results") or []) if isinstance(r, dict) and r.get("skill")}
     return suite(v, connus, int(state.get("forcages") or 0), MAX_FORCAGES_PAR_TOUR, False,
-                 aucun_geste=aucun_geste)
+                 aucun_geste=aucun_geste, gestes_tentes=tentes)
 
 
 def route_apres_tools(state: AgentState) -> str:

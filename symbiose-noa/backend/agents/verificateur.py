@@ -142,12 +142,18 @@ def lire_verdict(brut) -> dict | None:
 
 
 def suite(verification: dict | None, gestes_connus, forcages: int, max_forcages: int,
-          redaction_deja_reprise: bool, aucun_geste: bool = False) -> str:
+          redaction_deja_reprise: bool, aucun_geste: bool = False, gestes_tentes=()) -> str:
     """rehydrate | forcer | rediger — ce que le graphe fait du verdict."""
     if not verification or verification.get("statut") != "a_corriger":
         return "rehydrate"
     action = verification.get("action_manquante") or ""
-    if action and action in (gestes_connus or ()) and forcages < max_forcages:
+    # LE GESTE NOMMÉ PAR LE RELECTEUR A SA PROPRE CHANCE (21/09, « trouve-moi le prix d'une
+    # électrovanne chez Garden arrosage »). Deux annonces sans action avaient épuisé le budget du
+    # forceur ; le relecteur a nommé `chercher_web`, on est parti RÉDIGER — et c'est dans cette
+    # passe, où un bloc d'action n'est plus exécuté, que le modèle a écrit la recherche. Le tour
+    # a fini en rendu de secours, sans le prix. Le relecteur ne passe qu'une fois par tour : son
+    # geste, s'il n'a pas encore été tenté, est forcé une fois, budget épuisé ou non.
+    if action and action in (gestes_connus or ()) and (forcages < max_forcages or action not in set(gestes_tentes or ())):
         return "forcer"
     # UN ACTE AFFIRMÉ, AUCUN GESTE DANS LE TOUR : CE QUI MANQUE EST LE GESTE, PAS UNE MEILLEURE
     # PHRASE (17/09, « fais-moi l'intérieur des angles des margelles arrondis »). Le modèle avait

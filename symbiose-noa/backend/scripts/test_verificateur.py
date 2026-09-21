@@ -82,7 +82,10 @@ if V:
              V.suite(v, connus, 0, 2, False) == "forcer")
     verifier("geste manquant inconnu → rédiger",
              V.suite({**v, "action_manquante": "geste_invente"}, connus, 0, 2, False) == "rediger")
-    verifier("budget de forçage épuisé → rédiger", V.suite(v, connus, 2, 2, False) == "rediger")
+    verifier("budget de forçage épuisé, geste nommé DÉJÀ tenté → rédiger",
+             V.suite(v, connus, 2, 2, False, gestes_tentes={v.get("action_manquante")}) == "rediger")
+    verifier("budget épuisé par des annonces, geste nommé JAMAIS tenté → forcé une fois (21/09, électrovanne)",
+             V.suite(v, connus, 2, 2, False, gestes_tentes={"interroger_donnees", "rechercher_documents"}) == "forcer")
     verifier("verdict ok → afficher", V.suite({"statut": "ok"}, connus, 0, 2, False) == "rehydrate")
     # 17/09 : « fais l'intérieur des angles des margelles arrondis ». Le modèle a recopié le texte
     # de la carte d'accord SANS émettre le geste ; le relecteur a vu la faute sans nommer le geste ;
