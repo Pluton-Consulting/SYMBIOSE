@@ -270,12 +270,15 @@ async def drive_photos(data: dict, user) -> dict:
         (data.get("dossier") or data.get("chantier") or "").strip() or None,
         (data.get("motif") or data.get("nom") or "").strip() or None,
         data.get("limite") or 6,
-        perimetres=_perimetres(user), identite=_identite(user))
+        perimetres=_perimetres(user), identite=_identite(user),
+        page=data.get("page") or 1)
     if resultat.get("bloc_ui"):
         resultat["message_final"] = (
             f"Voici {resultat['nombre']} photo(s)"
             + (f" sur {resultat['disponibles']} trouvée(s)"
                if resultat.get("disponibles", 0) > resultat["nombre"] else "")
+            + (f", page {resultat['page']} sur {resultat['pages']}"
+               if (resultat.get("pages") or 1) > 1 else "")
             + ((" ; " + str(resultat["trop_volumineuses"])
                 + " étaient trop volumineuse(s) pour être affichée(s)")
                if resultat.get("trop_volumineuses") else "") + ".")
@@ -283,7 +286,10 @@ async def drive_photos(data: dict, user) -> dict:
             "AFFICHE les photos : insère un bloc ```ui contenant EXACTEMENT le "
             "contenu de `bloc_ui`. Ce sont de VRAIES photos du Drive, pas des "
             "images générées : ne les présente jamais comme un rendu ou une "
-            "simulation. Ne colle aucune adresse d'image en texte.")
+            "simulation. Ne colle aucune adresse d'image en texte. « Les autres », « les "
+            "suivantes » : rappelle avec `page` + 1 (voir `pour_continuer`) — ne remontre "
+            "jamais la même page, et ne dis jamais que les autres n'ont pas pu être chargées "
+            "quand il reste simplement une page.")
     return resultat
 
 
@@ -575,9 +581,10 @@ SKILLS = {
             "demande de VOIR des images (« montre-moi les photos du chantier "
             "X », « les visuels de ce dossier »). `dossier` : le NOM ou le "
             "CHEMIN du dossier. `motif` : un bout de nom de fichier. `limite` : "
-            "1 a 12 (6 par defaut). Ce sont de VRAIES photos, jamais un rendu "
+            "1 a 12 par page (6 par defaut). `page` : 2, 3… pour les photos "
+            "SUIVANTES (« les autres »). Ce sont de VRAIES photos, jamais un rendu "
             "genere : ne les presente pas comme une simulation"),
-        optionnels=["dossier", "motif", "limite"],
+        optionnels=["dossier", "motif", "limite", "page"],
         effet="lecture",
         libelle="je vais chercher les photos"),
     "drive_arborescence": Declaration(

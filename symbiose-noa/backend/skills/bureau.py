@@ -380,8 +380,14 @@ async def terminer_document(data: dict, user) -> dict:
     except ValueError as e:
         _echec(str(e))
     except Exception as e:  # noqa: BLE001 - un rendu raté ne doit pas casser le chat
-        logger.warning("Rendu du document %s impossible : %s", jeton[:8], e)
-        _echec(f"Le document n'a pas pu être produit ({e}).")
+        # UNE EXCEPTION SANS MESSAGE (21/09) : `UnrecognizedImageError` de python-docx rendait
+        # « n'a pas pu être produit () » — ni la personne ni le modèle ne pouvaient deviner
+        # qu'une IMAGE était en cause. Son nom de classe, au moins, se dit ; la trace part au journal.
+        cause = str(e) or type(e).__name__
+        logger.warning("Rendu du document %s impossible : %s", jeton[:8], cause, exc_info=True)
+        _echec(f"Le document n'a pas pu être produit ({cause})."
+               + (" Une image de l'en-tête, du pied ou du corps n'est pas lisible par Word."
+                  if "Image" in type(e).__name__ else ""))
 
     entete = f["entete"]
     return {

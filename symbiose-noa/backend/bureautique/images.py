@@ -80,13 +80,28 @@ def normaliser_octets(octets: bytes, mime: str | None) -> tuple[bytes, str]:
     # maison sur le Drive est un export Photoshop en CMYK : Pillow le lit, python-docx le refuse
     # (`UnrecognizedImageError`, sans message) et le document entier tombait avec « n'a pas pu être
     # produit () ». Seuls un PNG ou un JPEG RGB/gris, droits, passent tels quels.
-    if img.format in ("PNG", "JPEG") and img.mode in ("RGB", "L", "RGBA", "LA", "P") and img.getexif().get(274, 1) == 1:
+    # …ET UN JPEG RGB SANS MARQUEUR JFIF NI EXIF NON PLUS (21/09). Le logo tiré du PDF
+    # « Symbiose_DevisFinal » est un JPEG RGB qui s'ouvre sur un marqueur Adobe (FFD8 FFEE) :
+    # il passait « tel quel », et le Word du dossier Camp est tombé trois fois, même erreur vide.
+    if (img.format in ("PNG", "JPEG") and img.mode in ("RGB", "L", "RGBA", "LA", "P")
+            and img.getexif().get(274, 1) == 1 and lisible_par_word(octets)):
         return octets, "png" if img.format == "PNG" else "jpg"
     img = ImageOps.exif_transpose(img)
     sortie = io.BytesIO()
     (img.convert("RGBA") if img.mode in ("RGBA", "LA", "P") else img.convert("RGB")).save(sortie, format="PNG")
     return sortie.getvalue(), "png"
 
+
+
+def lisible_par_word(octets: bytes) -> bool:
+    """python-docx reconnaît-il ces octets comme une image ?
+
+    Il ne reconnaît un JPEG qu'à son marqueur JFIF (FFD8 FFE0) ou Exif (FFD8 FFE1) ; un JPEG
+    parfaitement valide qui commence par un autre marqueur (Adobe, table de quantification)
+    lève `UnrecognizedImageError` — une exception SANS message. PNG : sa signature.
+    """
+    tete = bytes(octets[:8])
+    return tete == b"\x89PNG\r\n\x1a\n" or tete[:4] in (b"\xff\xd8\xff\xe0", b"\xff\xd8\xff\xe1")
 
 
 def _est_un_pdf(nom: str, mime: str | None) -> bool:

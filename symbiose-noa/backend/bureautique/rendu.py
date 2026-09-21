@@ -26,10 +26,39 @@ logger = logging.getLogger("symbiose.bureautique.rendu")
 
 
 def _image(e_ou_nom) -> str | None:
-    """Le chemin de l'image rangée d'un bloc (ou d'un nom), ou None."""
+    """Le chemin de l'image rangée d'un bloc (ou d'un nom), ou None — lisible par Word."""
     from bureautique.atelier import chemin_image
     nom = e_ou_nom.get("fichier") if isinstance(e_ou_nom, dict) else e_ou_nom
-    return chemin_image(nom) if nom else None
+    chemin = chemin_image(nom) if nom else None
+    return _lisible(chemin) if chemin else None
+
+
+def _lisible(chemin: str) -> str:
+    """L'image telle que Word la lira : elle-même, ou sa copie PNG rangée à côté.
+
+    Le rangement convertit désormais ce que Word ne reconnaît pas (bureautique/images.py),
+    mais une image rangée AVANT restait dans le document et le faisait tomber à chaque
+    essai (21/09, dossier Camp : trois échecs, erreur vide). La copie porte le nom de
+    l'image suivi de `.word.png` : elle commence par `<jeton>.img`, et part donc avec le
+    document quand il est abandonné ou purgé.
+    """
+    import os
+    from bureautique.images import lisible_par_word
+    try:
+        with open(chemin, "rb") as f:
+            if lisible_par_word(f.read(8)):
+                return chemin
+        copie = chemin + ".word.png"
+        if not os.path.exists(copie):
+            from PIL import Image, ImageOps
+            with Image.open(chemin) as img:
+                img = ImageOps.exif_transpose(img)
+                (img.convert("RGBA") if img.mode in ("RGBA", "LA", "P") else img.convert("RGB")).save(copie, "PNG")
+            logger.info("Image %s convertie en PNG pour le rendu", os.path.basename(chemin))
+        return copie
+    except Exception as e:  # noqa: BLE001 — le rendu dira lui-même ce qui ne passe pas
+        logger.warning("Image %s non convertie : %s", chemin, e)
+        return chemin
 
 
 def _dimensions(chemin: str) -> tuple[int, int]:

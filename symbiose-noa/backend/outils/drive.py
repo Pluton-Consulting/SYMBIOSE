@@ -2306,9 +2306,17 @@ _MIMES_IMAGE = ("image/jpeg", "image/png", "image/webp", "image/heic",
                 "image/heif", "image/gif")
 
 
+# LES PHOTOS SE PAGINENT (21/09). « Montre les 10 autres photos du dossier » (LAQUET, 22 photos) :
+# le geste rendait TOUJOURS les 12 plus récentes, sans page suivante — la même planche est
+# revenue, et l'assistant a conclu que « les autres n'ont pas pu être chargées ». Le dossier est
+# désormais listé en entier (jusqu'à MAX_PHOTOS_LISTEES), et `page` donne la suite.
+MAX_PHOTOS_LISTEES = 2000
+
+
 async def photos(dossier: Optional[str] = None, motif: Optional[str] = None,
-                 limite: int = 6, perimetres: Optional[list] = None, identite=None) -> dict:
-    """Les photos d'un dossier du Drive, rangées au dépôt et prêtes à l'écran."""
+                 limite: int = 6, perimetres: Optional[list] = None, identite=None,
+                 page: int = 1) -> dict:
+    """Les photos d'un dossier du Drive, rangées au dépôt et prêtes à l'écran, page par page."""
     perimetres = perimetres or []
     if not perimetres:
         raise DriveRefuse(
@@ -2337,18 +2345,25 @@ async def photos(dossier: Optional[str] = None, motif: Optional[str] = None,
 
     trouves: list[dict] = []
     for q in requetes:
-        def _appel(requete=q):
-            return service.files().list(
-                q=requete, spaces="drive",
-                fields="files(id,name,mimeType,size,modifiedTime)",
-                corpora="allDrives", includeItemsFromAllDrives=True,
-                supportsAllDrives=True,
-                orderBy="modifiedTime desc", pageSize=limite * 2,
-            ).execute()
-        try:
-            trouves.extend((await asyncio.to_thread(_appel)).get("files", []))
-        except Exception as e:  # noqa: BLE001
-            logger.warning("Drive : recherche de photos échouée : %s", e)
+        jeton_page = None
+        while len(trouves) < MAX_PHOTOS_LISTEES:
+            def _appel(requete=q, suite=jeton_page):
+                return service.files().list(
+                    q=requete, spaces="drive",
+                    fields="nextPageToken, files(id,name,mimeType,size,modifiedTime)",
+                    corpora="allDrives", includeItemsFromAllDrives=True,
+                    supportsAllDrives=True,
+                    orderBy="modifiedTime desc", pageSize=200, pageToken=suite,
+                ).execute()
+            try:
+                reponse = await asyncio.to_thread(_appel)
+            except Exception as e:  # noqa: BLE001
+                logger.warning("Drive : recherche de photos échouée : %s", e)
+                break
+            trouves.extend(reponse.get("files", []))
+            jeton_page = reponse.get("nextPageToken")
+            if not jeton_page:
+                break
 
     if not trouves:
         ou = f"« {dossier} »" if dossier else "les dossiers ouverts"
@@ -2367,16 +2382,23 @@ async def photos(dossier: Optional[str] = None, motif: Optional[str] = None,
         if f["id"] not in vus:
             vus.add(f["id"])
             uniques.append(f)
+    # Plusieurs dossiers parents : leurs listes, chacune de la plus récente à la plus
+    # ancienne, se fondent dans le même ordre — la page 2 suit vraiment la page 1.
+    uniques.sort(key=lambda f: f.get("modifiedTime") or "", reverse=True)
+    # Une photo trop lourde se sait AVANT le téléchargement : elle sort de la liste avant
+    # la pagination, et la page reste pleine (la suivante prend sa place, comme avant).
+    affichables = [f for f in uniques if int(f.get("size") or 0) <= MAX_OCTETS_PHOTO]
+    trop_gros = len(uniques) - len(affichables)
+
+    pages = max(1, -(-len(affichables) // limite))
+    page = max(1, min(int(page or 1), pages))
+    debut = (page - 1) * limite
+    tranche = affichables[debut:debut + limite]
 
     from visuels.depot import deposer_octets
-    images, trop_gros = [], 0
-    for f in uniques:
-        if len(images) >= limite:
-            break
+    images = []
+    for f in tranche:
         try:
-            if int(f.get("size") or 0) > MAX_OCTETS_PHOTO:
-                trop_gros += 1
-                continue
             octets = await asyncio.to_thread(
                 lambda fid=f["id"]: service.files().get_media(fileId=fid).execute())
             cle = deposer_octets(octets, f.get("mimeType") or "image/jpeg")
@@ -2391,10 +2413,17 @@ async def photos(dossier: Optional[str] = None, motif: Optional[str] = None,
                 "message": ("Des images existent mais aucune n'a pu être "
                             "récupérée (format, taille ou droits).")}
 
+    suite = debut + limite < len(affichables)
     return {
         "photos": images,
         "nombre": len(images),
         "disponibles": len(uniques),
+        "rangs": f"{debut + 1} à {debut + len(tranche)} sur {len(affichables)}",
+        "page": page,
+        "pages": pages,
+        "pour_continuer": (f"rappelle avec le même dossier et page={page + 1} pour les photos "
+                           f"suivantes ({len(affichables) - debut - limite} restante(s))") if suite else None,
+        "limite_atteinte": len(trouves) >= MAX_PHOTOS_LISTEES or None,
         "trop_volumineuses": trop_gros or None,
         "bloc_ui": {"type": "visuel",
                     "titre": (dossier or motif or "Photos du Drive")[:80],
