@@ -106,7 +106,8 @@ async def produire(titre: str, blocs: list, proprietaire: str,
         # et se rangent sous le jeton avant le versement (09/09).
         from bureautique.atelier import mettre_a_jour_entete
         from bureautique.images import preparer
-        blocs, en_tete, refus_images = await preparer(jeton, proprietaire, blocs, en_tete, user)
+        remarques_images: list = []
+        blocs, en_tete, refus_images = await preparer(jeton, proprietaire, blocs, en_tete, user, remarques_images)
         if (en_tete.get("entete_image_fichier") or en_tete.get("pied_image_fichier")
                 or en_tete.get("image_couverture_fichier")):
             mettre_a_jour_entete(jeton, proprietaire, en_tete)
@@ -176,12 +177,12 @@ async def produire(titre: str, blocs: list, proprietaire: str,
                     + " : tu peux l'affirmer." if images_posees else "")
                  + (" AUCUNE image d'en-tête ni de pied n'a été posée : ne dis pas le contraire."
                     if (voulue.get("entete_image") or voulue.get("pied_image")) and not images_posees else "")
-                 + _note_refus(refus_images)),
+                 + _note_refus(refus_images, remarques_images)),
         "images_posees": images_posees,
         "images_refusees": refus_images,
     }
 
 
-def _note_refus(refus: list) -> str:
+def _note_refus(refus: list, remarques: list | None = None) -> str:
     from bureautique.images import note_refus
-    return note_refus(refus)
+    return note_refus(refus, remarques)

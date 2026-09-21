@@ -677,6 +677,9 @@ def terminer(jeton: str, proprietaire: str) -> dict:
         temporaire = f"{sortie}.{os.getpid()}.tmp"
         try:
             rendre(entete, elements(jeton), temporaire)
+            # Les images que le rendu a dû remplacer par un repère : elles sont DITES.
+            from bureautique.rendu import images_ecartees
+            ecartees = images_ecartees()
             os.replace(temporaire, sortie)
         finally:
             if os.path.exists(temporaire):
@@ -687,6 +690,7 @@ def terminer(jeton: str, proprietaire: str) -> dict:
         with open(sortie, "rb") as fichier_rendu:
             empreinte = hashlib.sha256(fichier_rendu.read()).hexdigest()[:32]
         f.update({"fini": True, "fichier": os.path.basename(sortie),
+                  "images_ecartees": ecartees or None,
                   "octets": os.path.getsize(sortie), "termine": time.time(),
                   "extrait": _extrait(jeton),
                   "pages_estimees": _pages_estimees(jeton, extension),

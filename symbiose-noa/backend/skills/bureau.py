@@ -187,10 +187,11 @@ async def creer_document(data: dict, user) -> dict:
     # Les images d'en-tête et de pied (un logo) se résolvent et se rangent
     # MAINTENANT, sous le jeton : le rendu ne lit que des fichiers rangés.
     refus: list = []
+    remarques: list = []
     if entete.get("entete_image") or entete.get("pied_image") or entete.get("image_couverture"):
         from bureautique.atelier import mettre_a_jour_entete
         from bureautique.images import preparer
-        _, entete, refus = await preparer(jeton, proprio, [], entete, user)
+        _, entete, refus = await preparer(jeton, proprio, [], entete, user, remarques)
         mettre_a_jour_entete(jeton, proprio, entete)
     images_posees = [n for n, c in (("en-tête", "entete_image_fichier"), ("pied de page", "pied_image_fichier"),
                                     ("couverture", "image_couverture_fichier"))
@@ -215,13 +216,13 @@ async def creer_document(data: dict, user) -> dict:
                     if modele_nom else "")
                  + (f" Image posée en {' et en '.join(images_posees)} de chaque page."
                     if images_posees else "")
-                 + _note_refus(refus)),
+                 + _note_refus(refus, remarques)),
     }
 
 
-def _note_refus(refus: list) -> str:
+def _note_refus(refus: list, remarques: list | None = None) -> str:
     from bureautique.images import note_refus
-    return note_refus(refus)
+    return note_refus(refus, remarques)
 
 
 async def abandonner_document(data: dict, user) -> dict:
@@ -282,6 +283,7 @@ async def ajouter_document(data: dict, user) -> dict:
     # nom d'un fichier du stockage…) : résolue et rangée sous le jeton AVANT
     # le versement, avec sa raison quand elle ne se résout pas.
     from bureautique.images import preparer
+    remarques: list = []
     elements, _, refus = await preparer(jeton, _proprietaire(user), elements[:MAX_PAR_APPEL], {}, user)
 
     # LA PRÉSENTATION SE RÈGLE EN COURS DE ROUTE (15/09). Le logo se trouve
@@ -303,7 +305,7 @@ async def ajouter_document(data: dict, user) -> dict:
                 if changes.get(k):
                     nouvelle.pop(k + "_fichier", None)
             nouvelle = normaliser_entete({**nouvelle, **changes})
-            _, nouvelle, refus_entete = await preparer(jeton, _proprietaire(user), [], nouvelle, user)
+            _, nouvelle, refus_entete = await preparer(jeton, _proprietaire(user), [], nouvelle, user, remarques)
             refus += refus_entete
             mettre_a_jour_entete(jeton, _proprietaire(user), nouvelle)
             presentation = [k for k in changes
@@ -318,7 +320,7 @@ async def ajouter_document(data: dict, user) -> dict:
                 "images_refusees": refus, "presentation_modifiee": presentation or None,
                 "plan_du_document": plan(jeton),
                 "note": ((f"Présentation mise à jour : {', '.join(presentation)}." if presentation
-                          else "Présentation inchangée.") + _note_refus(refus)
+                          else "Présentation inchangée.") + _note_refus(refus, remarques)
                          + " Continue d'ajouter, ou appelle `terminer_document`.")}
     try:
         retenus = ajouter(jeton, elements, _proprietaire(user))
@@ -362,7 +364,7 @@ async def ajouter_document(data: dict, user) -> dict:
                  + (f" Présentation mise à jour : {', '.join(presentation)}." if presentation else "")
                  + (f" {ignores} écarté(s) : type de bloc inconnu ou contenu vide."
                     if ignores > 0 else "")
-                 + _note_refus(refus)
+                 + _note_refus(refus, remarques)
                  + " Continue d'ajouter, ou appelle `terminer_document`."),
     }
 
@@ -424,5 +426,10 @@ async def terminer_document(data: dict, user) -> dict:
                  "phrases sur le CONTENU du document. Ne cite JAMAIS le "
                  "document_id, le nombre d'éléments, d'octets ou de pages : "
                  "la carte porte déjà tout cela. Le lien vaut 24 h et n'est "
-                 "utilisable que par la personne."),
+                 "utilisable que par la personne."
+                 + (f" ATTENTION : {len(f['images_ecartees'])} image(s) n'ont pas pu entrer dans "
+                    "le fichier et sont remplacées par « [image indisponible] » — dis-le, et "
+                    "propose de fournir l'image sous un autre format."
+                    if f.get("images_ecartees") else "")),
+        "images_ecartees": f.get("images_ecartees"),
     }

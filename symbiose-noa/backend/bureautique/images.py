@@ -56,13 +56,16 @@ def reference_de(brut: dict) -> str:
     return ""
 
 
-def normaliser_octets(octets: bytes, mime: str | None) -> tuple[bytes, str]:
-    """(octets, extension) — PNG et JPEG tels quels, le reste converti en PNG.
+def normaliser_octets(octets: bytes, mime: str | None, nom: str = "") -> tuple[bytes, str]:
+    """(octets, extension) — PNG et JPEG lisibles par Word tels quels, TOUT le reste en PNG.
 
     Word, PDF et Excel lisent PNG et JPEG ; un WebP (les photos du chat sont
-    souvent déposées ainsi), un GIF ou un BMP ne passeraient pas. Sans Pillow,
-    la conversion est impossible et le refus le dit — on ne range jamais des
-    octets que le rendu ne saura pas ouvrir.
+    souvent déposées ainsi), un GIF ou un BMP ne passeraient pas. Au-delà de ce que
+    Pillow ouvre, un SVG, un PDF, un XPS, un JPEG 2000 passent par PyMuPDF, et un
+    EMF, un WMF, un EPS par LibreOffice (`_ouvrir_autrement`, 21/09) : un format
+    qu'on n'avait pas prévu ne bloque plus un document. Ce que rien n'ouvre est
+    refusé, et le refus le dit — on ne range jamais des octets que le rendu ne
+    saura pas ouvrir.
     """
     mime = str(mime or "").split(";")[0].strip().lower()
     try:
@@ -74,8 +77,16 @@ def normaliser_octets(octets: bytes, mime: str | None) -> tuple[bytes, str]:
         if img.width * img.height > 40_000_000:
             raise ImageRefusee("image trop grande à décoder : réduisez sa résolution")
         img.load()
-    except Exception as e:  # noqa: BLE001 — un fichier qui n'est pas une image
-        raise ImageRefusee("le fichier n'est pas une image lisible") from e
+    except ImageRefusee:
+        raise
+    except Exception as e:  # noqa: BLE001 — Pillow ne sait pas : les autres moteurs essaient
+        img = _ouvrir_autrement(octets, mime, nom)
+        if img is None:
+            raise ImageRefusee("le fichier n'est pas une image lisible (ni Pillow, ni PyMuPDF, "
+                               "ni LibreOffice ne l'ouvrent)") from e
+        sortie = io.BytesIO()
+        img.save(sortie, format="PNG")
+        return sortie.getvalue(), "png"
     # UN JPEG CMYK N'EST PAS UN JPEG POUR WORD (18/09, recette pilotée, question W2). Le logo de la
     # maison sur le Drive est un export Photoshop en CMYK : Pillow le lit, python-docx le refuse
     # (`UnrecognizedImageError`, sans message) et le document entier tombait avec « n'a pas pu être
@@ -91,6 +102,60 @@ def normaliser_octets(octets: bytes, mime: str | None) -> tuple[bytes, str]:
     (img.convert("RGBA") if img.mode in ("RGBA", "LA", "P") else img.convert("RGB")).save(sortie, format="PNG")
     return sortie.getvalue(), "png"
 
+
+
+_TYPES_PYMUPDF = ("svg", "pdf", "xps", "oxps", "jpx", "jxr", "psd", "tiff", "pnm", "epub")
+_EXTENSIONS_BUREAUTIQUE = {"image/emf": "emf", "image/x-emf": "emf", "image/wmf": "wmf",
+                           "image/x-wmf": "wmf", "application/postscript": "eps", "image/x-eps": "eps"}
+
+
+def _ouvrir_autrement(octets: bytes, mime: str, nom: str):
+    """Une image PIL (RGBA) par PyMuPDF, puis par LibreOffice ; None si rien ne l'ouvre."""
+    from PIL import Image
+    ext = (nom.rsplit(".", 1)[-1].lower() if "." in nom else "") or mime.rsplit("/", 1)[-1].lower()
+    ext = {"svg+xml": "svg", "jpeg2000": "jpx", "jp2": "jpx", "tif": "tiff"}.get(ext, ext)
+    try:
+        import fitz
+        essais = [ext] + [t for t in _TYPES_PYMUPDF if t != ext]
+        for type_ in essais:
+            if type_ not in _TYPES_PYMUPDF:
+                continue
+            try:
+                doc = fitz.open(stream=octets, filetype=type_)
+            except Exception:  # noqa: BLE001
+                continue
+            try:
+                if doc.page_count < 1:
+                    continue
+                page = doc[0]
+                cote = max(float(page.rect.width), float(page.rect.height)) or 1.0
+                pix = page.get_pixmap(matrix=fitz.Matrix(1600 / cote, 1600 / cote), alpha=True)
+                return Image.open(io.BytesIO(pix.tobytes("png"))).convert("RGBA")
+            except Exception:  # noqa: BLE001
+                continue
+            finally:
+                doc.close()
+    except ImportError:
+        pass
+    extension = _EXTENSIONS_BUREAUTIQUE.get(mime) or (ext if ext in ("emf", "wmf", "eps", "ai", "odg", "cdr") else "")
+    if not extension:
+        return None
+    import os
+    import subprocess
+    import tempfile
+    with tempfile.TemporaryDirectory() as dossier:
+        source = os.path.join(dossier, f"image.{extension}")
+        with open(source, "wb") as f:
+            f.write(octets)
+        try:
+            subprocess.run(["soffice", "--headless", "--convert-to", "png", "--outdir", dossier, source],
+                           capture_output=True, timeout=90, check=False)
+            cible = os.path.join(dossier, "image.png")
+            if os.path.exists(cible):
+                return Image.open(cible).convert("RGBA")
+        except Exception as e:  # noqa: BLE001
+            logger.info("LibreOffice n'a pas converti « %s » : %s", nom, e)
+    return None
 
 
 def lisible_par_word(octets: bytes) -> bool:
@@ -380,8 +445,17 @@ def image_du_docx(octets: bytes, nom: str, place: str = "", numero: int | None =
     except Exception as e:
         raise ImageRefusee(f"« {nom} » n'est pas un Word lisible pour extraire une image") from e
 
-async def resoudre(designation: str, user, place: str = "") -> tuple[bytes, str, str]:
+# Les places où l'image est CHOISIE et VÉRIFIÉE par le modèle de vision (image_placee.py).
+PLACES_JUGEES = ("entete", "pied", "couverture")
+
+
+async def resoudre(designation: str, user, place: str = "", contexte: str = "",
+                   remarques: list | None = None) -> tuple[bytes, str, str]:
     """(octets, extension, nom) d'une image désignée par le modèle.
+
+    Pour un en-tête, un pied de page ou une couverture, le modèle de vision choisit
+    parmi tout ce que la source contient et juge le résultat (`image_placee.choisir`) ;
+    d'où vient l'image, et la réserve du contrôle s'il y en a une, vont dans `remarques`.
 
     La résolution est CELLE DES PIÈCES JOINTES (`mail/attaches.resoudre`) :
     clé du dépôt, jeton d'atelier, `ref` de pièce, nom sur le stockage — avec
@@ -418,6 +492,19 @@ async def resoudre(designation: str, user, place: str = "") -> tuple[bytes, str,
         raise ImageRefusee(raison)
     piece = pretes[0]
     nom, mime, octets = str(piece.get("nom") or ""), str(piece.get("mime") or ""), piece.get("octets") or b""
+    if place in PLACES_JUGEES and numero_image is None:
+        if len(octets) > 60 * 1024 * 1024:
+            raise ImageRefusee(f"« {nom} » est trop lourd pour en tirer une image")
+        from bureautique.image_placee import choisir
+        choisie = await choisir(octets, mime, nom, place, contexte)
+        if remarques is not None:
+            remarques.append(f"{ {'pied': 'pied de page', 'couverture': 'couverture'}.get(place, 'en-tête') } : "
+                             f"{choisie['origine']} de « {nom} »"
+                             + (" (choisie et vérifiée par le contrôle visuel)" if choisie["choix_par"] == "modele"
+                                else " (contrôle visuel indisponible : choix par défaut)")
+                             + (f" — {choisie['avertissement']}" if choisie["avertissement"] else ""))
+        octets, ext = await asyncio.to_thread(normaliser_octets, choisie["octets"], "image/png")
+        return octets, ext, f"{nom} ({choisie['origine']})"
     if not est_image(nom, mime):
         # UN DEVIS DE RÉFÉRENCE EST SOUVENT UN PDF, et c'est SON logo qu'on
         # nous demande de reprendre. On l'en extrait plutôt que de renvoyer le
@@ -426,13 +513,13 @@ async def resoudre(designation: str, user, place: str = "") -> tuple[bytes, str,
             octets, mime, nom = await asyncio.to_thread(image_du_docx, octets, nom, place, numero_image)
         elif _est_un_pdf(nom, mime):
             octets, mime, nom = await asyncio.to_thread(logo_du_pdf, octets, nom, place)
-        else:
+        elif not nom.lower().endswith((".svg", ".emf", ".wmf", ".eps", ".ai", ".odg", ".xps", ".jp2", ".jpx")):
             raise ImageRefusee(f"« {nom} » n'est pas une image ({mime or 'type inconnu'}) : "
-                               "seule une image (PNG, JPEG, WebP, GIF, BMP, TIFF) peut être insérée")
+                               "seule une image (PNG, JPEG, WebP, GIF, BMP, TIFF, SVG, EMF…) peut être insérée")
     if len(octets) > MAX_OCTETS_IMAGE:
         raise ImageRefusee(f"« {nom} » pèse {len(octets) // (1024 * 1024)} Mo : "
                            f"au-delà de {MAX_OCTETS_IMAGE // (1024 * 1024)} Mo, réduis-la d'abord")
-    octets, ext = await asyncio.to_thread(normaliser_octets, octets, mime)
+    octets, ext = await asyncio.to_thread(normaliser_octets, octets, mime, nom)
     return octets, ext, nom
 
 
@@ -447,7 +534,8 @@ def _est_un_bloc_image(e) -> bool:
     return genre == "image"
 
 
-async def preparer(jeton: str, proprietaire: str, elements: list, entete: dict, user) -> tuple[list, dict, list]:
+async def preparer(jeton: str, proprietaire: str, elements: list, entete: dict, user,
+                   remarques: list | None = None) -> tuple[list, dict, list]:
     """Résout et RANGE les images d'un versement : (éléments prêts, en-tête prêt, refus).
 
     Un bloc image dont la référence se résout reçoit son `fichier` (rangé
@@ -462,8 +550,11 @@ async def preparer(jeton: str, proprietaire: str, elements: list, entete: dict, 
     if fiche(jeton, proprietaire) is None:
         return list(elements or []), dict(entete or {}), refus
 
+    titre = str((entete or {}).get("titre") or (fiche(jeton, proprietaire) or {}).get("entete", {}).get("titre") or "")
+    contexte = f"document « {titre} »" if titre else ""
+
     async def _ranger(ref: str, place: str = "") -> str:
-        octets, ext, _ = await resoudre(ref, user, place)
+        octets, ext, _ = await resoudre(ref, user, place, contexte, remarques)
         return ranger_image(jeton, proprietaire, octets, ext)
 
     prets: list = []
@@ -500,16 +591,21 @@ async def preparer(jeton: str, proprietaire: str, elements: list, entete: dict, 
         if not ref or RE_IMAGE_RANGEE.match(str(entete.get(cle + "_fichier") or "")):
             continue
         try:
-            entete[cle + "_fichier"] = await _ranger(ref, "pied" if cle == "pied_image" else "")
+            entete[cle + "_fichier"] = await _ranger(
+                ref, {"entete_image": "entete", "pied_image": "pied", "image_couverture": "couverture"}[cle])
         except Exception as err:  # noqa: BLE001
             refus.append(f"{ {'entete_image': 'en-tête', 'pied_image': 'pied de page'}.get(cle, 'couverture') } « {ref[:60]} » : {str(err)[:200]}")
             entete[cle] = ""
     return prets, entete, refus
 
 
-def note_refus(refus: list) -> str:
-    """La phrase à rendre au modèle quand des images n'ont pas pu être insérées."""
-    if not refus:
-        return ""
-    return (f" {len(refus)} image(s) NON insérée(s) — " + " ; ".join(refus)
-            + ". Dis-le à la personne, ne prétends pas que l'image y est.")
+def note_refus(refus: list, remarques: list | None = None) -> str:
+    """La phrase à rendre au modèle : les images NON insérées, puis d'où viennent les autres."""
+    texte = ""
+    if refus:
+        texte += (f" {len(refus)} image(s) NON insérée(s) — " + " ; ".join(refus)
+                  + ". Dis-le à la personne, ne prétends pas que l'image y est.")
+    if remarques:
+        texte += (" Images placées — " + " ; ".join(remarques)
+                  + ". Dis d'où vient chacune, et la réserve du contrôle visuel s'il y en a une.")
+    return texte

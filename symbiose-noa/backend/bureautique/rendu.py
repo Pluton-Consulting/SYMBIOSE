@@ -71,12 +71,44 @@ def _dimensions(chemin: str) -> tuple[int, int]:
         return 100, 100
 
 
+# UNE IMAGE NE FAIT PLUS TOMBER UN DOCUMENT (21/09). Une image que Word refuse encore, malgré
+# la conversion (fichier abîmé, format jamais vu), levait une exception qui emportait le
+# document entier — trois fois de suite pour le dossier Camp. Elle est désormais remplacée
+# par un repère visible, et NOMMÉE : `terminer` la rend au modèle, qui le dit.
+_ECARTEES = __import__("threading").local()
+
+
+def images_ecartees() -> list[str]:
+    """Les images que le DERNIER rendu de ce fil d'exécution a dû écarter."""
+    return list(getattr(_ECARTEES, "liste", []))
+
+
+def _poser(cible, chemin, **taille) -> bool:
+    """`add_picture` sur un paragraphe (run) ou le document ; en échec, un repère à sa place."""
+    try:
+        cible.add_picture(chemin, **taille)
+        return True
+    except Exception as e:  # noqa: BLE001 — une image ne vaut pas un document entier
+        import os
+        nom = os.path.basename(str(chemin))
+        logger.warning("Image %s non insérée dans le Word : %s", nom, str(e) or type(e).__name__)
+        if not hasattr(_ECARTEES, "liste"):
+            _ECARTEES.liste = []
+        _ECARTEES.liste.append(nom)
+        if hasattr(cible, "add_paragraph"):
+            cible.add_paragraph("[image indisponible]")
+        else:
+            cible.text = "[image indisponible]"
+        return False
+
+
 def _absente(e: dict) -> str:
     """Le texte qui tient la place d'une image introuvable : un trou se voit."""
     return "[image indisponible" + (f" : {e['legende']}" if e.get("legende") else "") + "]"
 
 
 def rendre(entete: dict, elements, sortie: str) -> str:
+    _ECARTEES.liste = []
     fmt = entete.get("format", "docx")
     if fmt == "xlsx":
         return _xlsx(entete, elements, sortie)
@@ -320,7 +352,7 @@ def _page_de_garde(doc, entete: dict, charte: str, style: str = "classique") -> 
         if logo:
             haut = doc.add_paragraph()
             haut.alignment = WD_ALIGN_PARAGRAPH.LEFT if style == "moderne" else WD_ALIGN_PARAGRAPH.CENTER
-            haut.add_run().add_picture(logo, height=Cm(2.2))
+            _poser(haut.add_run(), logo, height=Cm(2.2))
             haut.paragraph_format.space_after = Pt(18)
         if style == "moderne":
             _bandeau(doc, entete, charte)
@@ -328,12 +360,12 @@ def _page_de_garde(doc, entete: dict, charte: str, style: str = "classique") -> 
                 img = doc.add_paragraph()
                 img.paragraph_format.space_before = Pt(18)
                 img.alignment = WD_ALIGN_PARAGRAPH.CENTER
-                img.add_run().add_picture(couverture, width=Cm(16.4))
+                _poser(img.add_run(), couverture, width=Cm(16.4))
         else:
             if couverture:
                 img = doc.add_paragraph()
                 img.alignment = WD_ALIGN_PARAGRAPH.CENTER
-                img.add_run().add_picture(couverture, width=Cm(16.4))
+                _poser(img.add_run(), couverture, width=Cm(16.4))
             else:
                 _bandeau(doc, {"titre": " ", "sous_titre": ""}, charte)
             titre = doc.add_paragraph(style="Title")
@@ -352,12 +384,12 @@ def _page_de_garde(doc, entete: dict, charte: str, style: str = "classique") -> 
     haut.paragraph_format.space_before = Pt(90 if not logo else 40)
     if logo:
         haut.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        haut.add_run().add_picture(logo, height=Cm(3))
+        _poser(haut.add_run(), logo, height=Cm(3))
         doc.add_paragraph().paragraph_format.space_after = Pt(60 if not couverture else 20)
     if couverture:
         img = doc.add_paragraph()
         img.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        img.add_run().add_picture(couverture, width=Cm(14))
+        _poser(img.add_run(), couverture, width=Cm(14))
         img.paragraph_format.space_after = Pt(24)
     titre = doc.add_paragraph(style="Title")
     # Un filet de la couleur de la maison sous le titre. L'ORDRE DES ÉLÉMENTS
@@ -465,7 +497,7 @@ def _docx(entete: dict, elements, sortie: str) -> str:
     if entete.get("entete") or logo_haut:
         p = section.header.paragraphs[0]
         if logo_haut:
-            p.add_run().add_picture(logo_haut, height=Cm(1.2))
+            _poser(p.add_run(), logo_haut, height=Cm(1.2))
         if entete.get("entete"):
             r = p.add_run(("   " if logo_haut else "") + entete["entete"])
             r.font.size, r.font.color.rgb = Pt(8.5), gris
@@ -477,7 +509,7 @@ def _docx(entete: dict, elements, sortie: str) -> str:
         p = section.footer.paragraphs[0]
         p.alignment = WD_ALIGN_PARAGRAPH.CENTER
         if logo_bas:
-            p.add_run().add_picture(logo_bas, height=Cm(1.0))
+            _poser(p.add_run(), logo_bas, height=Cm(1.0))
             if entete.get("pied") or entete.get("numeroter"):
                 p.add_run("   ")
         if entete.get("pied"):
@@ -504,7 +536,7 @@ def _docx(entete: dict, elements, sortie: str) -> str:
         if _image(entete.get("image_couverture_fichier")):
             img = doc.add_paragraph()
             img.alignment = WD_ALIGN_PARAGRAPH.CENTER
-            img.add_run().add_picture(_image(entete.get("image_couverture_fichier")), width=Cm(16))
+            _poser(img.add_run(), _image(entete.get("image_couverture_fichier")), width=Cm(16))
 
     for e in elements:
         bloc = e["bloc"]
@@ -534,7 +566,7 @@ def _docx(entete: dict, elements, sortie: str) -> str:
         elif bloc == "image":
             chemin = _image(e)
             if chemin:
-                doc.add_picture(chemin, width=Cm(float(e.get("largeur_cm") or 12)))
+                _poser(doc, chemin, width=Cm(float(e.get("largeur_cm") or 12)))
                 if e.get("centre", True):
                     doc.paragraphs[-1].alignment = WD_ALIGN_PARAGRAPH.CENTER
                 if e.get("legende"):
@@ -668,7 +700,7 @@ def _colonnes_docx(doc, e: dict, charte: str) -> None:
     table = _table_sans_bord(doc, 2, largeurs)
     c_img, c_txt = (table.rows[0].cells[0], table.rows[0].cells[1]) if gauche else \
                    (table.rows[0].cells[1], table.rows[0].cells[0])
-    c_img.paragraphs[0].add_run().add_picture(chemin, width=Cm(6.8))
+    _poser(c_img.paragraphs[0].add_run(), chemin, width=Cm(6.8))
     p = c_txt.paragraphs[0]
     if e.get("titre"):
         r = p.add_run(e["titre"])
