@@ -186,6 +186,27 @@ def _normaliser_pieces(attachments, nom=None, mime=None, b64=None) -> tuple:
     return pieces[:MAX_PIECES_JOINTES], max(0, len(pieces) - MAX_PIECES_JOINTES)
 
 
+def _convertir_heic(pieces: list) -> None:
+    """Remplace, DANS la liste, chaque photo HEIC par sa version JPEG (nom, type, contenu)."""
+    from visuels.heic import convertir, est_heic, nom_converti
+    for piece in pieces:
+        try:
+            brut = base64.b64decode(piece.get("b64") or "", validate=True)
+        except Exception:  # noqa: BLE001 — une pièce mal encodée est refusée plus loin, avec sa raison
+            continue
+        if not est_heic(brut, piece.get("mime"), piece.get("nom")):
+            continue
+        try:
+            jpeg, mime, extension = convertir(brut, "jpg")
+        except ValueError as e:
+            logger.warning("Photo HEIC « %s » non convertie : %s", piece.get("nom"), e)
+            continue
+        origine = piece.get("nom") or "photo.heic"
+        piece.update({"b64": base64.b64encode(jpeg).decode(), "mime": mime,
+                      "nom": nom_converti(origine, extension), "converti_de": origine})
+        logger.info("Photo HEIC « %s » convertie en JPEG (%d Ko)", origine, len(jpeg) // 1024)
+
+
 async def _pieces_jointes(pieces: list, surplus: int = 0, utilisateur=None, fil=None) -> tuple:
     """Lit TOUS les fichiers d'un message. Rend `(texte, tableau, visuels)`.
 
@@ -200,6 +221,10 @@ async def _pieces_jointes(pieces: list, surplus: int = 0, utilisateur=None, fil=
     """
     if not pieces:
         return None, None, []
+    # LES PHOTOS D'IPHONE D'ABORD (21/09) : un HEIC ne passe ni à la vision, ni à
+    # l'écran, ni dans un document. Converti ici, avant tout le reste, et hors de
+    # la boucle du serveur — les trois entrées (chat, WebSocket, file) passent ici.
+    await asyncio.to_thread(_convertir_heic, pieces)
 
     integrales = {}
     if utilisateur is not None and fil:

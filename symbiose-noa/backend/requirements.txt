@@ -24,6 +24,8 @@ faster-whisper>=1.1.0
 av>=12.0.0
 openai>=1.50.0            # embeddings RAG (optionnel — clé OPENAI_API_KEY)
 pillow>=10.0.0            # suppression EXIF/GPS photos (Agent 2)
+# Les photos d'iPhone (HEIC/HEIF) : Pillow seul ne les ouvre pas (21/09). Enregistré au démarrage.
+pillow-heif>=0.18.0
 pymupdf>=1.24.0          # rendu PDF→image pour la vision (Agent 2, import optionnel)
 spacy==3.7.6
 # fr_core_news_md installé via : python -m spacy download fr_core_news_md

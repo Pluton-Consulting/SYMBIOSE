@@ -59,6 +59,12 @@ async def lifespan(app: FastAPI):
         await start_validation_cleanup()
     except Exception as e:
         logging.getLogger("symbiose").error("start_validation_cleanup a échoué : %s", e)
+    # Les photos d'iPhone (HEIC) : Pillow sait les ouvrir dans tout le processus (21/09).
+    try:
+        from visuels.heic import activer as activer_heic
+        activer_heic()
+    except Exception as e:
+        logging.getLogger("infra").error("Décodage HEIC non activé : %s", type(e).__name__)
     # Les caches sont prêts AVANT les workers ; l'échec d'un connecteur
     # ne doit pas empêcher les autres réglages de se charger.
     try:

@@ -340,8 +340,21 @@ CONSIGNE_OCR = (
     "première lecture optique, à corriger d'après l'image : {ebauche}")
 
 
+def _sans_heic(nom: str, mime: Optional[str], brut: bytes) -> tuple:
+    """Une photo d'iPhone (HEIC) reçue par mail passe en JPEG avant d'être lue ou montrée (21/09)."""
+    try:
+        from visuels.heic import convertir, est_heic, nom_converti
+        if brut and est_heic(brut, mime, nom):
+            jpeg, mime_jpeg, extension_jpeg = convertir(brut, "jpg")
+            return nom_converti(nom, extension_jpeg), mime_jpeg, jpeg
+    except Exception as e:  # noqa: BLE001 — non convertie, elle suit le chemin d'avant
+        logger.info("Pièce HEIC « %s » non convertie : %s", nom, e)
+    return nom, mime, brut
+
+
 async def analyser(nom: str, mime: Optional[str], brut: bytes, proprietaire: str) -> dict:
     """UNE pièce → déposée (téléchargeable, aperçu) et LUE. Ne lève jamais."""
+    nom, mime, brut = await asyncio.to_thread(_sans_heic, nom or "piece-jointe", mime, brut)
     nom = nom or "piece-jointe"
     taille = len(brut or b"")
     fiche = {"nom": nom, "type": extension(nom, mime).lstrip(".") or (mime or "inconnu"),
@@ -406,6 +419,7 @@ async def lire_sans_deposer(nom: str, mime: Optional[str], brut: bytes,
     vision se choisit selon d'où vient le fichier (une pièce de mail, un
     fichier du classement). Ne lève jamais pour un contenu illisible.
     """
+    nom, mime, brut = await asyncio.to_thread(_sans_heic, nom, mime, brut)
     consigne_vision = consigne_vision or CONSIGNE_VISION
     consigne_ocr = consigne_ocr or CONSIGNE_OCR
     sortie = {"texte": "", "methode": "", "tronque": False}

@@ -102,7 +102,8 @@ function PieceJointeJointe({ desactive }: { desactive?: boolean }) {
               (la bibliothèque convertit le fichier à la sélection) : pas de
               lecture de plus. Un PDF ou un Excel garde la pastille nue. */}
           {f.mediaType?.startsWith("image/") && estLocale(f.url) && (
-            <img src={f.url} alt="" data-testid="piece-jointe-vignette" style={{
+            <img src={f.url} alt="" data-testid="piece-jointe-vignette"
+                 onError={(e) => { e.currentTarget.style.display = "none" }} style={{
               width: 30, height: 30, objectFit: "cover", borderRadius: 999, flex: "0 0 auto",
             }} />
           )}
@@ -112,9 +113,15 @@ function PieceJointeJointe({ desactive }: { desactive?: boolean }) {
           }}>
             {f.filename || "fichier"}
           </span>
+          {estHeic(f) && (
+            <span title="Photo d'iPhone : convertie en JPG à l'envoi" data-testid="piece-heic"
+                  style={{ fontSize: 11, color: "var(--marque-text-muted)", whiteSpace: "nowrap" }}>
+              HEIC → JPG
+            </span>
+          )}
           {/* Annoter la photo AVANT de l'envoyer : la version dessinée REMPLACE
               l'originale dans le message (21/09). */}
-          {f.mediaType?.startsWith("image/") && estLocale(f.url) && !desactive && (
+          {f.mediaType?.startsWith("image/") && estLocale(f.url) && !desactive && !estHeic(f) && (
             <BoutonAnnoter src={f.url} nom={f.filename} taille={24}
                            surUtiliser={(annotee) => { fichiers.remove(f.id); fichiers.add([annotee]) }}
                            style={{ flex: "0 0 auto" }} />
@@ -136,6 +143,11 @@ function PieceJointeJointe({ desactive }: { desactive?: boolean }) {
  *  fichier local (« blob: » — un fichier déposé, ou une image annotée). */
 function estLocale(url: string | undefined): url is string {
   return Boolean(url && (url.startsWith("data:") || url.startsWith("blob:")))
+}
+
+/** Une photo d'iPhone (HEIC/HEIF) : Chrome ne la dessine pas, le serveur la convertit en JPG. */
+function estHeic(f: { mediaType?: string; filename?: string }): boolean {
+  return /hei[cf]/i.test(f.mediaType || "") || /\.hei[cf]$/i.test(f.filename || "")
 }
 
 /** L'IMAGE ANNOTÉE REJOINT LE MESSAGE EN COURS (21/09). Le crayon d'une image du fil

@@ -187,6 +187,14 @@ def deposer_octets(octets: bytes, mime: str = "image/png",
     clé, pas de doublon."""
     if not octets or len(octets) > MAX_OCTETS:
         return None
+    # Un HEIC (photo d'iPhone, du Drive ou d'un mail) ne s'afficherait pas : rangé en JPEG (21/09).
+    from visuels.heic import convertir, est_heic
+    if est_heic(octets, mime):
+        try:
+            octets, mime, _ext = convertir(octets, "jpg")
+        except ValueError as e:
+            logger.warning("Photo HEIC non rangée : %s", e)
+            return None
     cle = hashlib.sha256(octets).hexdigest()[:24]
     if _chemin(cle):
         if proprietaires(cle) is not None:

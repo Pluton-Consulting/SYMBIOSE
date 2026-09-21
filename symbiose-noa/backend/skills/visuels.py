@@ -696,6 +696,50 @@ async def pivoter_image(data: dict, user) -> dict:
                         "images": [{"cle": cle, "legende": titre}]}}
 
 
+async def convertir_image(data: dict, user) -> dict:
+    """CONVERTIT une image en JPG ou en PNG — mécaniquement, sans moteur d'images (21/09).
+
+    Une photo d'iPhone (HEIC) jointe au chat est déjà convertie à l'arrivée ; ce geste
+    sert au reste : une photo HEIC du Drive ou d'un mail, un WebP, un TIFF, un SVG, ou
+    simplement « donne-la-moi en PNG ». La référence se résout comme une pièce de
+    document — clé d'image de la conversation, pièce d'un mail, nom d'un fichier du
+    Drive —, avec les droits de chacune.
+    """
+    import asyncio
+    from skills.erreurs import SkillError
+    from bureautique.images import ImageRefusee, resoudre
+    from visuels.depot import deposer_octets
+    from visuels.heic import FORMATS, convertir, nom_converti
+
+    reference = str(data.get("image") or data.get("reference") or data.get("cle")
+                    or data.get("nom") or data.get("fichier") or "").strip()
+    if not reference:
+        raise SkillError("Aucune image à convertir : il n'y en a pas dans cette conversation. "
+                         "Demande à l'utilisateur de joindre la photo, ou le nom du fichier du Drive.")
+    format_voulu = str(data.get("format") or "jpg").strip().lower().lstrip(".")
+    if format_voulu not in FORMATS:
+        raise SkillError(f"Format « {format_voulu} » inconnu : `format` vaut jpg ou png.")
+    try:
+        # La résolution commune ouvre déjà tout ce qu'elle sait lire (HEIC, WebP, SVG, EMF…).
+        octets, _ext, nom = await resoudre(reference, user)
+        converti, mime, extension = await asyncio.to_thread(convertir, octets, format_voulu)
+    except (ImageRefusee, ValueError) as e:
+        raise SkillError(f"L'image « {reference[:60]} » n'a pas pu être convertie : {e}.") from e
+    cle = deposer_octets(converti, mime, proprietaire=str(getattr(user, "id", "") or "") or None)
+    if not cle:
+        raise SkillError("L'image convertie n'a pas pu être rangée (trop lourde).")
+    nom_final = nom_converti(str(nom).split(" (")[0], extension)
+    return {"convertie": True, "image": cle, "format": extension, "nom": nom_final,
+            "octets": len(converti), "source": reference,
+            "message_final": f"L'image est convertie en {extension.upper()} : « {nom_final} ».",
+            "a_faire": (f"Dis en UNE phrase que l'image est convertie en {extension.upper()} et "
+                        "téléchargeable depuis sa carte. Pour la suite (retouche, document, mail), "
+                        "c'est cette référence-ci qui vaut."),
+            "bloc_garanti": True,
+            "bloc_ui": {"type": "visuel", "titre": nom_final, "principale": cle,
+                        "images": [{"cle": cle, "legende": nom_final}]}}
+
+
 async def tester_visuel(data: dict, user) -> dict:
     """ESSAI rapide : modèle rapide, replis autorisés, on itère librement."""
     from visuels.nano_banana import generer, NanoBananaIndisponible
@@ -792,6 +836,20 @@ SKILLS = {
         effet="ecriture_interne",
         expert="agent2",
         libelle="je tourne l'image"),
+    "convertir_image": Declaration(
+        fonction=convertir_image,
+        description=(
+            "CONVERTIT une image en JPG ou en PNG, telechargeable : une photo d'iPhone "
+            "(HEIC) du Drive ou d'un mail, un WebP, un TIFF, un SVG, ou « donne-la-moi en "
+            "PNG ». GRATUIT, immediat, sans rien redessiner. `image` : la reference (cle "
+            "d'image de la conversation, ref d'une piece de mail, NOM d'un fichier du Drive) "
+            "— sans elle, la DERNIERE image de la conversation. `format` : jpg (defaut) | png. "
+            "Une photo HEIC jointe au chat est DEJA convertie a l'arrivee : inutile de la "
+            "reconvertir, sauf demande de PNG."),
+        optionnels=["image", "format", "nom"],
+        effet="ecriture_interne",
+        expert="agent2",
+        libelle="je convertis l'image"),
     "modifier_visuel": Declaration(
         fonction=modifier_visuel,
         description=(

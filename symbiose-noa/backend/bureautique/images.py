@@ -73,6 +73,11 @@ def normaliser_octets(octets: bytes, mime: str | None, nom: str = "") -> tuple[b
     except ImportError as e:
         raise ImageRefusee("conversion d'image impossible sur ce serveur (Pillow absent)") from e
     try:
+        from visuels.heic import activer
+        activer()                      # une photo d'iPhone (HEIC) s'ouvre comme les autres
+    except Exception:  # noqa: BLE001
+        pass
+    try:
         img = Image.open(io.BytesIO(octets))
         if img.width * img.height > 40_000_000:
             raise ImageRefusee("image trop grande à décoder : réduisez sa résolution")

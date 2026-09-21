@@ -96,7 +96,9 @@ function Vignette({ piece, apiUrl, backendToken, taille }: {
       cursor: src ? "zoom-in" : "default",
     }}>
       {src && (
-        <img src={src} alt={piece.nom}
+        // Une image que le navigateur ne sait pas dessiner (une photo HEIC d'iPhone
+        // sous Chrome, avant sa conversion par le serveur) devient une pastille.
+        <img src={src} alt={piece.nom} onError={() => setAbsent(true)}
              style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
       )}
       {src && (

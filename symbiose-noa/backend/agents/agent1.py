@@ -1652,7 +1652,8 @@ async def tools_node(state: AgentState, config=None) -> dict:
     # « TOURNE L'IMAGE » = LA DERNIÈRE, ET C'EST LE SERVEUR QUI LE DIT (17/09). Le
     # modèle avait choisi une photo plus ancienne, décrite plus haut comme « pivotée » ;
     # sans référence écrite, la dernière image de la conversation s'impose.
-    if action["skill"] == "pivoter_image" and not str(args.get("image") or "").strip():
+    if action["skill"] in ("pivoter_image", "convertir_image") and not str(
+            args.get("image") or args.get("nom") or args.get("fichier") or "").strip():
         _images = cles_images_du_fil(state)
         if _images:
             args = {**args, "image": _images[-1]}
