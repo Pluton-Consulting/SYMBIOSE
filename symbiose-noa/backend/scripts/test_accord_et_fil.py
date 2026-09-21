@@ -197,7 +197,7 @@ espace["_eclater_blocs_ui"] = _blocs_ui.eclater
 extraire(BACKEND / "agents" / "agent1.py",
          {"rehydrate_node", "_texte_visible", "_question_deja_au_fil",
           "_re_livrables", "_BLOC_UI_RE", "_TYPES_LIVRABLE", "_reference_bloc",
-          "_blocs_livrables", "_blocs_de", "fichiers_du_fil", "_plat_nom", "_designe_le_meme",
+          "_blocs_livrables", "_productions_du_tour", "_GESTES_DE_CONSULTATION", "_pieces_de_mail_hors_sujet", "_blocs_de", "fichiers_du_fil", "_plat_nom", "_designe_le_meme",
           "_meme_livrable", "_livrables_a_l_ecran", "_cartes_de_l_atelier",
           "_redaction_dement_le_livrable", "_signature_bloc", "_dedoublonner_blocs",
           "_blocs_garantis", "cles_images_du_fil", "_CLE_IMAGE_RE", "_re_images",

@@ -117,10 +117,16 @@ verifier("il est rangé à part dans le résultat (`bloc_garanti_masque`)",
          '"bloc_garanti_masque"' in agent1_src)
 verifier("un échec de skill ne laisse pas un bloc d'un appel précédent",
          re.search(r"contenu, ok, bloc_garanti(?:, issue)? = \(?f\"ERREUR", agent1_src))
+# La liste ENTIÈRE, pas ses 400 premiers caractères : elle a grandi, et le contrôle tombait
+# sur des skills pourtant présents (21/09).
+_genereux = agent1_src.split("RESULTATS_GENEREUX = ")[1].split("}")[0]
 verifier("les nouveaux skills ont droit au plafond généreux",
-         all(s in agent1_src.split("RESULTATS_GENEREUX")[1][:400]
-             for s in ('"drive_chercher"', '"nas_chercher"', '"drive_apercu"',
-                       '"nas_apercu"', '"preparer_envois"')))
+         all(s in _genereux for s in ('"drive_chercher"', '"nas_chercher"', '"drive_apercu"',
+                                      '"nas_apercu"', '"preparer_envois"')))
+verifier("un fichier OUVERT arrive en entier au modèle (21/09, dossier Camp coupé à 4 000)",
+         all(s in _genereux for s in ('"drive_ouvrir"', '"lire_piece_jointe"'))
+         and "LECTURES_DE_FICHIER" in agent1_src and "plafond = PLAFOND_LECTURE" in agent1_src
+         and "plafond_bloc = 60000" in agent1_src)
 
 # ── 3. `_blocs_garantis` lit la voie sûre, MÊME si le résultat est coupé ─
 espace = {"_tracer_filet": lambda *a, **k: None, "AgentState": dict,

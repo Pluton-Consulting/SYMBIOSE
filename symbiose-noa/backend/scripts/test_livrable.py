@@ -99,7 +99,7 @@ espace = {"logger": _Journal(), "AgentState": dict,
           "suite_qui_retouche": _annonce.suite_qui_retouche}
 extraire(racine / "agents" / "agent1.py",
          {"_re_livrables", "_BLOC_UI_RE", "_TYPES_LIVRABLE", "_reference_bloc",
-          "_productions_du_tour", "_blocs_livrables", "_blocs_de", "fichiers_du_fil", "_plat_nom", "_designe_le_meme",
+          "_productions_du_tour", "_GESTES_DE_CONSULTATION", "_blocs_livrables", "_blocs_de", "fichiers_du_fil", "_plat_nom", "_designe_le_meme",
           "_meme_livrable", "_livrables_a_l_ecran", "_cartes_de_l_atelier",
           "_redaction_dement_le_livrable",
           # 17/09 : les pièces d'un mail ouvert en chemin ne s'affichent plus d'office ;

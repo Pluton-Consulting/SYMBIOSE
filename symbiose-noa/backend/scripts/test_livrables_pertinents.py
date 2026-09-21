@@ -184,7 +184,7 @@ print("\n── 2. _livrables_a_l_ecran, exécuté sur la réponse de 11:31")
 _module("visuels")
 espace = {"logger": _Journal(), "AgentState": dict, "_tracer_filet": lambda *a, **k: None}
 extraire(BACKEND / "agents" / "agent1.py",
-         {"_re_livrables", "_BLOC_UI_RE", "_TYPES_LIVRABLE", "_reference_bloc", "_blocs_livrables",
+         {"_re_livrables", "_BLOC_UI_RE", "_TYPES_LIVRABLE", "_reference_bloc", "_blocs_livrables", "_productions_du_tour", "_GESTES_DE_CONSULTATION", "_pieces_de_mail_hors_sujet", "_SKILLS_PIECES_DE_MAIL", "_DEMANDE_DE_MAIL_RE",
           "_blocs_de", "fichiers_du_fil", "_plat_nom", "_designe_le_meme", "_meme_livrable",
           "_livrables_a_l_ecran", "_cartes_de_l_atelier", "_signature_bloc", "_blocs_garantis",
           "cles_images_du_fil", "_CLE_IMAGE_RE", "_re_images", "_image_connue"}, espace)
@@ -228,6 +228,23 @@ r2 = livrables("Le revoici.\n\n" + bloc_ui({"type": "fichier", "url": f"/api/doc
                                              "titre": "DSN_082026", "format": "pdf"}),
                {"tool_results": [], "messages": fil, "user_id": "u1"})
 verifier("un fichier ouvert DANS CE FIL peut être remontré (le fil prime, pas l'atelier)", DSN in r2, r2)
+
+# 21/09 : « refais le dossier Camp en Word avec l'en-tête du PDF symbiose_devisfinal ». Le PDF ouvert
+# pour en tirer l'en-tête s'affichait à côté du Word — un modèle de devis VIDE, pris pour un raté.
+def _res(skill, bloc):
+    return {"skill": skill, "ok": True, "resultat_masque": __import__("json").dumps({"bloc_ui": bloc})}
+_source = {"type": "fichier", "url": f"/api/documents/{DSN}", "nom": "Symbiose_DevisFinal.pdf",
+           "titre": "Symbiose_DevisFinal", "format": "pdf"}
+_word = {"type": "fichier", "url": f"/api/documents/{WORD}", "nom": "Dossier projet paysager.docx",
+         "titre": "Dossier projet paysager", "format": "docx"}
+r3 = livrables("Le dossier est prêt.", {"tool_results": [_res("drive_ouvrir", _source), _res("terminer_document", _word)],
+                                         "messages": [], "user_id": "u1",
+                                         "query": "Refais le dossier Camp en Word avec l'en-tête du PDF symbiose_devisfinal"})
+verifier("le tour FABRIQUE : le Word s'affiche, le PDF seulement lu pour son en-tête ne s'ajoute pas",
+         WORD in r3 and DSN not in r3, r3)
+r4 = livrables("Voici le devis.", {"tool_results": [_res("drive_ouvrir", _source)], "messages": [], "user_id": "u1",
+                                    "query": "ouvre le devis final"})
+verifier("rien n'est fabriqué : le fichier ouvert pour être LU s'affiche, comme avant", DSN in r4, r4)
 
 # ══════════════════════════════════════════════════════════════════════════
 # 3. LA RECHERCHE WEB DIT CE QU'ELLE A LU, ET À QUOI ELLE A SERVI

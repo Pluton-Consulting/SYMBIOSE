@@ -362,9 +362,19 @@ RESULTATS_GENEREUX = {"chiffre_affaires", "prix_observes", "dossiers_en_attente"
                       # de caracteres : coupe a 4 000, le modele n'en verrait que
                       # le debut et enchainerait sur une reunion qu'il a lue a
                       # moitie. Le bloc, lui, est deja hors de la coupe.
-                      "compte_rendu_reunion"}
+                      "compte_rendu_reunion",
+                      # UN FICHIER OUVERT SE LIT EN ENTIER (21/09). « Refais le dossier Camp
+                      # en Word » : le dossier (5 088 caractères) était coupé à 4 000 avant
+                      # d'atteindre le modèle, qui n'en a vu que la première moitié — le Word
+                      # refait s'arrêtait là, sans les tableaux de quantités. `drive_ouvrir`
+                      # rend jusqu'à 20 000 caractères : la coupe les jetait.
+                      "drive_ouvrir", "drive_lire_lot", "lire_piece_jointe"}
 PLAFOND_RESULTAT = 4000
 PLAFOND_RESULTAT_GENEREUX = 12000
+# Un fichier OUVERT arrive en entier au modèle : l'outil en rend jusqu'à 20 000 caractères
+# (`outils.drive.ouvrir`), l'enveloppe en plus. Couper ici, c'est refaire un document à moitié lu.
+LECTURES_DE_FICHIER = {"drive_ouvrir", "drive_lire_lot", "lire_piece_jointe"}
+PLAFOND_LECTURE = 24000
 
 
 # ANNONCE SANS ACTE. Le modèle écrit « je crée le PDF », « je commence par
@@ -963,6 +973,9 @@ async def llm_node(state: AgentState, config=None) -> dict:
             plafond_bloc=200000
         elif any(r.get('skill') in ('lire_source_dossier','chercher_source_dossier') for r in resultats_outils):
             plafond_bloc=100000
+        elif any(r.get("skill") in LECTURES_DE_FICHIER for r in resultats_outils):
+            # Le fichier lu en entier ne doit pas être recoupé ici (21/09, dossier Camp).
+            plafond_bloc = 60000
         # `args` BRUTS ne partent pas vers le modèle — mais leur RÉSUMÉ, si.
         # On croyait que le modèle « avait déjà écrit ces arguments » : il les a
         # écrits dans un appel qui n'existe plus, chaque passe repart d'un
@@ -1917,6 +1930,8 @@ async def tools_node(state: AgentState, config=None) -> dict:
                         else None)
         plafond = (PLAFOND_RESULTAT_GENEREUX
                    if action["skill"] in RESULTATS_GENEREUX else PLAFOND_RESULTAT)
+        if action["skill"] in LECTURES_DE_FICHIER:
+            plafond = PLAFOND_LECTURE
         if action['skill']=='check_mails':plafond=190000
         # L'inventaire d'une période (`lire_mails … exhaustif`) : même plafond, sinon la
         # liste serait recoupée après avoir été parcourue en entier (17/09).
@@ -2461,6 +2476,11 @@ def _blocs_livrables(resultats) -> list[dict]:
     return blocs
 
 
+# Les gestes qui LISENT un fichier existant, sans rien fabriquer.
+_GESTES_DE_CONSULTATION = {"nas_ouvrir", "nas_lire", "drive_ouvrir", "drive_lire", "lire_piece_jointe",
+                           "inventaire_dossier"}
+
+
 def _productions_du_tour(resultats) -> list[dict]:
     """Une consultation ne satisfait jamais une demande de fabrication.
 
@@ -2482,7 +2502,7 @@ def _productions_du_tour(resultats) -> list[dict]:
         except (ValueError, TypeError):
             continue
         fabrique = False
-        if r.get("skill") not in fabricants and r.get("skill") not in {"nas_ouvrir", "nas_lire", "drive_ouvrir", "drive_lire", "lire_piece_jointe", "inventaire_dossier"}:
+        if r.get("skill") not in fabricants and r.get("skill") not in _GESTES_DE_CONSULTATION:
             from bureautique.atelier import _lire_fiche, produit
             import re
             for carte in _blocs_de(d.get("bloc_ui") if isinstance(d, dict) else None):
@@ -2689,6 +2709,16 @@ def _livrables_a_l_ecran(texte: str, state: AgentState) -> str:
     _d_office = {_reference_bloc(b) for b in _blocs_livrables(
         [r for r in (state.get("tool_results") or [])
          if isinstance(r, dict) and not _pieces_de_mail_hors_sujet(r, _demande)])}
+    # UNE SOURCE N'EST PAS UN LIVRABLE (21/09). « Refais le dossier Camp en Word avec l'en-tête
+    # du PDF symbiose_devisfinal » : le PDF ouvert pour en tirer l'en-tête s'affichait à côté
+    # du Word, comme s'il avait été produit — un modèle de devis vide, qu'on a pris pour un
+    # document raté. Quand le tour FABRIQUE, un fichier seulement lu ne s'ajoute plus seul ;
+    # le modèle garde le droit de le montrer (il reste dans `produits`, donc pas effacé).
+    if _productions_du_tour(state.get("tool_results") or []):
+        _consultes = {_reference_bloc(b) for b in _blocs_livrables(
+            [r for r in (state.get("tool_results") or [])
+             if isinstance(r, dict) and r.get("skill") in _GESTES_DE_CONSULTATION])}
+        _d_office -= _consultes
     # Le même livrable produit deux fois dans le tour : seule la DERNIÈRE
     # version compte (cf. _meme_livrable) — les références plus anciennes
     # sortent aussi de `references`, donc du texte, via _trier.
