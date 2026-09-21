@@ -1,5 +1,6 @@
 "use client"
 import { useEffect, useState } from "react"
+import { BoutonAnnoter } from "@/components/chat/Annoter"
 
 /**
  * L'APERÇU D'UNE PAGE WEB, comme on la verrait dans un navigateur.
@@ -41,6 +42,11 @@ export function SiteApercu({
       <div style={{ position: "relative", aspectRatio: "16 / 10", background: "var(--marque-primary-subtle)", overflow: "hidden" }}>
         {etat === "pret" && src && (
           <img src={src} alt={`Aperçu de ${hote}`} style={{ width: "100%", height: "100%", objectFit: "cover", objectPosition: "top", display: "block" }} />
+        )}
+        {etat === "pret" && src && (
+          // Dans un lien : le crayon arrête le clic, il n'ouvre pas la page.
+          <BoutonAnnoter src={src} nom={`capture-${hote}`}
+                         style={{ position: "absolute", right: 10, bottom: 10 }} />
         )}
         {etat === "charge" && <div className="sym-skeleton" style={{ position: "absolute", inset: 0 }} />}
         {etat === "absent" && (

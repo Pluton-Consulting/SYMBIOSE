@@ -1,5 +1,6 @@
 "use client"
 import { useEffect, useState } from "react"
+import { BoutonAnnoter } from "./Annoter"
 
 /** L'APERÇU DES PIÈCES JOINTES, dans la bulle de la personne (07/09).
  *
@@ -97,6 +98,10 @@ function Vignette({ piece, apiUrl, backendToken, taille }: {
       {src && (
         <img src={src} alt={piece.nom}
              style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+      )}
+      {src && (
+        <BoutonAnnoter src={src} nom={piece.nom} taille={22}
+                       style={{ position: "absolute", right: 3, top: 3 }} />
       )}
       {!estImage(piece) && (
         <span style={{

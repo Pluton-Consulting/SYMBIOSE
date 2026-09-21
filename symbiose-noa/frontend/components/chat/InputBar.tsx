@@ -1,5 +1,5 @@
 "use client"
-import { useEffect, useLayoutEffect, useRef, useState } from "react"
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react"
 import {
   PromptInput,
   PromptInputTextarea,
@@ -10,6 +10,7 @@ import {
   type PromptInputMessage,
 } from "@/components/ai-elements/prompt-input"
 import { MicIcon, PaperclipIcon, SquareIcon, XIcon, ZapIcon } from "lucide-react"
+import { BoutonAnnoter, EVENEMENT_JOINDRE, type DetailJoindre } from "./Annoter"
 // La dictée : le navigateur ENREGISTRE, l'application TRANSCRIT
 // (lib/dictee.ts → POST /api/chat/transcrire). Une première version s'en
 // remettait à la reconnaissance vocale du navigateur, absente sur la moitié
@@ -93,14 +94,14 @@ function PieceJointeJointe({ desactive }: { desactive?: boolean }) {
           borderRadius: "var(--marque-radius-pill)", maxWidth: "100%",
           // Avec une vignette, la pastille commence par l'image ; sans, par
           // son texte, avec le retrait d'avant.
-          padding: f.mediaType?.startsWith("image/") && f.url?.startsWith("data:")
+          padding: f.mediaType?.startsWith("image/") && estLocale(f.url)
             ? "4px 6px 4px 4px" : "5px 6px 5px 13px",
         }}>
           {/* LA VIGNETTE AVANT LE NOM (07/09) : on voit ce qu'on va envoyer,
               pas seulement comment ça s'appelle. `url` est déjà un « data: »
               (la bibliothèque convertit le fichier à la sélection) : pas de
               lecture de plus. Un PDF ou un Excel garde la pastille nue. */}
-          {f.mediaType?.startsWith("image/") && f.url?.startsWith("data:") && (
+          {f.mediaType?.startsWith("image/") && estLocale(f.url) && (
             <img src={f.url} alt="" data-testid="piece-jointe-vignette" style={{
               width: 30, height: 30, objectFit: "cover", borderRadius: 999, flex: "0 0 auto",
             }} />
@@ -111,6 +112,13 @@ function PieceJointeJointe({ desactive }: { desactive?: boolean }) {
           }}>
             {f.filename || "fichier"}
           </span>
+          {/* Annoter la photo AVANT de l'envoyer : la version dessinée REMPLACE
+              l'originale dans le message (21/09). */}
+          {f.mediaType?.startsWith("image/") && estLocale(f.url) && !desactive && (
+            <BoutonAnnoter src={f.url} nom={f.filename} taille={24}
+                           surUtiliser={(annotee) => { fichiers.remove(f.id); fichiers.add([annotee]) }}
+                           style={{ flex: "0 0 auto" }} />
+          )}
           <button type="button" onClick={() => fichiers.remove(f.id)} disabled={desactive}
                   aria-label={`Retirer ${f.filename || "le fichier"}`} style={{
             border: "none", background: "transparent", cursor: "pointer",
@@ -122,6 +130,31 @@ function PieceJointeJointe({ desactive }: { desactive?: boolean }) {
       ))}
     </PromptInputHeader>
   )
+}
+
+/** Une adresse d'image lisible sans aller-retour serveur : le contenu (« data: ») ou un
+ *  fichier local (« blob: » — un fichier déposé, ou une image annotée). */
+function estLocale(url: string | undefined): url is string {
+  return Boolean(url && (url.startsWith("data:") || url.startsWith("blob:")))
+}
+
+/** L'IMAGE ANNOTÉE REJOINT LE MESSAGE EN COURS (21/09). Le crayon d'une image du fil
+ *  émet l'événement ; ce récepteur, placé DANS le formulaire (seul endroit d'où la
+ *  liste des pièces est lisible), l'ajoute comme n'importe quelle pièce jointe. */
+function RecepteurAnnotations({ surRecu }: { surRecu: () => void }) {
+  const fichiers = usePromptInputAttachments()
+  useEffect(() => {
+    const recevoir = (e: Event) => {
+      const detail = (e as CustomEvent<DetailJoindre>).detail
+      if (!detail?.fichiers?.length) return
+      fichiers.add(detail.fichiers)
+      detail.recu = true
+      surRecu()
+    }
+    window.addEventListener(EVENEMENT_JOINDRE, recevoir)
+    return () => window.removeEventListener(EVENEMENT_JOINDRE, recevoir)
+  }, [fichiers, surRecu])
+  return null
 }
 
 /** LE BOUTON D'ENVOI, INERTE QUAND IL N'Y A RIEN À ENVOYER.
@@ -316,6 +349,11 @@ export default function InputBar({ onSend, disabled, modeFile, enCours, onStop, 
     void dictee.demarrer()
   }
 
+  // Une image annotée vient d'arriver : le curseur attend la demande qui l'accompagne.
+  const placerLeCurseur = useCallback(() => {
+    requestAnimationFrame(() => champRef.current?.focus())
+  }, [])
+
   const surEnvoi = (message: PromptInputMessage) => {
     if (disabled) return
     // Si la plume n'a pas fini d'écrire ce que la dictée a DÉJÀ rendu, c'est le texte complet
@@ -447,6 +485,7 @@ export default function InputBar({ onSend, disabled, modeFile, enCours, onStop, 
       >
         {/* La pièce jointe, au-dessus, et SEULEMENT quand il y en a une. */}
         <PieceJointeJointe desactive={disabled} />
+        <RecepteurAnnotations surRecu={placerLeCurseur} />
 
         {/* UNE SEULE RANGÉE, comme avant : trombone à gauche, champ au milieu,
             arrêt et envoi à droite.

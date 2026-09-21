@@ -1,5 +1,6 @@
 "use client"
 import { useCallback, useEffect, useRef, useState } from "react"
+import { BoutonAnnoter } from "@/components/chat/Annoter"
 
 /**
  * LES IMAGES, importées ou générées, affichées dans le chat comme une planche.
@@ -119,6 +120,12 @@ function Image({
       {etat === "pret" && blob.current && (
         <BoutonTelecharger titre="Télécharger cette image"
                            onClick={(e) => { e.stopPropagation(); telecharger() }} />
+      )}
+      {/* LE CRAYON (21/09) : dessiner sur l'image, puis la télécharger ou la
+          rejoindre à la conversation, sans passer par un logiciel de dessin. */}
+      {etat === "pret" && src && (
+        <BoutonAnnoter src={src} nom={image.legende || titre}
+                       style={{ position: "absolute", right: 46, bottom: 8 }} />
       )}
       {etat === "charge" && <div className="sym-skeleton" style={{ position: "absolute", inset: 0 }} />}
       {etat === "absent" && (
