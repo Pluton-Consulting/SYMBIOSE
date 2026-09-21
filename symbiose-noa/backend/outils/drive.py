@@ -1801,11 +1801,25 @@ async def ouvrir(nom: str, perimetres: Optional[list] = None, identite=None,
     fichier, service, autres = await _resoudre_fichier(nom, perimetres, identite)
     if exact:
         voulu = _nu(nom.replace("\\", "/").rstrip("/").split("/")[-1])
+        candidats = [fichier] + list(autres or [])
         if _nu(fichier.get("name") or "") != voulu:
-            proches = [f.get("name") for f in [fichier] + list(autres or []) if f.get("name")][:5]
-            raise DriveRefuse(
-                f"Aucun fichier ne s'appelle exactement « {nom} » : rien n'a été ouvert. "
-                "Noms les plus proches : " + " ; ".join(f"« {p} »" for p in proches) + ".")
+            # Écrit SANS extension (« symbiose_devisfinal ») : le fichier qui porte cette base,
+            # s'il est le seul. Plusieurs (le PDF et le JPG) : on demande lequel, sans deviner.
+            sans_ext = re.sub(r"\.[a-z0-9]{2,5}$", "", voulu) == voulu
+            memes = [f for f in candidats
+                     if sans_ext and re.sub(r"\.[a-z0-9]{2,5}$", "", _nu(f.get("name") or "")) == voulu]
+            if len(memes) == 1:
+                fichier = memes[0]
+            else:
+                proches = [f.get("name") for f in candidats if f.get("name")][:5]
+                raise DriveRefuse(
+                    (f"Plusieurs fichiers s'appellent « {nom} », avec une extension différente : rien "
+                     "n'a été ouvert. Rappelle `drive_ouvrir` avec le nom COMPLET voulu, extension "
+                     "comprise (le type cité par la personne — PDF, image… — dit lequel) : "
+                     if len(memes) > 1 else
+                     f"Aucun fichier ne s'appelle exactement « {nom} » : rien n'a été ouvert. "
+                     "Noms les plus proches : ")
+                    + " ; ".join(f"« {p} »" for p in proches) + ".")
     from ingestion.connectors.google_drive import _download_text
     texte = await asyncio.to_thread(_download_text, service, fichier)
     if texte is None:

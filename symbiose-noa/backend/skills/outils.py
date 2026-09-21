@@ -366,12 +366,25 @@ def nom_impose_par_la_demande(demande: str) -> str:
 
 
 def _meme_nom(a: str, b: str) -> bool:
+    """Le même fichier ? Casse, accents et espaces à part — et l'EXTENSION, quand l'un des deux
+    ne l'écrit pas (21/09 : « symbiose_devisfinal » écrit par la personne, « Symbiose_DevisFinal.pdf »
+    trouvé par le modèle ; le serveur réimposait le premier à chaque essai, et le tour mourait
+    sur un rejeu à l'identique)."""
+    import re
     import unicodedata
 
     def nu(x: str) -> str:
         x = unicodedata.normalize("NFD", str(x or "").split("/")[-1].strip().lower())
         return " ".join("".join(c for c in x if unicodedata.category(c) != "Mn").split())
-    return nu(a) == nu(b)
+
+    def base(x: str) -> str:
+        return re.sub(r"\.[a-z0-9]{2,5}$", "", x)
+
+    na, nb = nu(a), nu(b)
+    if na == nb:
+        return True
+    sans_extension = (na == base(na)) or (nb == base(nb))
+    return sans_extension and base(na) == base(nb)
 
 
 async def drive_ouvrir(data: dict, user) -> dict:

@@ -663,7 +663,9 @@ async def routeur_node(state: AgentState) -> dict:
         "Dis AUSSI si la demande se satisfait d'OUVRIR UN SEUL document sans autre travail "
         "ensuite (lecture_unique), et, si la personne exige UN fichier précis qu'elle nomme en "
         "interdisant tout autre, recopie ce nom EXACTEMENT comme elle l'a écrit (fichier_exact), "
-        "sinon une chaîne vide.\n"
+        "sinon une chaîne vide. NOMMER un fichier ne suffit pas : « reprends l'en-tête du PDF "
+        "« devis final » » laisse vide ; seule une interdiction d'en ouvrir un autre (« exactement "
+        "ce fichier », « pas un fichier approchant ») le remplit.\n"
         'Réponds par un objet JSON seul : {"memoire": true|false, "requete": '
         '"<mots-clés de recherche si true, sinon vide>", "effort": "simple|analyse", '
         '"outils": ["<famille>", …], "correction": true|false, "lecture_unique": true|false, '
