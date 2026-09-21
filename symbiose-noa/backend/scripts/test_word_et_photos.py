@@ -9,6 +9,10 @@ Banc du 21/09 — le Word du dossier Camp et « les 10 autres photos ».
    exception SANS message. Le rangement convertit désormais ce que Word ne lit pas,
    le rendu convertit ce qui avait été rangé avant, et l'échec dit sa cause.
 
+   Et ce logo avait perdu sa transparence (fond NOIR, le nom « SYMBIOSE » écrit en
+   noir disparu dedans), et le pied de page reprenait le logo du haut : le pied du
+   devis est du TEXTE. Le masque est réappliqué, la bande du bas est dessinée.
+
 2. LES PHOTOS. « Montre les 10 autres photos du dossier » (22 photos) : le geste
    rendait toujours les 12 plus récentes, sans page suivante. `page` donne la suite.
 
@@ -122,6 +126,44 @@ if Image is not None:
             f.write(tampon.getvalue())
         verifier("une image déjà lisible est rendue telle quelle, sans copie",
                  rendu._image("bon.img2.jpg") == os.path.join(dossier, "bon.img2.jpg"))
+
+# ── 1 bis. Le logo et le pied d'un PDF de devis ─────────────────────────────
+# Le devis de la maison : un logo à fond TRANSPARENT en haut (image + masque), un
+# pied de page en TEXTE. Avant : fond noir, et le logo du haut repris en pied.
+try:
+    import fitz
+    from PIL import Image as _Img
+except ImportError:
+    fitz = None
+    print("  · PyMuPDF / Pillow absents ici : le logo d'un PDF n'est pas éprouvé (il l'est dans l'image)")
+
+if fitz is not None:
+    logo = _Img.new("RGBA", (300, 200), (0, 0, 0, 0))
+    for x in range(40, 260):
+        for y in range(60, 140):
+            logo.putpixel((x, y), (10, 10, 10, 255))        # un nom écrit en NOIR sur du transparent
+    tampon = io.BytesIO()
+    logo.save(tampon, "PNG")
+    pdf = fitz.open()
+    page = pdf.new_page(width=595, height=842)
+    page.insert_image(fitz.Rect(40, 20, 190, 120), stream=tampon.getvalue())
+    # Le corps d'un devis : un tableau sur toute la largeur (une page pleine, pas un logo seul).
+    for y in range(180, 700, 26):
+        page.draw_line(fitz.Point(40, y), fitz.Point(555, y), color=(0, 0, 0), width=0.8)
+        page.insert_text((50, y + 17), "Fourniture et pose — gazon synthétique  12 m²  45,00 €", fontsize=10)
+    page.insert_text((60, 815), "9 RUE DE LA SILICE 33380 MARCHEPRIME | SIRET 897 428 637", fontsize=9)
+    octets_pdf = pdf.tobytes()
+    pdf.close()
+
+    haut, mime_haut, _n = images.logo_du_pdf(octets_pdf, "devis.pdf", "entete")
+    im = _Img.open(io.BytesIO(haut))
+    verifier("le logo garde sa transparence (PNG avec alpha)", mime_haut == "image/png" and "A" in im.mode, f"{mime_haut} {im.mode}")
+    verifier("… son fond n'est pas devenu noir opaque",
+             im.convert("RGBA").getpixel((5, 5))[3] == 0, str(im.convert("RGBA").getpixel((5, 5))))
+    bas, mime_bas, nom_bas = images.logo_du_pdf(octets_pdf, "devis.pdf", "pied")
+    verifier("le pied de page n'est PAS le logo du haut", bas != haut and "pied de page" in nom_bas, nom_bas)
+    pied = _Img.open(io.BytesIO(bas))
+    verifier("… c'est la bande du bas, dessinée (plus large que haute)", pied.size[0] > 3 * pied.size[1], str(pied.size))
 
 # ── 2. Les photos, page par page ─────────────────────────────────────────────
 for nom in ("visuels", "visuels.depot"):

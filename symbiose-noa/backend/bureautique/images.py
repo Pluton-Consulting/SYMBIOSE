@@ -175,8 +175,8 @@ def logo_du_pdf(octets: bytes, nom: str, place: str = "") -> tuple[bytes, str, s
                 donnees = brut.get("image") or b""
                 if len(donnees) < 256:      # une puce, une ligne de séparation
                     continue
-                candidats.append((_aire(r), donnees,
-                                  f"image/{(brut.get('ext') or 'png').lower()}",
+                donnees, mime = _avec_transparence(fitz, doc, xref, brut, donnees)
+                candidats.append((_aire(r), donnees, mime,
                                   "en-tête" if haut else "pied de page"))
     finally:
         doc.close()
@@ -189,11 +189,42 @@ def logo_du_pdf(octets: bytes, nom: str, place: str = "") -> tuple[bytes, str, s
         # est rendue en image et recadrée : sur le logo, tout ce qui est encré ;
         # sur une page pleine, la bande du haut (en-tête) ou du bas (pied).
         return rendu_du_pdf(octets, nom, place)
-    # La bande demandée d'abord (le pied pour un pied de page), puis la plus grande.
+    # La bande demandée, et elle seule : la plus grande de ses images.
     voulue = "pied de page" if place == "pied" else "en-tête"
-    candidats.sort(key=lambda c: (0 if c[3] == voulue else 1, -c[0]))
-    _, donnees, mime, place_trouvee = candidats[0]
+    dans_la_bande = [c for c in candidats if c[3] == voulue]
+    if not dans_la_bande:
+        # LE PIED D'UN DEVIS EST DU TEXTE (21/09). « L'en-tête et le pied de page du PDF
+        # symbiose_devisfinal » : le pied n'y porte aucune image, et la plus grande image
+        # de la page — le logo du HAUT — était reprise en pied. Le Word du dossier Camp
+        # portait deux fois le même logo. La bande demandée est dessinée à la place.
+        return rendu_du_pdf(octets, nom, place)
+    dans_la_bande.sort(key=lambda c: -c[0])
+    _, donnees, mime, place_trouvee = dans_la_bande[0]
     return donnees, mime, f"{nom} ({place_trouvee})"
+
+
+def _avec_transparence(fitz, doc, xref: int, brut: dict, donnees: bytes) -> tuple[bytes, str]:
+    """L'image d'un PDF AVEC son masque de transparence, en PNG ; sinon telle quelle.
+
+    21/09 : le logo du devis de la maison est un JPEG accompagné d'un masque (SMask).
+    `extract_image` ne rend que le JPEG : le fond transparent devenait NOIR, et le nom
+    « SYMBIOSE », écrit en noir, disparaissait dedans. Le masque est réappliqué ici.
+    """
+    ext = (brut.get("ext") or "png").lower()
+    masque = brut.get("smask") or 0
+    if not masque:
+        return donnees, f"image/{ext}"
+    try:
+        base = fitz.Pixmap(doc, xref)
+        if base.alpha:
+            base = fitz.Pixmap(base, 0)                 # l'alpha vient du masque, pas d'ailleurs
+        if base.n >= 4:                                  # CMYK : Word ne le lit pas
+            base = fitz.Pixmap(fitz.csRGB, base)
+        avec = fitz.Pixmap(base, fitz.Pixmap(doc, masque))
+        return avec.tobytes("png"), "image/png"
+    except Exception as e:  # noqa: BLE001 — sans masque, l'image reste utilisable
+        logger.info("Masque de transparence non appliqué (%s) : %s", xref, e)
+        return donnees, f"image/{ext}"
 
 
 # Au-delà de cette part de la page, le contenu encré n'est pas un logo seul mais
