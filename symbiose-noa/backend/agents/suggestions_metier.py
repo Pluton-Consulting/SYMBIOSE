@@ -26,6 +26,10 @@ PAR_SKILL: dict[str, list[str]] = {
     "interroger_donnees":   ["La suite du classement",
                              "Le détail mois par mois",
                              "Exporte ça en Excel"],
+    # Le même geste qui LISTE des lignes (pas de groupes) : ses suites ne sont pas celles d'un classement.
+    "interroger_donnees:liste": ["Exporte ces lignes en Excel",
+                                 "Compare avec le prix public",
+                                 "Cherche aussi dans les documents"],
     # ── Clients, devis, chantiers ───────────────────────────────────────
     "fiche_client":         ["Montre son dernier devis en entier",
                              "Ses chantiers des 12 derniers mois",
@@ -159,6 +163,11 @@ PAR_EXPERT: dict[str, list[str]] = {
 ERREUR: list[str] = ["Cherche plutôt dans les devis",
                      "Fais le point sur mes mails de la semaine",
                      "Montre-moi ce que tu sais faire"]
+
+# Tous les gestes ont réussi… à ne rien trouver : on propose de chercher AILLEURS.
+RIEN_TROUVE: list[str] = ["Cherche sur le web",
+                          "Cherche dans les fichiers du Drive",
+                          "Cherche dans mes mails"]
 
 # Salutation, question de cadrage, tour sans aucun geste : les mêmes entrées
 # que le menu éclair de la saisie, pour que les deux disent la même chose.
