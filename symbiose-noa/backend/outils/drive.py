@@ -817,6 +817,36 @@ async def apercu(dossier: Optional[str] = None,
     return sortie
 
 
+# UNE PAGE DU BALAYAGE NE FAIT PAS TOMBER TOUT LE CATALOGUE (22/09). Journaux de
+# Symbiose, 18:23 : un seul « HttpError 500 » de Google au milieu des 12 000
+# dossiers, et la construction entière du catalogue mourait (« Task exception was
+# never retrieved ») — le travail déjà balayé perdu, reconstruit de zéro au geste
+# suivant. Une erreur PASSAGÈRE de Google (500, 502, 503, 504, 429) se relit,
+# trois fois au plus, à 2 puis 6 s ; un refus franc (403, 404) remonte tel quel.
+_ATTENTES_PAGE_S = (2.0, 6.0)
+
+
+def _erreur_passagere(e: Exception) -> bool:
+    statut = getattr(getattr(e, "resp", None), "status", None)
+    try:
+        statut = int(statut)
+    except (TypeError, ValueError):
+        return False
+    return statut in (429, 500, 502, 503, 504)
+
+
+async def _page_resiliente(appel):
+    for attente in (*_ATTENTES_PAGE_S, None):
+        try:
+            return await asyncio.to_thread(appel)
+        except Exception as e:  # noqa: BLE001 — trié ci-dessous
+            if attente is None or not _erreur_passagere(e):
+                raise
+            logger.warning("Drive : erreur passagère de Google (%s) — page relue dans %.0f s",
+                           getattr(getattr(e, "resp", None), "status", "?"), attente)
+            await asyncio.sleep(attente)
+
+
 async def _balayer_dossiers(service) -> tuple[dict, bool]:
     """TOUS les dossiers du Drive (id → nom, parents), en quelques requêtes.
 
@@ -841,7 +871,7 @@ async def _balayer_dossiers(service) -> tuple[dict, bool]:
                 fields="nextPageToken, files(id,name,parents)",
                 pageSize=1000, pageToken=jeton,
             ).execute()
-        resp = await asyncio.to_thread(_appel)
+        resp = await _page_resiliente(_appel)
         for f in resp.get("files", []):
             dossiers[f["id"]] = {"nom": f.get("name"),
                                  "parents": f.get("parents") or []}
@@ -939,7 +969,7 @@ async def _compter_fichiers(service) -> tuple[dict, bool]:
                 fields="nextPageToken, files(parents,size,name,mimeType)",
                 pageSize=1000, pageToken=jeton,
             ).execute()
-        resp = await asyncio.to_thread(_appel)
+        resp = await _page_resiliente(_appel)
         for f in resp.get("files", []):
             ext = _type_de_fichier(f.get("name") or "", f.get("mimeType") or "")
             for p in (f.get("parents") or []):

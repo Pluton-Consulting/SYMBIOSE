@@ -205,6 +205,16 @@ async def generer(prompt: str, *,
             if rep.status_code in (401, 403):
                 raise NanoBananaIndisponible(
                     "Google a refusé la clé (Paramètres > Clés API).")
+            if rep.status_code == 402:
+                # LE 402 DIT SA CAUSE (22/09). Trois retouches approuvées à la suite
+                # ont échoué sur « n'a pas répondu (HTTP 402) » : c'est le crédit
+                # prépayé du projet Google qui est épuisé, pas le moteur. Tous les
+                # modèles de la même clé répondraient pareil : on s'arrête ici, et le
+                # refroidissement évite de repayer un accord pour rien.
+                raise NanoBananaIndisponible(_marquer_blocage(
+                    "les crédits prépayés du projet Google de cette clé sont épuisés (HTTP 402) : "
+                    "ils se rechargent dans AI Studio, rubrique facturation du projet. La même clé "
+                    "sert à la mémoire des documents, en panne pour la même raison."))
             if rep.status_code >= 400:
                 derniere = f"{modele} : HTTP {rep.status_code}"
                 logger.info("Nano Banana %s : %s", modele, rep.text[:200])
