@@ -48,7 +48,7 @@ FAMILLES: dict[str, tuple[str, ...]] = {
                     "facture_reglee"),
     "web": ("chercher_web", "ouvrir_page", "naviguer"),
     "visuels": ("preparer_visuel", "tester_visuel", "generer_visuel", "modifier_visuel", "pivoter_image",
-                "convertir_image"),
+                "convertir_image", "composer_visuel"),
     "taches": ("creer_tache_agent", "mes_taches", "suspendre_tache", "supprimer_tache"),
     "memoire": ("retenir", "oublier", "consignes_retenues", "connaissances_acquises",
                 "enregistrer_procedure"),

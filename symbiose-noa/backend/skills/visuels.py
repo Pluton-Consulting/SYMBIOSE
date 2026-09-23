@@ -696,6 +696,94 @@ async def pivoter_image(data: dict, user) -> dict:
                         "images": [{"cle": cle, "legende": titre}]}}
 
 
+async def composer_visuel(data: dict, user) -> dict:
+    """MET EN PAGE des images et du texte dans UNE image PNG — une page HTML rendue par
+    Chromium (23/09, `visuels/composition.py`). Sans moteur d'images, gratuit.
+
+    Relevé chez Julien le 23/09 : « la photo avant à gauche, l'après à droite, et
+    dessous l'explication du projet » — l'assistant disait n'avoir aucun outil pour
+    assembler deux photos. Le modèle écrit la page (texte, titres, couleurs, cadres,
+    légendes), les images désignées s'y posent par `{{image1}}`, `{{image2}}`…
+    La page est gardée à côté du rendu : `depuis` la rend pour la corriger sans tout
+    réécrire (« change le titre », « mets l'explication en deux colonnes »).
+    """
+    import asyncio
+    import json
+    from skills.erreurs import SkillError
+    from bureautique.images import ImageRefusee, resoudre
+    from visuels import composition as c
+    from visuels.depot import DOSSIER, deposer_octets, peut_lire
+
+    proprietaire = str(getattr(user, "id", "") or "") or None
+    depuis = str(data.get("depuis") or "").strip()
+    precedente = {}
+    if depuis:
+        if not peut_lire(depuis, user) or not (DOSSIER / f"{depuis}.composition.json").exists():
+            raise SkillError(f"Aucune composition connue sous « {depuis[:16]} » : recompose la page entière.")
+        precedente = json.loads((DOSSIER / f"{depuis}.composition.json").read_text(encoding="utf-8"))
+        if not str(data.get("html") or "").strip():
+            return {"composition": depuis, "html": precedente.get("html", ""),
+                    "images": precedente.get("images", []), "format": precedente.get("taille"),
+                    "a_faire": ("Voici la page de cette composition. Corrige-la selon la demande et "
+                                "rappelle `composer_visuel` avec le `html` corrigé ENTIER, les mêmes "
+                                "`images` (dans le même ordre) et la même taille.")}
+    html = str(data.get("html") or "").strip()
+    if not html:
+        raise SkillError("Écris la page : `html` avec le texte, la mise en page et les marques "
+                         "{{image1}}, {{image2}}… à la place des images.")
+    if len(html) > c.HTML_MAX:
+        raise SkillError(f"Page trop longue ({len(html)} caractères) : allège-la.")
+    images = data.get("images") or precedente.get("images") or []
+    if isinstance(images, str):
+        images = [x.strip() for x in re.split(r"[,;\n]", images) if x.strip()]
+    images = [str(x).strip() for x in images if str(x).strip()][:c.IMAGES_MAX]
+    utilisees = c.marques(html)
+    if utilisees and max(utilisees) > len(images):
+        raise SkillError(f"La page utilise {{{{image{max(utilisees)}}}}} mais {len(images)} image(s) "
+                         "seulement sont données dans `images`.")
+    try:
+        taille_ = (precedente.get("taille") if precedente and not (data.get("format") or data.get("largeur")
+                   or data.get("hauteur")) else None)
+        largeur, hauteur = taille_ or c.taille(data.get("format"), data.get("largeur"), data.get("hauteur"))
+    except c.CompositionRefusee as e:
+        raise SkillError(str(e)) from e
+    incorporees = []
+    for ref in images:
+        try:
+            octets, _ext, _nom = await resoudre(ref, user)
+            incorporees.append(await asyncio.to_thread(c.donnee_image, octets))
+        except ImageRefusee as e:
+            raise SkillError(f"L'image « {ref[:40]} » n'a pas pu être posée : {e}") from e
+        except Exception as e:  # noqa: BLE001
+            raise SkillError(f"L'image « {ref[:40]} » est illisible ({type(e).__name__}).") from e
+    try:
+        page = c.document(c.incorporer(c.nettoyer(html), incorporees), largeur, hauteur,
+                          str(data.get("fond") or "#ffffff"))
+        png = await c.rendre(page, largeur, hauteur)
+    except c.CompositionRefusee as e:
+        raise SkillError(f"La composition n'a pas pu être rendue : {e}.") from e
+    cle = deposer_octets(png, "image/png", proprietaire=proprietaire)
+    if not cle:
+        raise SkillError("L'image composée n'a pas pu être rangée (trop lourde).")
+    try:
+        (DOSSIER / f"{cle}.composition.json").write_text(json.dumps(
+            {"html": html, "images": images, "taille": [largeur, hauteur]}, ensure_ascii=False),
+            encoding="utf-8")
+    except OSError:
+        pass                               # le rendu vaut sans la page gardée
+    titre = str(data.get("titre") or "Composition")[:80]
+    return {"compose": True, "image": cle, "largeur": largeur, "hauteur": hauteur,
+            "images_posees": len(incorporees),
+            "message_final": f"L'image « {titre} » est prête ({largeur} × {hauteur} px, PNG).",
+            "a_faire": ("L'image est DÉJÀ affichée (bloc mécanique) : dis en une ou deux phrases ce "
+                        "qu'elle montre. Pour la corriger, rappelle `composer_visuel` avec "
+                        f"`depuis`: « {cle} » (sans `html` pour relire la page, puis avec le `html` "
+                        "corrigé). Elle se glisse dans un document comme toute image, par cette clé."),
+            "bloc_garanti": True,
+            "bloc_ui": {"type": "visuel", "titre": titre, "principale": cle,
+                        "images": [{"cle": cle, "legende": f"{titre} — {largeur} × {hauteur} px"}]}}
+
+
 async def convertir_image(data: dict, user) -> dict:
     """CONVERTIT une image en JPG ou en PNG — mécaniquement, sans moteur d'images (21/09).
 
@@ -836,6 +924,29 @@ SKILLS = {
         effet="ecriture_interne",
         expert="agent2",
         libelle="je tourne l'image"),
+    "composer_visuel": Declaration(
+        fonction=composer_visuel,
+        description=(
+            "MET EN PAGE des images EXISTANTES et du texte dans UNE image PNG, a la taille "
+            "voulue : avant/apres cote a cote avec l'explication dessous, planche de "
+            "realisations, affiche, visuel pour un reseau social, fiche projet illustree. "
+            "GRATUIT, ne redessine RIEN (les photos restent identiques au pixel pres) : "
+            "c'est TOI qui ecris la page. `html` : le CORPS de la page (div, h1, p, "
+            "styles en ligne ou balise <style>), avec {{image1}}, {{image2}}… comme `src` "
+            "des balises <img> ou dans url() — dans l'ordre de `images`. `images` : les "
+            "references (cles d'image de la conversation, noms de fichiers du Drive, ref de "
+            "piece de mail) — sans elles, les DEUX DERNIERES images de la conversation. "
+            "`format` : paysage (1920x1080, defaut) | carre | portrait | story | a4_paysage | "
+            "a4_portrait | banniere — ou `largeur`/`hauteur` en pixels. Pas de script, pas "
+            "d'adresse web : tout doit etre dans la page. Soigne le design (marges, "
+            "hierarchie des titres, couleurs de la maison, object-fit:cover pour remplir "
+            "un cadre). Pour CORRIGER une composition : `depuis` = sa cle (sans `html`, "
+            "rend la page ; puis `html` corrige). JAMAIS `modifier_visuel` pour assembler "
+            "des photos : il retouche UNE photo."),
+        optionnels=["html", "images", "format", "largeur", "hauteur", "titre", "fond", "depuis"],
+        effet="ecriture_interne",
+        expert="agent2",
+        libelle="je compose l'image"),
     "convertir_image": Declaration(
         fonction=convertir_image,
         description=(

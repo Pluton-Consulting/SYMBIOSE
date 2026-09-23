@@ -72,6 +72,26 @@ async def ouvrir(req: PageRequest):
     return await _ouvrir(req.url, req.delai_ms, capture=req.capture)
 
 
+class RenduRequest(BaseModel):
+    html: str
+    largeur: int
+    hauteur: int
+
+
+@app.post("/rendre")
+async def rendre(req: RenduRequest):
+    """Une page HTML autonome → son image PNG (23/09, composition de visuels)."""
+    import base64
+    from rapide import rendre_html
+    if len(req.html) > 40 * 1024 * 1024:
+        return {"ok": False, "erreur": "page trop lourde"}
+    try:
+        png = await rendre_html(req.html, req.largeur, req.hauteur)
+    except Exception as e:  # noqa: BLE001 — la raison repart au backend, jamais une trace
+        return {"ok": False, "erreur": str(e)[:200] or type(e).__name__}
+    return {"ok": True, "png": base64.b64encode(png).decode()}
+
+
 class RunRequest(BaseModel):
     job_id: str
     task_prompt: str

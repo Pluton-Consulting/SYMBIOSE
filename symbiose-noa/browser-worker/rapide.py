@@ -319,6 +319,49 @@ async def _capturer(url: str, delai_ms: int, largeur: int = 1280, hauteur: int =
     return None
 
 
+# ── UNE PAGE HTML → UNE IMAGE PNG (23/09, `skills/visuels.composer_visuel`) ──
+# Demande de Noa après les essais de Julien (« la photo avant à gauche, l'après à
+# droite, et l'explication dessous ») : l'IA écrit une page HTML à la taille voulue,
+# les images y sont DÉJÀ incorporées (data:), Chromium la photographie au pixel près.
+# LE RÉSEAU EST COUPÉ (toute résolution de nom échoue) et le backend a posé une règle
+# de sécurité interdisant tout script dans la page — `--blink-settings=scriptEnabled=false`
+# ne peut pas servir : mesuré le 23/09 sur Chromium 152, il empêche la capture elle-même.
+LARGEUR_MAX_RENDU = 4000
+PIXELS_MAX_RENDU = 12_000_000
+
+
+async def rendre_html(document: str, largeur: int, hauteur: int, delai_ms: int = 20000) -> bytes:
+    """Le PNG d'une page HTML autonome, exactement `largeur` × `hauteur`. Lève en cas d'échec."""
+    largeur, hauteur = int(largeur), int(hauteur)
+    if not (100 <= largeur <= LARGEUR_MAX_RENDU and 100 <= hauteur <= LARGEUR_MAX_RENDU) \
+            or largeur * hauteur > PIXELS_MAX_RENDU:
+        raise ValueError(f"taille refusée : {largeur} × {hauteur}")
+    with tempfile.TemporaryDirectory(prefix="rendu-") as dossier:
+        page = os.path.join(dossier, "page.html")
+        sortie = os.path.join(dossier, "rendu.png")
+        with open(page, "w", encoding="utf-8") as f:
+            f.write(document)
+        args = ["--headless", "--no-sandbox", "--disable-gpu", "--disable-dev-shm-usage",
+                "--no-first-run", "--disable-extensions", "--mute-audio",
+                f"--user-data-dir={os.path.join(dossier, 'profil')}",
+                "--host-resolver-rules=MAP * ~NOTFOUND",
+                "--hide-scrollbars", "--force-device-scale-factor=1",
+                f"--window-size={largeur},{hauteur}",
+                f"--virtual-time-budget={min(delai_ms, 5000)}", f"--timeout={delai_ms}",
+                f"--screenshot={sortie}", "file://" + page]
+        proc = await asyncio.create_subprocess_exec(
+            CHROMIUM, *args, stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL)
+        try:
+            await asyncio.wait_for(proc.communicate(), timeout=delai_ms / 1000 + 20)
+        except asyncio.TimeoutError:
+            proc.kill(); await proc.wait()
+            raise TimeoutError("le rendu de la page a dépassé le délai")
+        if not (os.path.exists(sortie) and os.path.getsize(sortie) > 0):
+            raise RuntimeError("Chromium n'a produit aucune image")
+        with open(sortie, "rb") as f:
+            return f.read()
+
+
 async def ouvrir(url: str, delai_ms: int = 15000, capture: bool = True) -> dict:
     """Ouvre UNE page : son texte, et son apercu (PNG en base64) si demandé."""
     debut = time.monotonic()

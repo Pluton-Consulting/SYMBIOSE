@@ -350,7 +350,7 @@ def _est_jeton_tableau(valeur) -> bool:
     return isinstance(valeur, str) and valeur.strip().lower() in JETONS_TABLEAU
 
 
-RESULTATS_GENEREUX = {"chiffre_affaires", "prix_observes", "dossiers_en_attente", "pieces_du_client", "frequence_des_passages", "lire_source_dossier", "chercher_source_dossier", "drive_chercher", "nas_chercher", "drive_apercu", "drive_lister", "drive_lister_lot",
+RESULTATS_GENEREUX = {"composer_visuel", "chiffre_affaires", "prix_observes", "dossiers_en_attente", "pieces_du_client", "frequence_des_passages", "lire_source_dossier", "chercher_source_dossier", "drive_chercher", "nas_chercher", "drive_apercu", "drive_lister", "drive_lister_lot",
                       # 08/09 : les cartes de relance et la liste des factures suivies.
                       "relancer_factures", "factures_suivies", "inventaire_dossier",
                       "courrier_entrant",
@@ -1683,6 +1683,13 @@ async def tools_node(state: AgentState, config=None) -> dict:
         _images = cles_images_du_fil(state)
         if _images:
             args = {**args, "image": _images[-1]}
+    # « FAIS UN AVANT/APRÈS DE CES DEUX PHOTOS » (23/09) : sans images nommées, les
+    # DEUX DERNIÈRES de la conversation, dans leur ordre d'arrivée (l'avant d'abord).
+    if action["skill"] == "composer_visuel" and not args.get("images") and not str(
+            args.get("depuis") or "").strip():
+        _images = cles_images_du_fil(state)
+        if _images:
+            args = {**args, "images": _images[-2:]}
     if action["skill"] == "modifier_visuel" and not str(args.get("demande") or "").strip():
         demande_retouche = _demande_de_retouche(state)
         if demande_retouche:
@@ -4064,7 +4071,10 @@ def _consigne_images(state: AgentState) -> str:
             "inchangée que si l'on a demandé de l'afficher. EXCEPTION : la TOURNER "
             "(« tourne-la », « remets-la à l'endroit ») est `pivoter_image` — gratuit, "
             "l'image reste identique —, jamais `modifier_visuel` ; sans autre précision "
-            "c'est la DERNIÈRE image, n'écris pas de référence.")
+            "c'est la DERNIÈRE image, n'écris pas de référence. ASSEMBLER des images "
+            "(avant à gauche / après à droite, planche, affiche, texte ou légendes posés "
+            "sur ou autour des photos) est `composer_visuel` : tu écris la page HTML, les "
+            "photos restent intactes — jamais `modifier_visuel` pour cela.")
 
 
 async def forcer_action_node(state: AgentState, config=None) -> dict:

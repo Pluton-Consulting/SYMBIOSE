@@ -618,6 +618,8 @@ _SUITE_ATTENDUE = (
     # DÉCRIT le photomontage à faire, et aucune image n'a été produite.
     "doit ", "doivent", "garde ", "garde-", "laisse ", "représent", "represent",
     "refai", "fais ", "fais-", "photomontage", "montage", "identique",
+    # 23/09 (Julien) : ASSEMBLER des photos avec du texte — `composer_visuel`.
+    "assembl", "côte à côte", "cote a cote", "planche", "affiche", "compos",
 )
 
 # Ce que dit la VISION quand elle a compris qu'on attend une image : sa propre
