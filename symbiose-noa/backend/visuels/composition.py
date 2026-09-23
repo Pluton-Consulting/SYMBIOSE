@@ -33,8 +33,11 @@ import re
 
 logger = logging.getLogger("symbiose.visuels.composition")
 
-# Formats nommés : ce que la personne dit (« format carré pour Instagram », « une
-# page A4 paysage ») plutôt que des pixels. A4 à 150 points par pouce.
+# RIEN N'EST IMPOSÉ (23/09, Noa : « il doit être capable de concevoir librement tout
+# et n'importe quoi en termes de design, de format — rien de déterministe »). Le modèle
+# choisit la taille, la mise en page, les couleurs, les polices. Les noms ci-dessous
+# ne sont qu'un RACCOURCI accepté s'il l'écrit ; un nom inconnu n'est jamais un refus.
+# Les seules bornes sont techniques : ce que Chromium et la mémoire du conteneur tiennent.
 FORMATS = {
     "paysage": (1920, 1080), "16:9": (1920, 1080),
     "carre": (1080, 1080), "carré": (1080, 1080), "instagram": (1080, 1080),
@@ -44,10 +47,11 @@ FORMATS = {
     "banniere": (1500, 500), "bannière": (1500, 500),
 }
 FORMAT_DEFAUT = "paysage"
-COTE_MIN, COTE_MAX, PIXELS_MAX = 200, 4000, 12_000_000
-IMAGES_MAX = 8
-COTE_IMAGE_INCORPOREE = 2000          # une photo de 4 000 px n'apporte rien à une planche de 1 920
-HTML_MAX = 60_000                     # le modèle écrit la page : au-delà, c'est une recopie
+COTE_MIN, COTE_MAX, PIXELS_MAX = 100, 8000, 40_000_000
+LARGEUR_AUTO = 1600                   # si RIEN n'est donné : une largeur, et la hauteur suit le contenu
+IMAGES_MAX = 20
+COTE_IMAGE_INCORPOREE = 2400
+HTML_MAX = 200_000
 
 _MARQUE_IMAGE = re.compile(r"\{\{\s*image\s*:?\s*(\d+)\s*\}\}", re.I)
 
@@ -56,27 +60,57 @@ class CompositionRefusee(ValueError):
     """Demande impossible à rendre : la raison est pour la personne."""
 
 
-def taille(format_: str | None = None, largeur=None, hauteur=None) -> tuple[int, int]:
-    """(largeur, hauteur) en pixels : explicites s'ils sont donnés, sinon le format nommé."""
-    if largeur or hauteur:
-        try:
-            l, h = int(float(largeur or 0)), int(float(hauteur or 0))
-        except (TypeError, ValueError):
-            raise CompositionRefusee("largeur et hauteur doivent être des nombres de pixels")
-        if not l or not h:
-            base = FORMATS.get(str(format_ or FORMAT_DEFAUT).strip().lower(), FORMATS[FORMAT_DEFAUT])
-            l, h = l or round(h * base[0] / base[1]), h or round(l * base[1] / base[0])
-    else:
-        cle = str(format_ or FORMAT_DEFAUT).strip().lower()
-        if cle not in FORMATS:
-            raise CompositionRefusee(
-                f"format « {format_} » inconnu : {', '.join(sorted({k for k in FORMATS if ' ' not in k}))}, "
-                "ou largeur et hauteur en pixels")
-        l, h = FORMATS[cle]
-    if not (COTE_MIN <= l <= COTE_MAX and COTE_MIN <= h <= COTE_MAX) or l * h > PIXELS_MAX:
-        raise CompositionRefusee(f"{l} × {h} px : chaque côté entre {COTE_MIN} et {COTE_MAX} px, "
+def _pixels(v) -> int | None:
+    try:
+        n = int(float(str(v).lower().replace("px", "").strip()))
+        return n if n > 0 else None
+    except (TypeError, ValueError):
+        return None
+
+
+def taille(format_: str | None = None, largeur=None, hauteur=None) -> tuple[int, int | None]:
+    """(largeur, hauteur) en pixels ; hauteur None = « auto », elle suivra le contenu.
+
+    Tout ce que le modèle donne est pris : des pixels, « 1200x628 », un nom connu. Rien
+    de donné : une largeur, et la hauteur du contenu. Seules les bornes techniques refusent.
+    """
+    l, h = _pixels(largeur), (None if str(hauteur or "").strip().lower() in ("", "auto") else _pixels(hauteur))
+    nom = str(format_ or "").strip().lower()
+    m = re.fullmatch(r"(\d{2,5})\s*[x×*]\s*(\d{2,5})(?:\s*px)?", nom)
+    if m and not l:
+        l, h = int(m.group(1)), int(m.group(2))
+    elif nom in FORMATS and not l:
+        l, h = FORMATS[nom][0], h or FORMATS[nom][1]
+    elif nom in FORMATS and l and not h and str(hauteur or "").strip().lower() != "auto":
+        h = round(l * FORMATS[nom][1] / FORMATS[nom][0])
+    l = l or LARGEUR_AUTO
+    if not (COTE_MIN <= l <= COTE_MAX) or (h is not None and not COTE_MIN <= h <= COTE_MAX) \
+            or l * (h or COTE_MIN) > PIXELS_MAX:
+        raise CompositionRefusee(f"{l} × {h or 'auto'} px dépasse ce que le moteur de rendu tient : "
+                                 f"chaque côté entre {COTE_MIN} et {COTE_MAX} px, "
                                  f"{PIXELS_MAX // 1_000_000} millions de pixels au plus")
     return l, h
+
+
+def hauteur_de_rendu(largeur: int) -> int:
+    """La hauteur du canevas quand elle suit le contenu : la plus grande que les bornes tolèrent."""
+    return max(COTE_MIN, min(COTE_MAX, PIXELS_MAX // max(1, largeur)))
+
+
+def rogner_au_contenu(png: bytes) -> bytes:
+    """Hauteur « auto » : coupe le bas vide du canevas, en gardant sous le contenu la même
+    marge qu'au-dessus (celle que le design a posée). PURE, sans navigateur."""
+    from PIL import Image, ImageChops
+    img = Image.open(io.BytesIO(png)).convert("RGB")
+    fond = Image.new("RGB", img.size, img.getpixel((img.width - 1, img.height - 1)))
+    boite = ImageChops.difference(img, fond).getbbox()
+    if not boite:
+        return png
+    marge = boite[1]
+    bas = min(img.height, boite[3] + marge)
+    sortie = io.BytesIO()
+    img.crop((0, 0, img.width, max(bas, COTE_MIN))).save(sortie, format="PNG", optimize=True)
+    return sortie.getvalue()
 
 
 _BALISES_INTERDITES = ("script", "iframe", "frame", "frameset", "object", "embed", "applet",
@@ -140,15 +174,17 @@ def donnee_image(octets: bytes) -> str:
     return f"data:{mime};base64," + base64.b64encode(sortie.getvalue()).decode()
 
 
-def document(corps: str, largeur: int, hauteur: int, fond: str = "#ffffff") -> str:
-    """La page complète, à la taille EXACTE, sans script ni réseau possibles."""
+def document(corps: str, largeur: int, hauteur: int | None, fond: str = "#ffffff") -> str:
+    """La page complète, sans script ni réseau possibles. Hauteur None : elle suit le contenu.
+    Le style de base ne fait que remettre les marges à zéro ; tout le reste est au design."""
     fond = fond if re.fullmatch(r"#[0-9a-fA-F]{3,8}|[a-zA-Z]{3,20}", str(fond or "")) else "#ffffff"
+    hauteur_css = f"height:{hauteur}px;overflow:hidden;" if hauteur else "min-height:0;"
     return (
         "<!DOCTYPE html><html lang=\"fr\"><head><meta charset=\"utf-8\">"
         "<meta http-equiv=\"Content-Security-Policy\" content=\"default-src 'none'; "
         "img-src data:; style-src 'unsafe-inline'; font-src data:\">"
         "<style>*{box-sizing:border-box}html,body{margin:0;padding:0}"
-        f"body{{width:{largeur}px;height:{hauteur}px;overflow:hidden;background:{fond};"
+        f"body{{width:{largeur}px;{hauteur_css}background:{fond};"
         "font-family:'Liberation Sans','DejaVu Sans','Noto Sans',Arial,sans-serif;color:#1f2a1f;"
         "-webkit-font-smoothing:antialiased}img{display:block;max-width:100%}</style>"
         f"</head><body>{corps}</body></html>")

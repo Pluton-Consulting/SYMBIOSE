@@ -747,8 +747,13 @@ async def composer_visuel(data: dict, user) -> dict:
         largeur, hauteur = taille_ or c.taille(data.get("format"), data.get("largeur"), data.get("hauteur"))
     except c.CompositionRefusee as e:
         raise SkillError(str(e)) from e
+    # Seules les images que la page UTILISE se chargent : une affiche sans photo ne
+    # paie pas le chargement des deux dernières images du fil posées par défaut.
     incorporees = []
-    for ref in images:
+    for rang, ref in enumerate(images, 1):
+        if rang not in utilisees:
+            incorporees.append("")
+            continue
         try:
             octets, _ext, _nom = await resoudre(ref, user)
             incorporees.append(await asyncio.to_thread(c.donnee_image, octets))
@@ -759,9 +764,18 @@ async def composer_visuel(data: dict, user) -> dict:
     try:
         page = c.document(c.incorporer(c.nettoyer(html), incorporees), largeur, hauteur,
                           str(data.get("fond") or "#ffffff"))
-        png = await c.rendre(page, largeur, hauteur)
+        # HAUTEUR « AUTO » : le canevas est rendu grand, puis coupé sous le contenu.
+        png = await c.rendre(page, largeur, hauteur or c.hauteur_de_rendu(largeur))
+        if not hauteur:
+            png = await asyncio.to_thread(c.rogner_au_contenu, png)
     except c.CompositionRefusee as e:
         raise SkillError(f"La composition n'a pas pu être rendue : {e}.") from e
+    try:
+        from PIL import Image as _Image
+        import io as _io
+        largeur_finale, hauteur_finale = _Image.open(_io.BytesIO(png)).size
+    except Exception:  # noqa: BLE001
+        largeur_finale, hauteur_finale = largeur, hauteur or 0
     cle = deposer_octets(png, "image/png", proprietaire=proprietaire)
     if not cle:
         raise SkillError("L'image composée n'a pas pu être rangée (trop lourde).")
@@ -772,16 +786,17 @@ async def composer_visuel(data: dict, user) -> dict:
     except OSError:
         pass                               # le rendu vaut sans la page gardée
     titre = str(data.get("titre") or "Composition")[:80]
-    return {"compose": True, "image": cle, "largeur": largeur, "hauteur": hauteur,
+    largeur, hauteur_affichee = largeur_finale, hauteur_finale
+    return {"compose": True, "image": cle, "largeur": largeur, "hauteur": hauteur_affichee,
             "images_posees": len(incorporees),
-            "message_final": f"L'image « {titre} » est prête ({largeur} × {hauteur} px, PNG).",
+            "message_final": f"L'image « {titre} » est prête ({largeur} × {hauteur_affichee} px, PNG).",
             "a_faire": ("L'image est DÉJÀ affichée (bloc mécanique) : dis en une ou deux phrases ce "
                         "qu'elle montre. Pour la corriger, rappelle `composer_visuel` avec "
                         f"`depuis`: « {cle} » (sans `html` pour relire la page, puis avec le `html` "
                         "corrigé). Elle se glisse dans un document comme toute image, par cette clé."),
             "bloc_garanti": True,
             "bloc_ui": {"type": "visuel", "titre": titre, "principale": cle,
-                        "images": [{"cle": cle, "legende": f"{titre} — {largeur} × {hauteur} px"}]}}
+                        "images": [{"cle": cle, "legende": f"{titre} — {largeur} × {hauteur_affichee} px"}]}}
 
 
 async def convertir_image(data: dict, user) -> dict:
@@ -927,22 +942,24 @@ SKILLS = {
     "composer_visuel": Declaration(
         fonction=composer_visuel,
         description=(
-            "MET EN PAGE des images EXISTANTES et du texte dans UNE image PNG, a la taille "
-            "voulue : avant/apres cote a cote avec l'explication dessous, planche de "
-            "realisations, affiche, visuel pour un reseau social, fiche projet illustree. "
-            "GRATUIT, ne redessine RIEN (les photos restent identiques au pixel pres) : "
-            "c'est TOI qui ecris la page. `html` : le CORPS de la page (div, h1, p, "
-            "styles en ligne ou balise <style>), avec {{image1}}, {{image2}}… comme `src` "
-            "des balises <img> ou dans url() — dans l'ordre de `images`. `images` : les "
-            "references (cles d'image de la conversation, noms de fichiers du Drive, ref de "
-            "piece de mail) — sans elles, les DEUX DERNIERES images de la conversation. "
-            "`format` : paysage (1920x1080, defaut) | carre | portrait | story | a4_paysage | "
-            "a4_portrait | banniere — ou `largeur`/`hauteur` en pixels. Pas de script, pas "
-            "d'adresse web : tout doit etre dans la page. Soigne le design (marges, "
-            "hierarchie des titres, couleurs de la maison, object-fit:cover pour remplir "
-            "un cadre). Pour CORRIGER une composition : `depuis` = sa cle (sans `html`, "
-            "rend la page ; puis `html` corrige). JAMAIS `modifier_visuel` pour assembler "
-            "des photos : il retouche UNE photo."),
+            "CREE LIBREMENT UNE IMAGE PNG A PARTIR D'UNE PAGE HTML QUE TU ECRIS : planche "
+            "avant/apres, affiche, flyer, carte, visuel pour un reseau social, fiche projet, "
+            "infographie, schema, carte de visite, banniere — tout ce que la personne imagine. "
+            "TU DECIDES DE TOUT : format et taille (`largeur`/`hauteur` en pixels, jusqu'a "
+            "8000 px de cote ; `hauteur`: \"auto\" = elle suit le contenu), mise en page "
+            "(grid, flex, positions absolues, superpositions de texte sur les photos, "
+            "rotations, ombres, degradés, SVG en ligne, filtres CSS), couleurs, typographie "
+            "(polices installees : Liberation Sans/Serif/Mono, DejaVu Sans/Serif, Noto Sans/"
+            "Serif, FreeSans/FreeSerif), hierarchie. Aucun gabarit : concois comme un "
+            "graphiste, d'apres la demande. Les photos existantes restent identiques au pixel "
+            "pres (GRATUIT, rien n'est redessine). `html` : le CORPS de la page, avec "
+            "{{image1}}, {{image2}}… comme `src` d'<img> ou dans url(), dans l'ordre de "
+            "`images` (cles d'image de la conversation, noms de fichiers du Drive, ref de "
+            "piece de mail ; sans elles : les deux dernieres images de la conversation — une "
+            "composition SANS photo est permise). Seules limites : pas de script, pas "
+            "d'adresse web (tout doit etre dans la page). `fond` : couleur du fond. Pour "
+            "CORRIGER : `depuis` = la cle (sans `html` : rend la page ; puis `html` corrige). "
+            "JAMAIS `modifier_visuel` pour assembler des photos : il retouche UNE photo."),
         optionnels=["html", "images", "format", "largeur", "hauteur", "titre", "fond", "depuis"],
         effet="ecriture_interne",
         expert="agent2",

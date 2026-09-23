@@ -326,8 +326,8 @@ async def _capturer(url: str, delai_ms: int, largeur: int = 1280, hauteur: int =
 # LE RÉSEAU EST COUPÉ (toute résolution de nom échoue) et le backend a posé une règle
 # de sécurité interdisant tout script dans la page — `--blink-settings=scriptEnabled=false`
 # ne peut pas servir : mesuré le 23/09 sur Chromium 152, il empêche la capture elle-même.
-LARGEUR_MAX_RENDU = 4000
-PIXELS_MAX_RENDU = 12_000_000
+LARGEUR_MAX_RENDU = 8000
+PIXELS_MAX_RENDU = 40_000_000
 
 
 async def rendre_html(document: str, largeur: int, hauteur: int, delai_ms: int = 20000) -> bytes:

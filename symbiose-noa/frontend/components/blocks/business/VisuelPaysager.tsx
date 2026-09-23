@@ -148,6 +148,11 @@ export function VisuelPaysager({
   // principale (le rendu d'une retouche), elle se lit en premier, seule et en
   // grand ; la paire légendée reste en dessous, plus petite, pour comparer.
   const grande = principale ? liste.find((i) => i.cle === principale) : undefined
+  // UNE SEULE IMAGE, ET C'EST LA PRINCIPALE (23/09, relevé de Noa : « l'image
+  // s'affiche deux fois ») : une composition ou une image tournée n'a rien à
+  // comparer — la liste de dessous la répétait. Elle ne s'affiche que s'il y a
+  // AUTRE CHOSE que la principale à montrer.
+  const dessous = grande && liste.every((i) => i.cle === principale) ? [] : liste
   const gestes = useRef<Map<number, () => void>>(new Map())
   const [prets, setPrets] = useState(0)
 
@@ -187,8 +192,8 @@ export function VisuelPaysager({
         </div>
       )}
       <div style={{ display: "grid", gap: 6, padding: "0 10px",
-                    gridTemplateColumns: liste.length > 1 ? "1fr 1fr" : "1fr" }}>
-        {liste.map((img, i) => (
+                    gridTemplateColumns: dessous.length > 1 ? "1fr 1fr" : "1fr" }}>
+        {dessous.map((img, i) => (
           <div key={img.cle || img.url || i}>
             <Image image={img} apiUrl={apiUrl} backendToken={backendToken}
                    titre={titre} index={i} surBlob={surBlob}

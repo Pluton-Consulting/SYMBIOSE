@@ -67,18 +67,27 @@ for mot in ("<script", "alert(1)", "onerror", "<iframe", "javascript:", "traceur
 for mot in ('style="color:red"', "Avant", "{{image1}}", "h1{color:#2f5d3a}"):
     verifier(f"gardé : {mot}", mot in propre, propre)
 
-print("\n— La taille")
-verifier("défaut : paysage 1920 × 1080", c.taille() == (1920, 1080))
-verifier("format « carré » : 1080 × 1080", c.taille("carré") == (1080, 1080))
-verifier("A4 paysage : 1754 × 1240", c.taille("a4_paysage") == (1754, 1240))
-verifier("pixels explicites", c.taille(None, 1200, 800) == (1200, 800))
-verifier("une seule dimension : l'autre suit le format", c.taille("carre", 900, None) == (900, 900))
-for mauvais in [("inconnu", None, None), (None, 5000, 800), (None, 50, 800), (None, 3900, 3900)]:
+print("\n— La taille : libre, seules les bornes techniques refusent")
+verifier("rien de donné : largeur par défaut, hauteur qui suit le contenu", c.taille() == (1600, None))
+verifier("pixels explicites, quels qu'ils soient", c.taille(None, 1200, 628) == (1200, 628))
+verifier("« 3000x1000 » écrit en format", c.taille("3000x1000") == (3000, 1000))
+verifier("un nom connu reste un raccourci", c.taille("carré") == (1080, 1080))
+verifier("un nom INCONNU n'est pas un refus", c.taille("poster géant", 2400, 3200) == (2400, 3200))
+verifier("hauteur « auto » demandée", c.taille(None, 1080, "auto") == (1080, None))
+verifier("très grand format permis (7000 × 5000)", c.taille(None, 7000, 5000) == (7000, 5000))
+for mauvais in [(None, 9000, 800), (None, 50, 800), (None, 8000, 8000)]:
     try:
         c.taille(*mauvais)
-        verifier(f"refusé : {mauvais}", False)
+        verifier(f"refusé (borne technique) : {mauvais}", False)
     except c.CompositionRefusee:
-        verifier(f"refusé : {mauvais}", True)
+        verifier(f"refusé (borne technique) : {mauvais}", True)
+haut = io.BytesIO()
+_img = Image.new("RGB", (400, 3000), "white")
+from PIL import ImageDraw
+ImageDraw.Draw(_img).rectangle((40, 60, 360, 500), fill="green")
+_img.save(haut, format="PNG")
+rogne = Image.open(io.BytesIO(c.rogner_au_contenu(haut.getvalue())))
+verifier("hauteur auto : le bas vide est coupé, la marge du haut reprise dessous", rogne.size == (400, 561), rogne.size)
 
 print("\n— La page finale")
 
@@ -180,6 +189,11 @@ async def scenario():
                                   "titre": "Avant / après"}, user)
     verifier("rendu fait à 1920 × 1080", RENDUS and RENDUS[-1][1:] == (1920, 1080))
     verifier("les deux photos incorporées", RENDUS[-1][0].count("data:image/jpeg;base64,") == 2)
+    n0 = len(RENDUS)
+    affiche = await sv.composer_visuel({"html": "<h1>Portes ouvertes</h1>", "images": ["cleavant", "cleapres"],
+                                        "largeur": 1080, "hauteur": "auto"}, user)
+    verifier("affiche SANS photo : aucune image chargée, rendu fait",
+             len(RENDUS) == n0 + 1 and "data:image" not in RENDUS[-1][0] and affiche.get("image"))
     verifier("bloc d'écran garanti, image principale = le rendu",
              r.get("bloc_garanti") and r["bloc_ui"]["principale"] == r["image"])
     verifier("la page est gardée à côté du rendu", (DOSSIER / f"{r['image']}.composition.json").exists())
@@ -192,9 +206,9 @@ async def scenario():
              len(RENDUS) == n + 1 and RENDUS[-1][1:] == (1920, 1080) and r2["image"] != r["image"])
     n = len(RENDUS)
     for donnees, attendu in (({"html": "{{image3}}", "images": ["cleavant"]}, "3e image"),
-                             ({"html": "<p>x</p>", "images": ["inconnue"]}, "image introuvable"),
+                             ({"html": "<img src='{{image1}}'>", "images": ["inconnue"]}, "image utilisée introuvable"),
                              ({"images": ["cleavant"]}, "page absente"),
-                             ({"html": "<p>x</p>", "format": "géant"}, "format inconnu")):
+                             ({"html": "<p>x</p>", "largeur": 20000}, "taille hors bornes")):
         try:
             await sv.composer_visuel(donnees, user)
             verifier(f"refus : {attendu}", False)
@@ -219,6 +233,11 @@ verifier("la consigne des images renvoie l'assemblage à composer_visuel", "est 
 w = (BACKEND.parent / "browser-worker" / "rapide.py").read_text(encoding="utf-8")
 corps_rendu = w.split("async def rendre_html", 1)[1].split("async def ouvrir", 1)[0]
 verifier("conteneur : réseau coupé pour le rendu", "--host-resolver-rules=MAP * ~NOTFOUND" in corps_rendu)
+verifier("conteneur : mêmes bornes que le backend (8000 px, 40 M pixels)",
+         "LARGEUR_MAX_RENDU = 8000" in w and "PIXELS_MAX_RENDU = 40_000_000" in w)
+vp = (BACKEND.parent / "frontend" / "components" / "blocks" / "business" / "VisuelPaysager.tsx").read_text(encoding="utf-8")
+verifier("écran : une image principale seule ne s'affiche pas deux fois",
+         "liste.every((i) => i.cle === principale) ? [] : liste" in vp and "dessous.map(" in vp)
 verifier("conteneur : pas l'option qui empêche la capture", "scriptEnabled=false" not in corps_rendu)
 verifier("conteneur : route /rendre",
          '@app.post("/rendre")' in (BACKEND.parent / "browser-worker" / "worker.py").read_text(encoding="utf-8"))
